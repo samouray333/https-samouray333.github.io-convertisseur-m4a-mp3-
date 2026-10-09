@@ -284,7 +284,8 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
         log_cb(f"Installation de PyTorch {torch_ver} ({'GPU ' + flavor if flavor != 'cpu' else 'processeur'})… "
                "(téléchargement volumineux, patience)")
         _run([uv, "pip", "install", "--python", py, f"torch=={torch_ver}", f"torchaudio=={torch_ver}",
-              "--index-url", TORCH_INDEX.format(flavor=flavor), "--extra-index-url", "https://pypi.org/simple"],
+              # avec uv, l'index « extra » est prioritaire : PyTorch vient donc de l'index CUDA/CPU officiel
+              "--index-url", "https://pypi.org/simple", "--extra-index-url", TORCH_INDEX.format(flavor=flavor)],
              log_cb, cancel)
 
     log_cb("Installation du moteur de synthèse…")
