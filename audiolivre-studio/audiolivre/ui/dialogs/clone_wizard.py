@@ -437,6 +437,9 @@ class CloneWizard(QDialog):
         e.add(card_title("Moteur de clonage", "Vous pourrez en changer à tout moment.", "cpu"))
         self.engine_cards: dict[str, QFrame] = {}
         self.engine_choice = "xtts"
+        from ...core.engines import installer
+
+        has_gpu = bool(installer.detect_gpus())
         for eid in ("xtts", "chatterbox"):
             eng = engines.get_engine(eid)
             card = QFrame()
@@ -453,10 +456,18 @@ class CloneWizard(QDialog):
             sl = label(("✓ " if st == engines.READY else "⚠ ") + msg, "Hint", wrap=True)
             sl.setStyleSheet(f"color: {theme.CURRENT.success if st == engines.READY else theme.CURRENT.warning};")
             cl.addWidget(sl)
+            if not has_gpu:
+                speed = {"xtts": "✓ Conseillé sur ordinateur portable : environ 3 min de calcul par minute de livre",
+                         "chatterbox": "Très lent sans carte NVIDIA : environ 20 min de calcul par minute de livre"}
+                hl = label(speed[eid], "Hint", wrap=True)
+                hl.setStyleSheet(f"color: {theme.CURRENT.success if eid == 'xtts' else theme.CURRENT.warning};")
+                cl.addWidget(hl)
             card.mouseReleaseEvent = lambda _e, eid=eid: self._choose_engine(eid)
             self.engine_cards[eid] = card
             e.add(card)
         installed = [eid for eid in ("xtts", "chatterbox") if engines.get_engine(eid).is_ready()]
+        if not has_gpu and "xtts" in installed:
+            installed = ["xtts"]
         e.add(label("Les moteurs de clonage fonctionnent hors ligne sur votre ordinateur. Ils doivent être installés "
                     "une fois depuis la page « Moteurs IA » (téléchargement gratuit).", "Hint", wrap=True))
         e.add(None)

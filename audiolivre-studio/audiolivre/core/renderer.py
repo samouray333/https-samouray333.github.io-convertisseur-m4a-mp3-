@@ -403,6 +403,12 @@ class Renderer:
 
     # -- production complète -----------------------------------------------------------
     def render(self, plan: list[RenderChapter]) -> RenderReport:
+        from .power import keep_awake
+
+        with keep_awake():
+            return self._render(plan)
+
+    def _render(self, plan: list[RenderChapter]) -> RenderReport:
         report = RenderReport()
         t_start = time.time()
         for rc in plan:
