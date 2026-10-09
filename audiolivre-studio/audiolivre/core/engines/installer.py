@@ -62,7 +62,8 @@ SPECS: dict[str, EngineSpec] = {
     ),
     "chatterbox": EngineSpec(
         id="chatterbox",
-        packages=["chatterbox-tts==0.1.7", "soundfile"],
+        # le filigrane « perth » importe pkg_resources, retiré des versions récentes de setuptools
+        packages=["chatterbox-tts==0.1.7", "setuptools<81", "soundfile"],
         torch_version="2.6.0",
         torch_version_blackwell="2.7.1",
         pin_torch=True,
@@ -311,7 +312,8 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
 
     log_cb("Vérification de l'installation…")
     check = {"xtts": "import TTS, torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",
-             "chatterbox": "import chatterbox, torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",
+             "chatterbox": "import chatterbox, perth, torch; assert perth.PerthImplicitWatermarker is not None, "
+                           "'module perth incomplet'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",
              "kokoro": "import kokoro_onnx, onnxruntime; print('onnxruntime', onnxruntime.__version__)"}[engine_id]
     _run([py, "-c", check], log_cb, cancel, env=worker_env(engine_id))
 
