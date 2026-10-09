@@ -209,3 +209,24 @@ def test_music_mixing(tmp_path):
     assert audio.duration_of(out) > 4 + 4.5 + 4
     same, off2 = add_music(voice, tmp_path / "o2.wav", ExportSettings(), "chapter", True, True)
     assert same == voice and off2 == 0.0
+
+
+def test_dialogue_voice_inside_paragraphs(tmp_path, tone_engine, library):
+    narr = library.save(VoiceProfile(name="Narrateur", engine="tone"))
+    dlg = library.save(VoiceProfile(name="Dialogues", engine="tone"))
+    text = "Marie se retourna et dit : « Qui est là ? »\n\n— Moi, répondit Paul."
+    pr = make_project(tmp_path, narr.id, text=text)
+    pr.export.include_credits = False
+    pr.production.announce_chapter_titles = False
+    pr.production.detect_dialogues = True
+    pr.production.dialogue_voice_id = dlg.id
+    segs = renderer.build_plan(pr, library)[0].segments
+    assert [(s.display, s.voice_id) for s in segs] == [
+        ("Marie se retourna et dit :", narr.id), ("Qui est là ?", dlg.id),
+        ("Moi,", dlg.id), ("répondit Paul.", narr.id)]
+    assert segs[0].pause_after_ms == pr.production.pause_sentence_ms
+    assert segs[1].pause_after_ms == pr.production.pause_paragraph_ms
+    # Même voix pour le récit et les dialogues : un seul passage par paragraphe, comme avant
+    pr.production.dialogue_voice_id = ""
+    segs = renderer.build_plan(pr, library)[0].segments
+    assert [s.display for s in segs] == ["Marie se retourna et dit : Qui est là ?", "Moi, répondit Paul."]

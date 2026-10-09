@@ -172,7 +172,19 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
     if kind == "chapter" and announce and chapter.title.strip():
         add_text(chapter.title.strip().rstrip(".") + ".", resolver.narrator(chapter), "title", prod.pause_heading_ms)
 
-    for item in parse_script(chapter.text, prod.detect_dialogues):
+    # Morceaux d'un même paragraphe (récit / répliques) : regroupés tant que la voix ne change pas.
+    pending: list[tuple[str, VoiceProfile, str]] = []
+
+    def flush() -> None:
+        for i, (text, voice, emotion) in enumerate(pending):
+            last = i == len(pending) - 1
+            add_text(text, voice, "para", prod.pause_paragraph_ms if last else prod.pause_sentence_ms, emotion)
+        pending.clear()
+
+    for item in parse_script(chapter.text, prod.detect_dialogues, split=True,
+                             incises=prod.narrator_reads_incises):
+        if item.kind != "para":
+            flush()
         if item.kind == "pause":
             if segs:
                 segs[-1].pause_after_ms += item.pause_ms
@@ -182,7 +194,13 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
             add_text(item.text.rstrip(".") + ".", resolver.narrator(chapter), "heading", prod.pause_heading_ms)
         else:
             voice = resolver.resolve(item.voice_key, chapter)
-            add_text(item.text, voice, "para", prod.pause_paragraph_ms, item.emotion)
+            if pending and pending[-1][1].id == voice.id and pending[-1][2] == item.emotion:
+                pending[-1] = (pending[-1][0] + " " + item.text, voice, item.emotion)
+            else:
+                pending.append((item.text, voice, item.emotion))
+            if not item.joined:
+                flush()
+    flush()
     if segs:
         segs[-1].pause_after_ms = 0
     rc.segments = segs

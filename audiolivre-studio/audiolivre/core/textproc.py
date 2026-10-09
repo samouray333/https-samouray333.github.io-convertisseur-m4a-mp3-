@@ -64,6 +64,7 @@ class ScriptItem:
     pause_ms: int = 0
     level: int = 0
     emotion: str = ""
+    joined: bool = False  # la suite du même paragraphe suit (changement de voix au milieu d'un paragraphe)
 
 
 # Émotions : balise -> nom canonique
@@ -89,9 +90,116 @@ VOICE_SWITCH_RE = re.compile(r"^\[\s*(?:voix|voice)\s*[:=]\s*([^\]]+?)\s*\]\s*$"
 VOICE_END_RE = re.compile(r"^\[\s*/\s*(?:voix|voice)\s*\]\s*$", re.IGNORECASE)
 CHARACTER_LINE_RE = re.compile(r"^@([^:\n]{1,40}):\s*(.+)$", re.S)
 # Réplique : tiret cadratin, demi-cadratin ou simple (« - Bonjour » comme « -Bonjour », mais pas « -5 »),
-# ou guillemets ouvrants.
-DIALOGUE_START_RE = re.compile(r"^\s*(?:[—–―]|-\s|-(?=[^\W\d_]|[«“\"])|«|“|\")")
+# ou guillemets (» : suite d'une réplique commencée au paragraphe précédent).
+DIALOGUE_START_RE = re.compile(r"^\s*(?:[—–―]|-\s|-(?=[^\W\d_]|[«“\"])|«|»|“|\")")
 NARRATOR_NAMES = {"narrateur", "narratrice", "narrator", "défaut", "defaut", "default"}
+
+# ---------------------------------------------------------------------------------------
+# Répliques au milieu d'un paragraphe et incises (« dit-il ») lues par le narrateur
+# ---------------------------------------------------------------------------------------
+_PRONOUN = r"(?:-t)?-(?:il|elle|ils|elles|on|je|tu|nous|vous)"
+_FR_VERBS = (
+    "dit|disait|répondit|répondait|répliqua|demanda|demandait|cria|criait|hurla|murmura|murmurait|chuchota|"
+    "souffla|ajouta|reprit|continua|poursuivit|lança|déclara|expliqua|affirma|annonça|interrogea|soupira|grogna|"
+    "gronda|rétorqua|objecta|protesta|insista|conclut|admit|avoua|répéta|marmonna|bredouilla|balbutia|sanglota|"
+    "ricana|plaisanta|pensa|songea|observa|remarqua|précisa|confia|suggéra|ordonna|supplia|implora|tonna|rugit|"
+    "siffla|glissa|lâcha|coupa|enchaîna|renchérit|corrigea|rappela|assura|constata|commenta|approuva|acquiesça|"
+    "riposta|trancha|avertit|s['’]écria|s['’]exclama|s['’]étonna|s['’]enquit|s['’]inquiéta|s['’]impatienta|"
+    "demande|répond|réplique|crie|hurle|murmure|chuchote|souffle|ajoute|reprend|continue|poursuit|lance|déclare|"
+    "explique|affirme|annonce|soupire|grogne|rétorque|insiste|répète|marmonne|bredouille|ricane|pense|songe|"
+    "observe|remarque|précise|ordonne|supplie|coupe|enchaîne|assure|constate|commente|s['’]écrie|s['’]exclame|"
+    "s['’]étonne"
+)
+_FR_PARTICIPLES = "dit|répondu|demandé|crié|murmuré|ajouté|lancé|répliqué|soufflé|déclaré|expliqué|chuchoté|hurlé"
+_EN_VERBS = ("said|says|asked|asks|replied|replies|answered|whispered|shouted|cried|added|muttered|called|yelled|"
+             "exclaimed|continued|explained|murmured|sighed|snapped|told")
+_INCISE_HEAD = (
+    rf"(?:(?:a|ai|as|avait|avais|aurait)(?:{_PRONOUN})?\s+(?:{_FR_PARTICIPLES})"
+    rf"|(?:fit|fait|fis|fais){_PRONOUN}"
+    rf"|(?:{_FR_VERBS})(?:{_PRONOUN})?"
+    rf"|(?:(?:he|she|they|I|we|you|it|[A-ZÀ-Ý][\w'’-]*)\s+)?(?:{_EN_VERBS}))(?![\w'’-])"
+)
+_INCISE_RE = re.compile(
+    rf"(?P<pre>,|[!?…]+|\s[—–―-])\s+(?P<inc>{_INCISE_HEAD}[^,.;:!?…—–―«»“”\"]{{0,80}}?)"
+    rf"(?P<end>[,.;!?…]+|\s[—–―-]\s|\s*$)"
+)
+_QUOTE_RE = re.compile(r'«\s*(?P<a>.*?)\s*(?:»|$)|“\s*(?P<b>.*?)\s*(?:”|$)|"\s*(?P<c>.*?)\s*(?:"|$)', re.S)
+_INCISE_AFTER_RE = re.compile(rf"\s*,\s*{_INCISE_HEAD}")
+
+
+def _split_incises(text: str) -> list[tuple[str, bool]]:
+    """Coupe une réplique autour de ses incises : [(texte, est_une_réplique)]."""
+    parts: list[tuple[str, bool]] = []
+    pos = 0
+    for m in _INCISE_RE.finditer(text):
+        if m.start() < pos:
+            continue
+        pre = m.group("pre")
+        parts.append((text[pos:m.start("pre")] + ("" if pre.strip() in "—–―-" else pre), True))
+        end = m.group("end")
+        parts.append((m.group("inc") + ("" if not end.strip() or end.strip() in "—–―-" else end), False))
+        pos = m.end()
+    parts.append((text[pos:], True))
+    return parts
+
+
+def _looks_like_speech(inner: str, before: str, after: str) -> bool:
+    """Distingue une réplique entre guillemets d'un titre ou d'un mot cité (« cool »)."""
+    return (not before.strip() or before.rstrip().endswith(":") or bool(re.search(r"[.!?…]", inner))
+            or len(inner.split()) >= 4 or bool(_INCISE_AFTER_RE.match(after)))
+
+
+def split_dialogue(para: str, incises: bool = True, speech: bool = False) -> list[tuple[str, bool]]:
+    """Sépare un paragraphe en récit et répliques : [(texte, est_une_réplique)].
+
+    Répliques : paragraphe ouvert par un tiret, passages entre guillemets (même au milieu du paragraphe),
+    suite d'une réplique sur plusieurs paragraphes (« » … »). Avec ``incises``, les incises comme « dit-il »
+    reviennent au récit. ``speech`` : le paragraphe entier est une réplique (personnage @Nom:).
+    """
+    s = para.strip()
+    parts: list[tuple[str, bool]] = []
+
+    def speech_part(t: str) -> None:
+        parts.extend(_split_incises(t) if incises else [(t, True)])
+
+    dash = re.match(r"^(?:[—–―]\s*|-\s+|-(?=[^\W\d_]))", s)
+    if dash:
+        speech_part(s[dash.end():])
+    else:
+        if s.startswith("»"):  # suite d'une réplique commencée au paragraphe précédent
+            s = "«" + s[1:]
+        pos = 0
+        found = False
+        for m in _QUOTE_RE.finditer(s):
+            inner = next(g for g in m.groups() if g is not None)
+            if not inner.strip() or not _looks_like_speech(inner, s[:m.start()], s[m.end():]):
+                continue
+            if s[pos:m.start()].strip():
+                parts.append((s[pos:m.start()], False))
+            speech_part(inner)
+            pos = m.end()
+            found = True
+        rest = s[pos:]
+        if rest.strip():
+            if speech and not found:
+                speech_part(rest)
+            else:
+                parts.append((rest, False))
+    out: list[tuple[str, bool]] = []
+    for text, is_speech in parts:
+        text = text.strip()
+        lead = re.match(r"^[,;]\s*", text) if not is_speech else None
+        if lead:  # « Bonjour », dit-il : la virgule reste avec la réplique (intonation suspendue)
+            text = text[lead.end():]
+            if out:
+                out[-1] = (out[-1][0] + lead.group(0).strip(), out[-1][1])
+        if not any(ch.isalnum() for ch in text):
+            continue
+        if out and out[-1][1] == is_speech:
+            out[-1] = (out[-1][0] + " " + text, is_speech)
+        else:
+            out.append((text, is_speech))
+    return out
 
 
 def _pause_to_ms(value: str, unit: str | None) -> int:
@@ -101,8 +209,14 @@ def _pause_to_ms(value: str, unit: str | None) -> int:
     return int(v * 1000)
 
 
-def parse_script(text: str, detect_dialogues: bool = False) -> list[ScriptItem]:
-    """Transforme le texte d'un chapitre en éléments (titres, paragraphes, pauses)."""
+def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
+                 incises: bool = True) -> list[ScriptItem]:
+    """Transforme le texte d'un chapitre en éléments (titres, paragraphes, pauses).
+
+    Avec ``split``, les répliques sont séparées du récit à l'intérieur des paragraphes (guillemets au milieu
+    du texte, incises « dit-il » lues par le narrateur si ``incises``) ; les morceaux d'un même paragraphe
+    sont marqués ``joined``.
+    """
     items: list[ScriptItem] = []
     current_voice: str | None = None
     current_emotion = ""
@@ -143,8 +257,10 @@ def parse_script(text: str, detect_dialogues: bool = False) -> list[ScriptItem]:
             items.append(ScriptItem("heading", hm.group(2).strip(), level=len(hm.group(1))))
             continue
         voice = current_voice
+        mode = ""  # "character" | "detect" : découpage récit / répliques
         cm = CHARACTER_LINE_RE.match(para)
         if cm:
+            mode = "character"
             name = cm.group(1).strip()
             voice = None if name.lower() in NARRATOR_NAMES else name
             para = cm.group(2).strip()
@@ -152,19 +268,36 @@ def parse_script(text: str, detect_dialogues: bool = False) -> list[ScriptItem]:
             if em2:
                 emotion = EMOTION_ALIASES[em2.group(1).lower()]
                 para = para[em2.end():].strip()
-        elif voice is None and detect_dialogues and DIALOGUE_START_RE.match(para):
-            voice = "__dialogue__"
+        elif voice is None and detect_dialogues:
+            mode = "detect"
+            if DIALOGUE_START_RE.match(para):
+                voice = "__dialogue__"
+        speaker = voice if mode == "character" else "__dialogue__"
+
+        def add_para(chunk: str) -> None:
+            if not split or not mode or (mode == "character" and (voice is None or not incises)):
+                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion))
+                return
+            parts = split_dialogue(chunk, incises, speech=mode == "character")
+            if not parts:
+                return
+            any_speech = any(sp for _, sp in parts)
+            for i, (t, sp) in enumerate(parts):
+                items.append(ScriptItem("para", t, voice_key=speaker if sp else None,
+                                        emotion=emotion if sp or not any_speech else "",
+                                        joined=i < len(parts) - 1))
+
         # pauses en ligne : on coupe le paragraphe
         pos = 0
         for pm in PAUSE_RE.finditer(para):
             chunk = para[pos:pm.start()].strip()
             if chunk:
-                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion))
+                add_para(chunk)
             items.append(ScriptItem("pause", pause_ms=_pause_to_ms(pm.group(1), pm.group(2))))
             pos = pm.end()
         rest = para[pos:].strip()
         if rest:
-            items.append(ScriptItem("para", rest, voice_key=voice, emotion=emotion))
+            add_para(rest)
     return items
 
 

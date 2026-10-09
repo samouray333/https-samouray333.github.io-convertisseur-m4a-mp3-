@@ -587,6 +587,10 @@ class CastTab(QWidget):
         self.dialogue.currentIndexChanged.connect(self._changed)
         self.detect = ToggleSwitch("Détecter automatiquement les dialogues (—, -, «, \")")
         self.detect.toggled.connect(self._changed)
+        self.incises = ToggleSwitch("Le narrateur lit les incises (« dit-il », « répondit Marie »)")
+        self.incises.setToolTip("Les répliques entre guillemets, même au milieu d'un paragraphe, sont lues par la "
+                                "voix des dialogues ; le récit et les incises par le narrateur.")
+        self.incises.toggled.connect(self._changed)
         g.addWidget(label("Narrateur", "Muted"), 0, 0)
         g.addWidget(self.narrator, 0, 1)
         g.addWidget(IconButton("play", "Écouter", 34, 14, color=theme.CURRENT.accent), 0, 2)
@@ -598,6 +602,7 @@ class CastTab(QWidget):
         g.setColumnStretch(1, 1)
         main.add(g)
         main.add(self.detect)
+        main.add(self.incises)
         lay.addWidget(main)
 
         roles = Card()
@@ -634,6 +639,7 @@ class CastTab(QWidget):
         self._fill_combo(self.narrator, pr.narrator_voice_id, None)
         self._fill_combo(self.dialogue, pr.production.dialogue_voice_id, "Comme le narrateur")
         self.detect.setChecked(pr.production.detect_dialogues)
+        self.incises.setChecked(pr.production.narrator_reads_incises)
         self._loading = False
         while self.roles_box.count():
             it = self.roles_box.takeAt(0)
@@ -671,6 +677,7 @@ class CastTab(QWidget):
         pr.narrator_voice_id = self.narrator.currentData() or pr.narrator_voice_id
         pr.production.dialogue_voice_id = self.dialogue.currentData() or ""
         pr.production.detect_dialogues = self.detect.isChecked()
+        pr.production.narrator_reads_incises = self.incises.isChecked()
         self.ctx.mark_dirty()
 
     def _preview(self, combo: QComboBox) -> None:

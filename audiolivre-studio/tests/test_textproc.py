@@ -120,3 +120,31 @@ def test_hyphen_dialogues(src, dialogue, spoken):
     items = [i for i in parse_script(src, detect_dialogues=True) if i.kind == "para"]
     assert (items[0].voice_key == "__dialogue__") is dialogue
     assert normalize_for_speech(src) == spoken
+
+
+@pytest.mark.parametrize("src,parts", [
+    ("« Bonjour », dit Marie.", [("Bonjour,", True), ("dit Marie.", False)]),
+    ("Marie le regarda et dit : « Bonjour. »", [("Marie le regarda et dit :", False), ("Bonjour.", True)]),
+    ("» Et puis il est parti. » Elle se tut.", [("Et puis il est parti.", True), ("Elle se tut.", False)]),
+    ("Il a lu « Les Misérables » hier.", [("Il a lu « Les Misérables » hier.", False)]),
+    ("- Viens ici, dit-il, tout de suite.", [("Viens ici,", True), ("dit-il,", False), ("tout de suite.", True)]),
+    ("-Non ! cria-t-elle.", [("Non !", True), ("cria-t-elle.", False)]),
+    ("— Viens ici — dit-il — tout de suite.", [("Viens ici", True), ("dit-il", False), ("tout de suite.", True)]),
+    ("« Où vas-tu ? demanda-t-elle. »", [("Où vas-tu ?", True), ("demanda-t-elle.", False)]),
+    ("“Hello,” he said.", [("Hello,", True), ("he said.", False)]),
+    ("Elle répondit, puis partit.", [("Elle répondit, puis partit.", False)]),
+])
+def test_split_dialogue(src, parts):
+    from audiolivre.core.textproc import split_dialogue
+
+    assert split_dialogue(src) == parts
+
+
+def test_split_dialogue_without_incises():
+    from audiolivre.core.textproc import split_dialogue
+
+    assert split_dialogue("- Viens ici, dit-il.", incises=False) == [("Viens ici, dit-il.", True)]
+    items = [i for i in parse_script("Il dit : « Oui. »\n\nFin.", detect_dialogues=True, split=True)
+             if i.kind == "para"]
+    assert [(i.text, i.voice_key, i.joined) for i in items] == [
+        ("Il dit :", None, True), ("Oui.", "__dialogue__", False), ("Fin.", None, False)]

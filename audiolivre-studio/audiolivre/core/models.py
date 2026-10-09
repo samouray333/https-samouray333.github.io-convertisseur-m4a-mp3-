@@ -100,6 +100,7 @@ class ProductionSettings:
     expand_abbreviations: bool = True
     detect_dialogues: bool = False
     dialogue_voice_id: str = ""
+    narrator_reads_incises: bool = True  # « dit-il » lu par le narrateur, pas par la voix de la réplique
     trim_silence: bool = True
     room_tone: bool = True
     room_tone_db: float = -72.0
