@@ -118,7 +118,8 @@ python main.py --selftest r.json   # autotest de bout en bout
 ### Compiler l'installateur Windows
 
 La compilation est automatisée par GitHub Actions (`.github/workflows/audiolivre-windows.yml`) : tests, PyInstaller,
-autotest de l'exécutable, puis installateur Inno Setup. Pour publier une version : créez un tag `v1.0.0`.
+autotest de l'exécutable, puis installateur Inno Setup. Pour publier une version : sur GitHub, **Releases → Draft a new release**,
+tag `v1.0.0` (ou poussez un tag `v*`) ; l'installateur et la version portable sont ajoutés automatiquement à la Release.
 L'option « Tester l'installation réelle des moteurs IA » du lancement manuel vérifie l'installation de Kokoro, XTTS-v2 et Chatterbox sous Windows.
 
 Manuellement sous Windows :

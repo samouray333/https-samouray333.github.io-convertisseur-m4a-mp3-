@@ -7,6 +7,8 @@ on:
     paths:
       - "audiolivre-studio/**"
       - ".github/workflows/audiolivre-windows.yml"
+  release:
+    types: [published]
   pull_request:
     paths:
       - "audiolivre-studio/**"
