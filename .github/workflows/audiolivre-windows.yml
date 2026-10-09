@@ -21,6 +21,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: audiolivre-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     working-directory: audiolivre-studio
@@ -131,9 +135,13 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
-          & $iscc /Qp /DAppVersion=${{ steps.ver.outputs.version }} packaging/installer.iss
+          $root = (Resolve-Path .).Path
+          Write-Host "Racine : $root"
+          Get-ChildItem packaging\assets, audiolivre\resources | Format-Table Name, Length
+          Test-Path dist\AudioLivreStudio\AudioLivreStudio.exe
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DAppRoot=$root" "$root\packaging\installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "ISCC a échoué" }
-          Get-ChildItem dist/*.exe | Format-Table Name, Length
+          Get-ChildItem dist\*.exe | Format-Table Name, Length
 
       - name: Version portable (zip)
         shell: pwsh
@@ -169,7 +177,7 @@ jobs:
             Windows peut afficher « Windows a protégé votre ordinateur » (application non signée) : cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
 
   engines:
-    name: Moteur ${{ matrix.engine }} (Windows, processeur)
+    name: Test moteurs IA (optionnel)
     runs-on: windows-latest
     needs: tests
     if: github.event_name == 'workflow_dispatch' && inputs.engine_tests || contains(github.event.head_commit.message, '[engines]')

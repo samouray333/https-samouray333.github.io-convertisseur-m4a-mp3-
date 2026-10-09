@@ -1,5 +1,6 @@
-; Script Inno Setup d'AudioLivre Studio
+﻿; Script Inno Setup d'AudioLivre Studio
 ; Compilation : ISCC.exe /DAppVersion=1.0.0 packaging\installer.iss  (après PyInstaller)
+; Fichier enregistré en UTF-8 avec BOM (accents).
 
 #ifndef AppVersion
   #define AppVersion "1.0.0"
@@ -7,6 +8,10 @@
 #define AppName "AudioLivre Studio"
 #define AppExe "AudioLivreStudio.exe"
 #define AppPublisher "AudioLivre"
+#ifndef AppRoot
+  ; Dossier audiolivre-studio (parent du dossier de ce script)
+  #define AppRoot AddBackslash(SourcePath) + ".."
+#endif
 
 [Setup]
 AppId={{9C3E5B71-6A2D-4E8F-B1C4-5D7A2F9E3B60}
@@ -18,14 +23,14 @@ AppComments=Transformez vos documents Word et PDF en livres audio professionnels
 DefaultDirName={autopf}\AudioLivre Studio
 DefaultGroupName=AudioLivre Studio
 DisableProgramGroupPage=yes
-OutputDir=..\dist
+OutputDir={#AppRoot}\dist
 OutputBaseFilename=AudioLivreStudio-Setup-{#AppVersion}
-SetupIconFile=..\audiolivre\resources\app.ico
+SetupIconFile={#AppRoot}\audiolivre\resources\app.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 WizardStyle=modern
-WizardImageFile=assets\wizard-small-scale.bmp,assets\wizard.bmp
-WizardSmallImageFile=assets\wizard-icon.bmp
+WizardImageFile={#AppRoot}\packaging\assets\wizard-small-scale.bmp,{#AppRoot}\packaging\assets\wizard.bmp
+WizardSmallImageFile={#AppRoot}\packaging\assets\wizard-icon.bmp
 Compression=lzma2/ultra64
 SolidCompression=yes
 LZMANumBlockThreads=4
@@ -54,7 +59,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "assoc"; Description: "{cm:AssocProject}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "..\dist\AudioLivreStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppRoot}\dist\AudioLivreStudio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\AudioLivre Studio"; Filename: "{app}\{#AppExe}"
