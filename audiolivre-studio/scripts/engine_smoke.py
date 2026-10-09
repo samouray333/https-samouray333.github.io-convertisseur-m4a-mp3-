@@ -110,16 +110,21 @@ def main() -> int:
         import shutil
 
         shutil.copy2(clone.reference_paths()[0], lib.voice_dir(fc) / clone.references[0])
-        for i in range(2):  # le premier passage inclut le chargement du modèle
-            t1 = time.time()
-            out = fast.synthesize("Il était une fois, dans un petit village au bord de la mer, une histoire "
-                                  "extraordinaire qui allait changer la vie de tous ses habitants.",
-                                  fc, work / f"fast{i}.wav", "fr", 1.0, 1)
-            data, sr = audio.read_audio(out)
-            stats = audio.analyze_array(data, sr)
-            log(f"Clonage rapide (essai {i + 1}) : {stats.duration:.1f} s d'audio en {time.time() - t1:.0f} s "
-                f"(RMS {stats.rms_db:.1f} dB)")
-            assert stats.duration > 2 and stats.rms_db > -45
+        from audiolivre.config import settings
+
+        for mode in ("best", "fast"):  # le mode par défaut en dernier
+            settings().set("fastclone_mode", mode)
+            fast.shutdown()
+            for i in range(2):  # le premier passage inclut le chargement du modèle
+                t1 = time.time()
+                out = fast.synthesize("Il était une fois, dans un petit village au bord de la mer, une histoire "
+                                      "extraordinaire qui allait changer la vie de tous ses habitants.",
+                                      fc, work / f"fast-{mode}{i}.wav", "fr", 1.0, 1)
+                data, sr = audio.read_audio(out)
+                stats = audio.analyze_array(data, sr)
+                log(f"Clonage rapide {mode} (essai {i + 1}) : {stats.duration:.1f} s d'audio en "
+                    f"{time.time() - t1:.0f} s (RMS {stats.rms_db:.1f} dB, mode {fast.load_info.get('mode')})")
+                assert stats.duration > 2 and stats.rms_db > -45
 
     # Production complète d'un mini-projet avec le moteur réel
     pr = Project(chapters=[Chapter(title="Chapitre 1", text="Bonjour. Ceci est un test de production complet.")],

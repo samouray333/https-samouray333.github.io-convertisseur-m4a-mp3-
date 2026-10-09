@@ -111,11 +111,18 @@ class SettingsPage(Page):
         self.edge_conc.valueChanged.connect(lambda v: s.set("edge_concurrency", v))
         g3.addWidget(label("Requêtes simultanées (voix Microsoft)", "Muted"), 1, 0)
         g3.addWidget(self.edge_conc, 1, 1)
+        self.fc_mode = QComboBox()
+        self.fc_mode.addItem("Rapide (recommandé sans carte NVIDIA)", "fast")
+        self.fc_mode.addItem("Fidèle (plus lent)", "best")
+        self.fc_mode.setCurrentIndex(max(0, self.fc_mode.findData(s.get("fastclone_mode", "fast"))))
+        self.fc_mode.currentIndexChanged.connect(self._fastclone_changed)
+        g3.addWidget(label("Clonage rapide", "Muted"), 2, 0)
+        g3.addWidget(self.fc_mode, 2, 1)
         self.ffmpeg = QLineEdit(s.get("ffmpeg_path") or "")
         self.ffmpeg.setPlaceholderText("Automatique (FFmpeg intégré)")
         self.ffmpeg.editingFinished.connect(lambda: s.set("ffmpeg_path", self.ffmpeg.text().strip()))
-        g3.addWidget(label("Chemin de FFmpeg", "Muted"), 2, 0)
-        g3.addWidget(self.ffmpeg, 2, 1)
+        g3.addWidget(label("Chemin de FFmpeg", "Muted"), 3, 0)
+        g3.addWidget(self.ffmpeg, 3, 1)
         g3.setColumnStretch(1, 1)
         perf.add(g3)
         self.ff_info = label("", "Hint", wrap=True)
@@ -200,6 +207,12 @@ class SettingsPage(Page):
         from ...core.engines import shutdown_all
 
         shutdown_all()
+
+    def _fastclone_changed(self) -> None:
+        settings().set("fastclone_mode", self.fc_mode.currentData())
+        from ...core.engines import get_engine
+
+        get_engine("fastclone").shutdown()
 
     def _pick_projects(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Dossier des projets", self.proj_dir.text())

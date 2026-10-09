@@ -294,21 +294,50 @@ class KokoroBackend(Backend):
 
 
 class ChatterboxVCBackend(Backend):
-    """Conversion de voix : transforme un enregistrement pour lui donner le timbre de la voix clonée."""
+    """Conversion de voix : transforme un enregistrement pour lui donner le timbre de la voix clonée.
+
+    Le mode « rapide » utilise le décodeur distillé de Chatterbox Turbo (2 étapes de calcul au lieu de
+    10 × 2), beaucoup plus rapide sur processeur ; le mode « fidèle » garde le décodeur d'origine.
+    """
 
     def load(self, device, options):
         from chatterbox.vc import ChatterboxVC
 
         self.device = pick_device(device)
+        self.mode = options.get("mode") or "fast"
         log("Chargement du convertisseur de voix (le premier lancement télécharge environ 1 Go)…")
         t0 = time.time()
-        self.model = ChatterboxVC.from_pretrained(self.device)
+        self.model = None
+        if self.mode == "fast":
+            try:
+                self.model = self._load_turbo(ChatterboxVC)
+            except Exception as exc:
+                log(f"Décodeur rapide indisponible ({exc}) : décodeur standard utilisé")
+                self.mode = "best"
+        if self.model is None:
+            self.model = ChatterboxVC.from_pretrained(self.device)
         self.sr = int(self.model.sr)
         self.current = None
-        log(f"Convertisseur prêt sur {self.device} en {time.time() - t0:.0f} s")
-        return {"sr": self.sr, **device_info(self.device)}
+        log(f"Convertisseur ({'rapide' if self.mode == 'fast' else 'fidèle'}) prêt sur {self.device} "
+            f"en {time.time() - t0:.0f} s")
+        return {"sr": self.sr, "mode": self.mode, **device_info(self.device)}
+
+    def _load_turbo(self, vc_cls):
+        from huggingface_hub import hf_hub_download
+        from safetensors.torch import load_file
+        from chatterbox.models.s3gen import S3Gen
+
+        path = hf_hub_download(repo_id="ResembleAI/chatterbox-turbo", filename="s3gen_meanflow.safetensors")
+        s3gen = S3Gen(meanflow=True)
+        s3gen.load_state_dict(load_file(path), strict=True)
+        s3gen.to(self.device).eval()
+        return vc_cls(s3gen, self.device)
 
     def convert(self, req):
+        import librosa
+        import torch
+        from chatterbox.models.s3tokenizer import S3_SR
+
         refs = req.get("refs") or []
         if not refs:
             raise RuntimeError("Aucun enregistrement de référence pour la conversion.")
@@ -316,7 +345,21 @@ class ChatterboxVCBackend(Backend):
         if key != self.current:
             self.model.set_target_voice(refs[0])
             self.current = key
-        wav = self.model.generate(req["source"])
+        m = self.model
+        t0 = time.time()
+        with torch.inference_mode():
+            audio_16, _ = librosa.load(req["source"], sr=S3_SR)
+            audio_16 = torch.from_numpy(audio_16).float().to(m.device)[None, ]
+            tokens, _ = m.s3gen.tokenizer(audio_16)
+            t1 = time.time()
+            mels = m.s3gen.flow_inference(tokens, ref_dict=m.ref_dict, finalize=True)
+            t2 = time.time()
+            wav, _ = m.s3gen.hift_inference(mels.to(dtype=m.s3gen.dtype))
+            wav[:, :len(m.s3gen.trim_fade)] *= m.s3gen.trim_fade
+            wav = wav.squeeze(0).detach().cpu().numpy()
+            wav = m.watermarker.apply_watermark(wav, sample_rate=self.sr)
+        t3 = time.time()
+        log(f"Conversion : analyse {t1 - t0:.1f} s, timbre {t2 - t1:.1f} s, son {t3 - t2:.1f} s")
         return {"duration": write_wav(req["out"], to_numpy(wav), self.sr)}
 
 

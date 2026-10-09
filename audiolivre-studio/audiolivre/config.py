@@ -32,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
     "player_volume": 0.9,
     "check_updates": True,
     "asr_model": "base",
+    "fastclone_mode": "fast",  # fast (décodeur Turbo) | best
 }
 
 

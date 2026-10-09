@@ -465,6 +465,11 @@ class FastCloneEngine(WorkerEngine):
     def __init__(self):
         super().__init__("fastclone", env_id="chatterbox", worker_name="chatterbox_vc")
 
+    def load_options(self) -> dict:
+        from ...config import settings
+
+        return {**super().load_options(), "mode": settings().get("fastclone_mode", "fast")}
+
     def list_builtin_voices(self, refresh: bool = False) -> list[BuiltinVoice]:
         return []
 
