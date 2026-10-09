@@ -458,7 +458,8 @@ class CloneWizard(QDialog):
             cl.addWidget(sl)
             if not has_gpu:
                 speed = {"xtts": ("✓ Ressemblance la plus fidèle : environ 3 min de calcul par minute de livre", True),
-                         "fastclone": ("✓ Le plus rapide sur ordinateur portable (Internet requis)", True),
+                         "fastclone": ("✓ Le plus rapide : environ 1 min de calcul par minute de livre (Internet requis)",
+                                       True),
                          "chatterbox": ("Très lent sans carte NVIDIA : environ 20 min de calcul par minute", False)}
                 text, good = speed[eid]
                 hl = label(text, "Hint", wrap=True)

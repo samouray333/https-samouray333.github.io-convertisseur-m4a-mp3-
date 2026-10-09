@@ -15,7 +15,7 @@ import du manuscrit, découpage en chapitres, choix ou **clonage de voix**, dist
 | 📄 **Import intelligent** | Word (.docx), PDF, EPUB, ODT, RTF, Markdown, HTML, TXT, **PDF scannés et photos de pages (OCR intégré à Windows)**. Détection automatique des chapitres, suppression des en-têtes/pieds de page, réparation des césures, **aperçu du découpage avant import** (5 modes, inclusion, fusion, renommage). |
 | ✍️ **Éditeur de manuscrit** | Coloration des balises, chapitres réorganisables par glisser-déposer, fusion/découpe, rechercher-remplacer, statistiques et durée estimée, « Écouter la sélection », **aperçu de lecture** (le texte exact qui sera lu). |
 | 🗣️ **Voix gratuites** | Plus de 300 voix neuronales Microsoft (dont ~15 en français, très naturelles), voix Windows hors ligne, Kokoro hors ligne. |
-| ⚡ **Clonage rapide** | Une voix Microsoft lit le texte puis un convertisseur gratuit lui donne votre timbre : idéal sur un ordinateur portable sans carte graphique. |
+| ⚡ **Clonage rapide** | Une voix Microsoft lit le texte puis un convertisseur gratuit (décodeur Chatterbox Turbo) lui donne votre timbre : environ 1 minute de calcul par minute de livre sur un ordinateur portable sans carte graphique. |
 | 🔎 **Relecture automatique** | Whisper (gratuit, hors ligne) réécoute chaque passage produit, refait ceux où des mots manquent et signale les passages à vérifier. |
 | 🎭 **Émotions** | Balises `[joyeux]`, `[triste]`, `[colère]`, `[chuchoté]`, `[calme]`, `[peur]`, `[excité]` et menu « Émotion » dans l'éditeur. |
 | 🧬 **Clonage de voix** | Assistant en 4 étapes : importez un enregistrement (audio ou vidéo) ou enregistrez-vous au micro, l'application choisit automatiquement le meilleur extrait, analyse la qualité (bruit, saturation), réduit le bruit, puis vous testez la voix. Moteurs **XTTS-v2** et **Chatterbox** (expressivité réglable), 100 % hors ligne. |
@@ -43,6 +43,16 @@ Une **version portable** (`.zip`) est également produite : décompressez-la et 
 
 **Configuration conseillée** : Windows 10/11 64 bits, 8 Go de RAM. Pour le clonage de voix, une carte graphique **NVIDIA**
 (4 Go de mémoire vidéo ou plus) accélère énormément la production ; sans elle, le processeur est utilisé (plus lent).
+
+**Temps de calcul mesurés sans carte graphique** (processeur 4 cœurs, par minute de livre audio) :
+
+| Voix | Calcul | Remarque |
+|---|---|---|
+| Voix Microsoft | quelques secondes | Internet requis |
+| Kokoro | moins d'une minute | hors ligne |
+| Clonage rapide | ≈ 1 min | Internet requis ; mode « Fidèle » (≈ 5 min) dans Paramètres → Performances |
+| XTTS-v2 (clonage) | ≈ 3 min | ressemblance la plus fidèle |
+| Chatterbox (clonage) | ≈ 20 min | à réserver aux cartes NVIDIA |
 
 ---
 

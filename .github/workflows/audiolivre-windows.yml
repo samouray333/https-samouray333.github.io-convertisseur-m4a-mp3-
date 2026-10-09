@@ -173,8 +173,18 @@ jobs:
           body: |
             **AudioLivre Studio ${{ steps.ver.outputs.version }}** — transformez vos documents Word et PDF en livres audio professionnels, avec clonage de voix.
 
-            Téléchargez `AudioLivreStudio-Setup-${{ steps.ver.outputs.version }}.exe`, lancez-le et suivez l'assistant.
-            Windows peut afficher « Windows a protégé votre ordinateur » (application non signée) : cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
+            ### Installation
+            - **Installateur** : téléchargez `AudioLivreStudio-Setup-${{ steps.ver.outputs.version }}.exe`, lancez-le et suivez l'assistant (aucun droit administrateur nécessaire).
+            - **Version portable** : décompressez `AudioLivreStudio-Portable-${{ steps.ver.outputs.version }}.zip` et lancez `AudioLivreStudio.exe`.
+            - Windows peut afficher « Windows a protégé votre ordinateur » (application non signée) : cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
+
+            ### Points forts
+            - Import Word, PDF (y compris scannés, avec la reconnaissance de texte de Windows), EPUB, ODT, RTF, TXT, avec aperçu des chapitres.
+            - Plus de 300 voix Microsoft gratuites, voix hors ligne Kokoro et Windows.
+            - Clonage de voix gratuit : clonage rapide (≈ 1 min de calcul par minute de livre sans carte graphique), XTTS-v2 (ressemblance la plus fidèle), Chatterbox (usage commercial).
+            - Relecture automatique par Whisper, émotions par passage, distribution des rôles, lexique de prononciation.
+            - Mastering aux normes ACX/Audible, export M4B chapitré, MP3, FLAC, WAV, Opus, musique d'ouverture et de fin, sous-titres SRT/LRC et vidéo YouTube.
+            - Tout est gratuit ; les moteurs de clonage s'installent en un clic depuis la page « Moteurs IA ».
 
   engines:
     name: Test moteurs IA (optionnel)
