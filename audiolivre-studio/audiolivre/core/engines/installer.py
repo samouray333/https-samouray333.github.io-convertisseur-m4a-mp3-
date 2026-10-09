@@ -54,7 +54,8 @@ class EngineSpec:
 SPECS: dict[str, EngineSpec] = {
     "xtts": EngineSpec(
         id="xtts",
-        packages=["coqui-tts==0.27.5", "soundfile"],
+        # transformers 5 a supprimé des fonctions utilisées par XTTS (isin_mps_friendly)
+        packages=["coqui-tts==0.27.5", "transformers>=4.57,<5", "soundfile"],
         torch_version="2.8.0",
         torch_version_blackwell="2.8.0",
         size_gpu="≈ 5 Go", size_cpu="≈ 1,5 Go", model_size="1,8 Go",
