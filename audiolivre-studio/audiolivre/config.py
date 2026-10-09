@@ -30,6 +30,8 @@ DEFAULTS: dict[str, Any] = {
     "first_run": True,
     "xtts_tos_accepted": False,
     "player_volume": 0.9,
+    "check_updates": True,
+    "asr_model": "base",
 }
 
 

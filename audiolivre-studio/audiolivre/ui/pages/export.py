@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressBar)
+                               QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressBar, QSlider)
 
 from ...core import renderer
 from ...core.exporter import ExportItem, export_audiobook
@@ -189,6 +189,43 @@ class ExportPage(Page):
         row2.addWidget(ms, 1)
         self.body.addLayout(row2)
 
+        # ---- musique
+        mus = Card()
+        mus.add(card_title("Musique", "Jingle d'ouverture et de fin, fond sonore discret sous la narration (baissé "
+                           "automatiquement quand la voix parle). Utilisez des musiques libres de droits.", "headphones"))
+        mg = QGridLayout()
+        mg.setHorizontalSpacing(10)
+        mg.setVerticalSpacing(8)
+        self.music_fields: dict[str, QLineEdit] = {}
+        for row, (key, name) in enumerate((("intro_music", "Jingle d'ouverture"), ("outro_music", "Jingle de fin"),
+                                           ("background_music", "Fond sonore"))):
+            le = QLineEdit()
+            le.setPlaceholderText("Aucune musique")
+            le.setReadOnly(True)
+            pick = button("Choisir…", "folder")
+            pick.clicked.connect(lambda _=False, k=key: self._pick_music(k))
+            clear = button("", "x", "ghost", tooltip="Retirer")
+            clear.clicked.connect(lambda _=False, k=key: self._set_music(k, ""))
+            self.music_fields[key] = le
+            mg.addWidget(label(name, "Muted"), row, 0)
+            mg.addWidget(le, row, 1)
+            mg.addWidget(pick, row, 2)
+            mg.addWidget(clear, row, 3)
+        mg.setColumnStretch(1, 1)
+        mus.add(mg)
+        lr = QHBoxLayout()
+        lr.addWidget(label("Volume du fond sonore", "Muted"))
+        self.bg_level = QSlider(Qt.Horizontal)
+        self.bg_level.setRange(-35, -10)
+        self.bg_level.valueChanged.connect(self._bg_level_changed)
+        self.bg_level_lbl = label("", "Muted")
+        lr.addWidget(self.bg_level, 1)
+        lr.addWidget(self.bg_level_lbl)
+        mus.add(lr)
+        mus.add(label("Audible/ACX refuse la musique sous la narration : gardez le fond sonore pour YouTube, les "
+                      "podcasts ou une diffusion personnelle.", "Hint", wrap=True))
+        self.body.addWidget(mus)
+
         # ---- crédits + destination
         row3 = QHBoxLayout()
         row3.setSpacing(18)
@@ -301,6 +338,10 @@ class ExportPage(Page):
         self.out_dir.setText(str(default_export_dir(pr)))
         self.pattern.setText(e.file_pattern)
         self.t_report.setChecked(e.write_report)
+        for key, le in self.music_fields.items():
+            le.setText(getattr(e, key, "") or "")
+        self.bg_level.setValue(int(round(e.background_level_db)))
+        self.bg_level_lbl.setText(f"{int(round(e.background_level_db))} dB sous la voix")
         self._loading = False
         self.prog_card.hide()
 
@@ -370,6 +411,23 @@ class ExportPage(Page):
         prod.room_tone = self.t_room.isChecked()
         self.ctx.mark_dirty()
 
+    def _pick_music(self, key: str) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Choisir une musique", "",
+                                              "Audio (*.mp3 *.wav *.flac *.m4a *.ogg *.opus *.aac)")
+        if path:
+            self._set_music(key, path)
+
+    def _set_music(self, key: str, path: str) -> None:
+        setattr(self.ctx.project.export, key, path)
+        self.music_fields[key].setText(path)
+        self.ctx.mark_dirty()
+
+    def _bg_level_changed(self, v: int) -> None:
+        self.bg_level_lbl.setText(f"{v} dB sous la voix")
+        if not self._loading:
+            self.ctx.project.export.background_level_db = float(v)
+            self.ctx.mark_dirty()
+
     def _pick_cover(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Choisir une couverture", "",
                                               "Images (*.jpg *.jpeg *.png *.webp *.bmp)")
@@ -414,7 +472,11 @@ class ExportPage(Page):
                 return
         if not ready:
             return
-        items = [ExportItem(rc.title, renderer.chapter_output(pr, rc.id), rc.kind) for rc in ready]
+        items = []
+        for rc in ready:
+            timings = renderer.segment_timings(pr, rc)
+            cues = [(a, b, seg.display or seg.text) for (a, b), seg in zip(timings, rc.segments)]
+            items.append(ExportItem(rc.title, renderer.chapter_output(pr, rc.id), rc.kind, cues))
         prod = pr.production
         mopts = MasteringOptions(preset=prod.mastering_preset, denoise=prod.denoise, deesser=prod.deesser,
                                  room_tone=prod.room_tone, room_tone_db=prod.room_tone_db,
@@ -448,7 +510,8 @@ class ExportPage(Page):
         self.prog_lbl.setText(f"Export terminé — {len(result.files)} fichier(s) dans {result.output_dir}")
         p = theme.CURRENT
         for f in result.files:
-            ic = {".m4b": "book", ".mp3": "headphones", ".jpg": "image"}.get(f.suffix.lower(), "file")
+            ic = {".m4b": "book", ".mp3": "headphones", ".jpg": "image", ".mp4": "image",
+                  ".srt": "type"}.get(f.suffix.lower(), "file")
             try:
                 size = f.stat().st_size / 1e6
             except OSError:

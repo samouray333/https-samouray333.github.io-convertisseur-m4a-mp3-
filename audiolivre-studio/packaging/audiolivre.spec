@@ -51,7 +51,13 @@ hiddenimports = collect_submodules("num2words") + [
     "ebooklib", "ebooklib.epub", "bs4", "lxml", "lxml.etree", "docx", "striprtf.striprtf", "pymupdf",
     "soundfile", "sounddevice", "soxr", "mutagen.mp4", "mutagen.id3", "mutagen.flac",
     "PySide6.QtSvg",
+    "winrt.windows.media.ocr", "winrt.windows.graphics.imaging", "winrt.windows.storage.streams",
+    "winrt.windows.globalization", "winrt.windows.foundation", "winrt.windows.foundation.collections",
 ]
+try:
+    hiddenimports += collect_submodules("winrt")
+except Exception as exc:  # paquet absent hors Windows
+    print("winrt non trouvé :", exc)
 
 excludes = ["tkinter", "matplotlib", "scipy", "pandas", "IPython", "pytest", "PyInstaller",
             "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQuickControls2",

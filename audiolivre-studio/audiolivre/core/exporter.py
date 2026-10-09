@@ -28,6 +28,7 @@ class ExportItem:
     title: str
     source: Path  # rendu brut du chapitre
     kind: str = "chapter"  # opening | chapter | closing
+    cues: list[tuple[float, float, str]] = field(default_factory=list)  # sous-titres (début, fin, texte)
 
 
 @dataclass
@@ -226,7 +227,7 @@ def export_audiobook(
         if progress:
             progress(msg, max(0.0, min(1.0, frac)))
 
-    total_steps = len(items) + len(formats) * max(1, len(items) // 3) + 2
+    total_steps = len(items) + len(formats) * max(1, len(items) // 3) + 3
     step = 0
 
     def advance(msg: str, n: float = 1.0):
@@ -245,12 +246,25 @@ def export_audiobook(
             else:
                 result.files.append(cover)
 
-        # 2) Mastering de chaque piste
+        # 2) Musique puis mastering de chaque piste
         mastered: list[tuple[ExportItem, Path, float]] = []
+        offsets: dict[int, float] = {}
         for i, it in enumerate(items, 1):
             report(f"Mastering : {it.title}", step / total_steps)
+            src = it.source
+            try:
+                src, offsets[i] = add_music(src, td / f"{i:03d}-music.wav", settings, it.kind,
+                                            first=i == 1, last=i == len(items), cancel=cancel)
+            except ffmpeg.Cancelled:
+                raise
+            except Exception as exc:
+                log.warning("Musique non ajoutée à « %s » : %s", it.title, exc)
+                result.warnings.append(f"Musique non ajoutée à « {it.title} » : {exc}")
+                offsets[i] = 0.0
+            if offsets[i] and it.cues:
+                it = ExportItem(it.title, it.source, it.kind, [(a + offsets[i], b + offsets[i], t) for a, b, t in it.cues])
             dst = td / f"{i:03d}.wav"
-            stats = master_file(it.source, dst, mastering, cancel=cancel)
+            stats = master_file(src, dst, mastering, cancel=cancel)
             result.stats.append((it.title, stats))
             mastered.append((it, dst, stats.duration))
             advance(f"Mastering : {it.title}")
@@ -339,6 +353,35 @@ def export_audiobook(
                     result.files.append(target)
                     advance(f"{fmt.upper()} : {it.title}", max(1, n // 3) / n)
 
+        # Sous-titres synchronisés
+        if "subtitles" in formats and any(it.cues for it, _p, _d in mastered):
+            folder = out / f"{base_name} - Sous-titres"
+            folder.mkdir(exist_ok=True)
+            book_cues: list[tuple[float, float, str]] = []
+            t0 = 0.0
+            for idx, (it, _src, d) in enumerate(mastered, 1):
+                stem = track_name(idx, it)
+                (folder / f"{stem}.srt").write_text(to_srt(it.cues), encoding="utf-8")
+                (folder / f"{stem}.lrc").write_text(to_lrc(it.cues, it.title, meta), encoding="utf-8")
+                book_cues += [(a + t0, b + t0, txt) for a, b, txt in it.cues]
+                t0 += d
+            (folder / f"{base_name} (livre complet).srt").write_text(to_srt(book_cues), encoding="utf-8")
+            (folder / f"{base_name} (livre complet).lrc").write_text(to_lrc(book_cues, meta.title, meta),
+                                                                     encoding="utf-8")
+            result.files.append(folder / f"{base_name} (livre complet).srt")
+            advance("Sous-titres terminés", 0.5)
+
+        # Vidéos pour YouTube
+        if "video" in formats:
+            folder = out / f"{base_name} - Vidéos"
+            folder.mkdir(exist_ok=True)
+            for idx, (it, src, d) in enumerate(mastered, 1):
+                report(f"Vidéo : {it.title}", step / total_steps)
+                target = folder / f"{track_name(idx, it)}.mp4"
+                make_video(src, target, cover, it.cues, td, d, cancel=cancel)
+                result.files.append(target)
+                advance(f"Vidéo : {it.title}", max(1, n // 3) / n)
+
         # Extrait commercial (ACX : 1 à 5 minutes, sans musique ni crédits)
         if settings.make_sample:
             body = next(((it, p, d) for it, p, d in mastered if it.kind == "chapter"), None)
@@ -405,3 +448,191 @@ def audio_duration(seconds: float) -> str:
     h, rem = divmod(seconds, 3600)
     m, s = divmod(rem, 60)
     return f"{h} h {m:02d} min {s:02d} s" if h else f"{m} min {s:02d} s"
+
+
+# ---------------------------------------------------------------------------------------
+# Musique
+# ---------------------------------------------------------------------------------------
+def _music_chain(gain_db: float, length: float | None = None, fade_in: float = 0.5, fade_out: float = 3.0) -> str:
+    parts = ["aresample=44100", "aformat=sample_fmts=fltp:channel_layouts=mono"]
+    if length:
+        parts.append(f"atrim=0:{length:.3f}")
+    parts.append(f"volume={gain_db:.2f}dB")
+    if fade_in:
+        parts.append(f"afade=t=in:d={fade_in:.2f}")
+    if length and fade_out:
+        parts.append(f"afade=t=out:st={max(0.0, length - fade_out):.3f}:d={fade_out:.2f}")
+    return ",".join(parts)
+
+
+def _level_db(path: Path) -> float:
+    try:
+        st = audio.analyze_file(path)
+        return st.rms_db
+    except Exception:
+        data, sr = audio.read_audio(path)
+        return audio.analyze_array(data, sr).rms_db
+
+
+def add_music(src: Path, dst: Path, settings: ExportSettings, kind: str, first: bool, last: bool,
+              cancel: threading.Event | None = None) -> tuple[Path, float]:
+    """Ajoute fond sonore / jingles à une piste ; renvoie (fichier, décalage du début de la voix)."""
+    bg = Path(settings.background_music) if settings.background_music else None
+    intro = Path(settings.intro_music) if settings.intro_music and first else None
+    outro = Path(settings.outro_music) if settings.outro_music and last else None
+    bg = bg if (bg and bg.is_file() and kind == "chapter") else None
+    intro = intro if (intro and intro.is_file()) else None
+    outro = outro if (outro and outro.is_file()) else None
+    if not (bg or intro or outro):
+        return src, 0.0
+    voice_db = _level_db(src)
+    if voice_db < -90:
+        return src, 0.0
+    current = src
+    offset = 0.0
+    step = 0
+    voice_fmt = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono"
+
+    def next_path() -> Path:
+        nonlocal step
+        step += 1
+        return dst.with_name(f"{dst.stem}-{step}.wav")
+
+    if bg is not None:
+        dur = audio.duration_of(current)
+        gain = voice_db + settings.background_level_db - _level_db(bg)
+        out = next_path()
+        graph = (f"[1:a]{_music_chain(gain, dur, 2.0, 3.0)}[m];[0:a]{voice_fmt},asplit=2[v1][v2];"
+                 f"[m][v2]sidechaincompress=threshold=0.04:ratio=5:attack=40:release=600[duck];"
+                 f"[v1][duck]amix=inputs=2:duration=first:normalize=0[out]")
+        ffmpeg.run_ffmpeg(["-i", str(current), "-stream_loop", "-1", "-i", str(bg), "-filter_complex", graph,
+                           "-map", "[out]", "-t", f"{dur:.3f}", "-c:a", "pcm_f32le", str(out)], dur, None, cancel)
+        current = out
+    if intro is not None:
+        length = min(audio.duration_of(intro) or 20.0, 25.0)
+        gain = voice_db - 3.0 - _level_db(intro)
+        out = next_path()
+        graph = (f"[1:a]{_music_chain(gain, length, 0.3, min(3.0, length / 3))},apad=pad_dur=0.8[i];"
+                 f"[0:a]{voice_fmt}[v];[i][v]concat=n=2:v=0:a=1[out]")
+        ffmpeg.run_ffmpeg(["-i", str(current), "-i", str(intro), "-filter_complex", graph, "-map", "[out]",
+                           "-c:a", "pcm_f32le", str(out)], None, None, cancel)
+        offset = length + 0.8
+        current = out
+    if outro is not None:
+        length = min(audio.duration_of(outro) or 30.0, 40.0)
+        gain = voice_db - 3.0 - _level_db(outro)
+        out = next_path()
+        graph = (f"[0:a]{voice_fmt},apad=pad_dur=0.6[v];[1:a]{_music_chain(gain, length, 1.0, min(4.0, length / 3))}[o];"
+                 f"[v][o]concat=n=2:v=0:a=1[out]")
+        ffmpeg.run_ffmpeg(["-i", str(current), "-i", str(outro), "-filter_complex", graph, "-map", "[out]",
+                           "-c:a", "pcm_f32le", str(out)], None, None, cancel)
+        current = out
+    return current, offset
+
+
+# ---------------------------------------------------------------------------------------
+# Sous-titres et vidéo
+# ---------------------------------------------------------------------------------------
+def _ts(t: float, sep: str = ",") -> str:
+    t = max(0.0, t)
+    h, rem = divmod(int(t), 3600)
+    m, s_ = divmod(rem, 60)
+    ms = int(round((t - int(t)) * 1000))
+    if ms == 1000:
+        s_, ms = s_ + 1, 0
+    return f"{h:02d}:{m:02d}:{s_:02d}{sep}{ms:03d}"
+
+
+def _wrap_cue(text: str, width: int = 42) -> str:
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > width:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w) if cur else w
+    if cur:
+        lines.append(cur)
+    return "\n".join(lines)
+
+
+def split_cues(cues: list[tuple[float, float, str]], max_chars: int = 84) -> list[tuple[float, float, str]]:
+    """Coupe les passages longs en sous-titres lisibles (durée répartie selon la longueur)."""
+    out = []
+    for start, end, text in cues:
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            continue
+        if len(text) <= max_chars:
+            out.append((start, end, text))
+            continue
+        pieces = re.split(r"(?<=[.!?…;:,])\s+", text)
+        groups, cur = [], ""
+        for p in pieces:
+            if cur and len(cur) + 1 + len(p) > max_chars:
+                groups.append(cur)
+                cur = p
+            else:
+                cur = (cur + " " + p) if cur else p
+        if cur:
+            groups.append(cur)
+        total = sum(len(g) for g in groups) or 1
+        t = start
+        for g in groups:
+            d = (end - start) * len(g) / total
+            out.append((t, t + d, g))
+            t += d
+    return out
+
+
+def to_srt(cues: list[tuple[float, float, str]]) -> str:
+    blocks = []
+    for i, (a, b, text) in enumerate(split_cues(cues), 1):
+        blocks.append(f"{i}\n{_ts(a)} --> {_ts(b)}\n{_wrap_cue(text)}\n")
+    return "\n".join(blocks)
+
+
+def to_lrc(cues: list[tuple[float, float, str]], title: str, meta: BookMetadata) -> str:
+    lines = [f"[ti:{title}]", f"[ar:{meta.author}]", f"[al:{meta.title}]", "[by:AudioLivre Studio]"]
+    for a, _b, text in split_cues(cues):
+        m, s_ = divmod(max(0.0, a), 60)
+        lines.append(f"[{int(m):02d}:{s_:05.2f}]{text}")
+    return "\n".join(lines) + "\n"
+
+
+def _video_encoder() -> list[str]:
+    for name, opts in (("libx264", ["-preset", "veryfast", "-tune", "stillimage", "-crf", "26"]),
+                       ("libopenh264", ["-b:v", "1500k"]),
+                       ("h264_mf", ["-b:v", "1500k"]),
+                       ("mpeg4", ["-q:v", "5"])):
+        if ffmpeg.has_encoder(name):
+            return ["-c:v", name, *opts]
+    return ["-c:v", "mpeg4", "-q:v", "5"]
+
+
+def make_video(audio_src: Path, target: Path, cover: Path | None, cues: list[tuple[float, float, str]], td: Path,
+               duration: float, cancel: threading.Event | None = None) -> Path:
+    """Vidéo 1280 × 720 : couverture sur fond flouté, onde sonore animée, sous-titres intégrés."""
+    args = []
+    if cover and cover.is_file():
+        args += ["-loop", "1", "-framerate", "25", "-i", str(cover)]
+        graph = ("[0:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,boxblur=24:2,"
+                 "eq=brightness=-0.18[bg];[0:v]scale=-2:440[fg];[bg][fg]overlay=(W-w)/2:50[base];")
+    else:
+        args += ["-f", "lavfi", "-i", "color=c=0x1d1640:s=1280x720:r=25"]
+        graph = "[0:v]null[base];"
+    args += ["-i", str(audio_src)]
+    graph += ("[1:a]aformat=channel_layouts=mono,showwaves=s=1280x150:mode=cline:rate=25:"
+              "colors=0xE9E2FF,format=rgba,colorchannelmixer=aa=0.85[w];"
+              "[base][w]overlay=0:H-175:shortest=1,format=yuv420p[v]")
+    sub_args: list[str] = []
+    if cues:
+        srt = td / f"{target.stem}.srt"
+        srt.write_text(to_srt(cues), encoding="utf-8")
+        args += ["-i", str(srt)]
+        sub_args = ["-map", "2:s", "-c:s", "mov_text", "-metadata:s:s:0", "language=fra"]
+    ffmpeg.run_ffmpeg([*args, "-filter_complex", graph, "-map", "[v]", "-map", "1:a", *sub_args,
+                       *_video_encoder(), "-r", "25", "-c:a", "aac", "-b:a", "128k", "-shortest",
+                       "-movflags", "+faststart", str(target)], duration, None, cancel)
+    return target
+

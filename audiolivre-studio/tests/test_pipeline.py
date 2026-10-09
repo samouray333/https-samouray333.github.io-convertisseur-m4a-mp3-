@@ -178,3 +178,34 @@ def test_word_error():
 
     assert word_error("Il revint le 1er mai 1984.", "il revint le premier mai 1984") == 0.0
     assert word_error("Bonjour tout le monde.", "bla bla") > 0.5
+
+
+def test_srt_and_lrc():
+    from audiolivre.core.exporter import split_cues, to_lrc, to_srt
+    from audiolivre.core.models import BookMetadata
+
+    cues = [(0.5, 2.0, "Bonjour."), (2.5, 10.0, "Une très longue phrase, " * 8)]
+    srt = to_srt(cues)
+    assert srt.startswith("1\n00:00:00,500 --> 00:00:02,000\nBonjour.")
+    assert len(split_cues(cues)) > 2
+    assert "[00:00.50]Bonjour." in to_lrc(cues, "T", BookMetadata())
+
+
+@needs_ffmpeg
+def test_music_mixing(tmp_path):
+    from audiolivre.core import ffmpeg
+    from audiolivre.core.exporter import add_music
+    from audiolivre.core.models import ExportSettings
+
+    sr = 44100
+    t = np.arange(sr * 4) / sr
+    voice = tmp_path / "v.flac"
+    audio.write_audio(voice, (0.1 * np.sin(2 * np.pi * 200 * t)).astype(np.float32), sr)
+    music = tmp_path / "m.wav"
+    ffmpeg.run_ffmpeg(["-f", "lavfi", "-i", "sine=frequency=440:duration=5", str(music)])
+    st = ExportSettings(intro_music=str(music), outro_music=str(music), background_music=str(music))
+    out, offset = add_music(voice, tmp_path / "out.wav", st, "chapter", first=True, last=True)
+    assert offset > 4.5
+    assert audio.duration_of(out) > 4 + 4.5 + 4
+    same, off2 = add_music(voice, tmp_path / "o2.wav", ExportSettings(), "chapter", True, True)
+    assert same == voice and off2 == 0.0

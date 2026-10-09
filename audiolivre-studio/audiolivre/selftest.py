@@ -135,6 +135,28 @@ def run_selftest(report_path: Path) -> int:
         assert len(doc.chapters) >= 3, [c.title for c in doc.chapters]
         return [c.title for c in doc.chapters]
 
+    @check("reconnaissance de texte (OCR Windows)", critical=False)
+    def _():
+        from .core import ocr
+
+        if not ocr.ocr_available():
+            return "ignoré : OCR Windows indisponible"
+        import pymupdf as fitz
+
+        src = fitz.open()
+        page = src.new_page()
+        page.insert_text((72, 120), "Chapter One", fontsize=28)
+        page.insert_text((72, 180), "The quick brown fox jumps over the lazy dog.", fontsize=16)
+        pix = page.get_pixmap(dpi=200)
+        scan = fitz.open()
+        p2 = scan.new_page(width=page.rect.width, height=page.rect.height)
+        p2.insert_image(p2.rect, stream=pix.tobytes("png"))
+        path = work / "scan.pdf"
+        scan.save(str(path))
+        text = "\n".join(ocr.ocr_pdf(path, "en"))
+        assert "fox" in text.lower() or "quick" in text.lower(), text
+        return text[:80]
+
     @check("normalisation du texte")
     def _():
         from .core.textproc import normalize_for_speech

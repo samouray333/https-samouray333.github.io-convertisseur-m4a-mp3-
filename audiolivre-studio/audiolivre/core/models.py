@@ -122,6 +122,8 @@ EXPORT_FORMATS = {
     "wav": "WAV — masters 24 bits sans perte",
     "flac": "FLAC — sans perte compressé",
     "opus": "Opus — très compact (lecture en ligne)",
+    "subtitles": "Sous-titres synchronisés (SRT et LRC) pour chaque piste",
+    "video": "Vidéo MP4 par chapitre pour YouTube (couverture, onde animée, sous-titres)",
 }
 
 
@@ -140,6 +142,10 @@ class ExportSettings:
     acx_cover: bool = True
     file_pattern: str = "{index:02d} - {title}"
     write_report: bool = True
+    intro_music: str = ""  # jingle avant la première piste
+    outro_music: str = ""  # jingle après la dernière piste
+    background_music: str = ""  # fond sonore sous la narration des chapitres
+    background_level_db: float = -20.0  # niveau du fond sonore par rapport à la voix
 
     @classmethod
     def from_dict(cls, d):

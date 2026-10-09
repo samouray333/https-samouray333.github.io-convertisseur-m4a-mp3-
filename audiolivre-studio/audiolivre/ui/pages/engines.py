@@ -90,7 +90,7 @@ class EngineCard(Card):
         self.remove_btn.clicked.connect(lambda: page.uninstall(self))
         self.spinner = Spinner()
         self.spinner.hide()
-        if info.requires_install:
+        if info.requires_install and info.id != "whisper":
             row.addWidget(self.device)
         row.addWidget(self.spinner)
         row.addStretch(1)

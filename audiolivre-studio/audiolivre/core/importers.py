@@ -26,7 +26,13 @@ SUPPORTED_EXTENSIONS = {
     ".markdown": "Markdown",
     ".html": "Page HTML",
     ".htm": "Page HTML",
+    ".png": "Photo de page (OCR)",
+    ".jpg": "Photo de page (OCR)",
+    ".jpeg": "Photo de page (OCR)",
+    ".tif": "Page scannée (OCR)",
+    ".tiff": "Page scannée (OCR)",
 }
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
 FILE_FILTER = "Documents ({});;Tous les fichiers (*)".format(
     " ".join(f"*{ext}" for ext in SUPPORTED_EXTENSIONS)
@@ -77,6 +83,8 @@ def import_document(path: str | Path, split_chapters: bool = True) -> ImportedDo
             doc = _import_docx(p)
         elif ext == ".pdf":
             doc = _import_pdf(p)
+        elif ext in IMAGE_EXTENSIONS:
+            doc = _import_image(p)
         elif ext == ".epub":
             doc = _import_epub(p)
         elif ext == ".odt":
@@ -462,11 +470,9 @@ def _import_pdf(p: Path) -> ImportedDocument:
                 sizes.extend([size] * max(1, len(text) // 20))
         pages_lines.append(lines)
 
-    if not sizes:
-        raise ImportErrorUser(
-            "Ce PDF ne contient pas de texte sélectionnable (probablement un scan). "
-            "Utilisez un logiciel d'OCR pour le convertir avant l'import."
-        )
+    text_chars = sum(len(t) for lines in pages_lines for t, *_rest in lines)
+    if not sizes or text_chars < 40 * max(1, len(pages_lines)):
+        return _import_pdf_ocr(p, meta, doc)
     body_size = statistics.median(sizes)
 
     # En-têtes et pieds de page répétés à éliminer (petits caractères en haut ou en bas de page ;
@@ -643,3 +649,98 @@ def _import_epub(p: Path) -> ImportedDocument:
     except Exception:
         pass
     return doc
+
+
+# ---------------------------------------------------------------------------------------
+# Documents scannés (OCR intégré à Windows)
+# ---------------------------------------------------------------------------------------
+def _ocr_unavailable_error() -> ImportErrorUser:
+    return ImportErrorUser(
+        "Ce document est une image (scan) : son texte doit être reconnu par OCR. La reconnaissance de texte "
+        "intégrée à Windows 10/11 n'est pas disponible ici. Vérifiez qu'une langue (français) est installée "
+        "dans Paramètres Windows > Heure et langue, ou convertissez le document avec un logiciel d'OCR."
+    )
+
+
+def _import_pdf_ocr(p: Path, meta: BookMetadata, doc) -> ImportedDocument:
+    from . import ocr
+
+    if not ocr.ocr_available():
+        raise _ocr_unavailable_error()
+    lang = meta.language or "fr"
+    pages = ocr.ocr_pdf(p, lang, progress=lambda i, n: log.info("OCR page %d/%d", i, n))
+    text = "\n\n".join(t for t in pages if t.strip())
+    if not text.strip():
+        raise ImportErrorUser("Aucun texte n'a pu être reconnu dans ce document scanné.")
+    result = _from_blocks(_text_blocks(text), meta)
+    result.warnings.append("Texte reconnu automatiquement (OCR) : relisez-le, des erreurs de lecture sont possibles.")
+    try:
+        pix = doc[0].get_pixmap(dpi=150)
+        result.cover_bytes = pix.tobytes("png")
+        result.cover_ext = ".png"
+    except Exception:
+        pass
+    return result
+
+
+def _import_image(p: Path) -> ImportedDocument:
+    from . import ocr
+
+    if not ocr.ocr_available():
+        raise _ocr_unavailable_error()
+    import pymupdf
+
+    pix = pymupdf.Pixmap(str(p))
+    if pix.alpha or pix.n > 3:
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+    text = ocr.ocr_image_bytes(pix.tobytes("png"), "fr")
+    if not text.strip():
+        raise ImportErrorUser("Aucun texte n'a été reconnu sur cette image.")
+    result = _from_blocks(_text_blocks(text))
+    result.warnings.append("Texte reconnu automatiquement (OCR) : relisez-le, des erreurs de lecture sont possibles.")
+    return result
+
+
+
+# ---------------------------------------------------------------------------------------
+# Redécoupage (aperçu avant import)
+# ---------------------------------------------------------------------------------------
+SPLIT_MODES = {
+    "auto": "Automatique (titres du document)",
+    "deep": "Titres et sous-titres",
+    "patterns": "Repères « Chapitre … » dans le texte",
+    "size": "Parties d'environ 30 minutes",
+    "single": "Un seul chapitre",
+}
+
+
+def _chapters_to_blocks(chapters: list[Chapter]) -> list[_Block]:
+    blocks: list[_Block] = []
+    for ch in chapters:
+        if ch.title.strip():
+            blocks.append(_Block(ch.title.strip(), level=1))
+        for para in re.split(r"\n\s*\n", ch.text):
+            para = para.strip()
+            if not para:
+                continue
+            m = re.match(r"^(#{1,6})\s+(.*)$", para)
+            if m:
+                blocks.append(_Block(m.group(2).strip(), level=min(3, len(m.group(1)) + 1)))
+            else:
+                blocks.append(_Block(para))
+    return blocks
+
+
+def resplit(chapters: list[Chapter], mode: str, book_title: str = "") -> list[Chapter]:
+    """Redécoupe les chapitres importés selon un autre mode."""
+    blocks = _chapters_to_blocks(chapters)
+    if mode == "single":
+        text = "\n\n".join(("# " + b.text) if b.level else b.text for b in blocks)
+        return [Chapter(title=book_title or "Texte intégral", text=text)]
+    if mode == "size":
+        return _split_by_size("\n\n".join(b.text for b in blocks))
+    if mode == "patterns":
+        return blocks_to_chapters([_Block(b.text) for b in blocks])
+    if mode == "deep":
+        return blocks_to_chapters([_Block(b.text, level=1 if b.level in (1, 2) else b.level) for b in blocks])
+    return blocks_to_chapters(blocks)

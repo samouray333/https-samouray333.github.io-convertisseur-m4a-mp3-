@@ -13,7 +13,7 @@ from ...config import settings
 from ...core import ffmpeg
 from ...core.engines import installer
 from .. import theme
-from ..widgets import Card, button, card_title, label
+from ..widgets import Card, ToggleSwitch, button, card_title, label
 from .base import Page
 
 
@@ -157,9 +157,18 @@ class SettingsPage(Page):
         about.add(label("Rappel : n'utilisez le clonage qu'avec votre propre voix ou avec l'accord explicite de la "
                         "personne concernée, et assurez-vous de disposer des droits sur les textes que vous "
                         "enregistrez.", "Hint", wrap=True))
+        self.t_updates = ToggleSwitch("Vérifier les mises à jour au démarrage", bool(s.get("check_updates", True)))
+        self.t_updates.toggled.connect(lambda on: s.set("check_updates", on))
+        about.add(self.t_updates)
+        ar = QHBoxLayout()
         ab = button("À propos et licences", "info")
         ab.clicked.connect(window.about)
-        about.add(ab, None)
+        upd = button("Vérifier les mises à jour", "refresh")
+        upd.clicked.connect(lambda: window.check_updates(silent=False))
+        ar.addWidget(ab)
+        ar.addWidget(upd)
+        ar.addStretch(1)
+        about.add(ar)
         self.body.addWidget(about)
         self.body.addStretch(1)
 

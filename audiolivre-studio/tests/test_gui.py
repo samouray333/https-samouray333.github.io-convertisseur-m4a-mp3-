@@ -63,3 +63,25 @@ def test_theme_light(app):
     p = theme.apply(app, "light", "#10B981")
     assert not p.dark
     theme.apply(app, "dark")
+
+
+def test_import_preview_dialog(app):
+    from PySide6.QtCore import Qt
+
+    from audiolivre.core.importers import ImportedDocument
+    from audiolivre.core.models import BookMetadata, Chapter
+    from audiolivre.ui.dialogs.import_preview import ImportPreviewDialog
+
+    chapters = [Chapter("Sommaire", "1. A\n\n2. B"), Chapter("Chapitre 1", "Texte.\n\n# Partie\n\nSuite."),
+                Chapter("Chapitre 2", "Fin.")]
+    doc = ImportedDocument(chapters=chapters, metadata=BookMetadata(title="Livre"))
+    dlg = ImportPreviewDialog(doc, "livre.docx")
+    dlg.list.item(0).setCheckState(Qt.Unchecked)
+    assert not dlg.chapters[0].include
+    dlg.mode.setCurrentIndex(dlg.mode.findData("deep"))
+    assert [c.title for c in dlg.chapters][-3:] == ["Chapitre 1", "Partie", "Chapitre 2"]
+    dlg.mode.setCurrentIndex(dlg.mode.findData("auto"))
+    dlg.list.setCurrentRow(2)
+    dlg._merge_prev()
+    dlg._accept()
+    assert len(doc.chapters) == 2

@@ -221,7 +221,8 @@ class ManuscriptPage(Page):
         self.role_menu = QMenu(self)
         self.role_menu.aboutToShow.connect(self._fill_roles)
         self.role_btn.setMenu(self.role_menu)
-        preview = button("Aperçu de lecture", "eye", tooltip="Montre exactement ce qui sera lu, segment par segment")
+        preview = button("Aperçu", "eye",
+                         tooltip="Aperçu de lecture : montre exactement ce qui sera lu, segment par segment")
         preview.clicked.connect(self.reading_preview)
         listen = button("Écouter", "headphones", "primary", tooltip="Écoute la sélection (ou le paragraphe)")
         listen.clicked.connect(self.listen_selection)

@@ -94,6 +94,14 @@ class Sidebar(QFrame):
             lay.addWidget(self._nav(key, text, ic))
         lay.addStretch(1)
 
+        self.update_btn = QPushButton("  Mise à jour disponible")
+        self.update_btn.setObjectName("Primary")
+        self.update_btn.setIcon(icons.icon("download", "#FFFFFF", 16))
+        self.update_btn.setCursor(Qt.PointingHandCursor)
+        self.update_btn.hide()
+        lay.addWidget(self.update_btn)
+        lay.addSpacing(8)
+
         chip = QFrame()
         chip.setObjectName("ProjectChip")
         cl = QVBoxLayout(chip)
@@ -195,6 +203,39 @@ class MainWindow(QMainWindow):
         self.show_page("home")
         self._on_project_changed()
         apply_window_chrome(self)
+        self._update_info: dict | None = None
+        self.sidebar.update_btn.clicked.connect(self._open_update)
+        if settings().get("check_updates", True):
+            QTimer.singleShot(5000, lambda: self.check_updates(silent=True))
+
+    # -- mises à jour ------------------------------------------------------------------
+    def check_updates(self, silent: bool = False) -> None:
+        from ..core import updates
+
+        def done(rel):
+            if rel:
+                self._update_info = rel
+                self.sidebar.update_btn.setText(f"  Version {rel['version']} disponible")
+                self.sidebar.update_btn.show()
+                self.ctx.toast(f"Une nouvelle version ({rel['version']}) d'AudioLivre Studio est disponible : "
+                               "cliquez sur le bouton en bas à gauche pour la télécharger.", "info", 9000)
+            elif not silent:
+                self.ctx.toast("Vous avez la dernière version d'AudioLivre Studio.", "success")
+
+        def fail(msg, _tb):
+            if not silent:
+                self.ctx.toast(f"Vérification impossible : {msg}", "warning")
+
+        self._update_task = tasks.run(updates.check_for_update, on_done=done, on_error=fail)
+
+    def _open_update(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from ..core import updates
+
+        rel = self._update_info or {}
+        QDesktopServices.openUrl(QUrl(rel.get("download") or rel.get("url") or updates.RELEASES_PAGE))
 
     # -- menus & raccourcis ------------------------------------------------------------
     def _build_menu(self) -> None:
@@ -342,6 +383,11 @@ class MainWindow(QMainWindow):
         self._import_task = tasks.run(work, on_done=done, on_error=fail)
 
     def _create_project_from(self, doc, source: str) -> None:
+        from .dialogs.import_preview import ImportPreviewDialog
+
+        dlg = ImportPreviewDialog(doc, Path(source).name, self)
+        if not dlg.exec():
+            return
         pr = Project(metadata=doc.metadata, source_file=source)
         for ch in doc.chapters:
             ch.text = clean_imported_text(ch.text)
@@ -368,8 +414,6 @@ class MainWindow(QMainWindow):
         words = pr.word_count()
         self.ctx.toast(f"Projet créé : {len(pr.chapters)} chapitres, {words:,} mots détectés.".replace(",", " "),
                        "success", 5000)
-        for w in doc.warnings:
-            self.ctx.toast(w, "warning", 6000)
         self.show_page("manuscript")
 
     def open_project_dialog(self) -> None:

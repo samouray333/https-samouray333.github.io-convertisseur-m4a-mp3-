@@ -12,15 +12,21 @@ import du manuscrit, découpage en chapitres, choix ou **clonage de voix**, dist
 
 | | |
 |---|---|
-| 📄 **Import intelligent** | Word (.docx), PDF, EPUB, ODT, RTF, Markdown, HTML, TXT. Détection automatique des chapitres (styles de titres, table des matières PDF, motifs « Chapitre X »), suppression des en-têtes/pieds de page et numéros de page, réparation des césures. |
+| 📄 **Import intelligent** | Word (.docx), PDF, EPUB, ODT, RTF, Markdown, HTML, TXT, **PDF scannés et photos de pages (OCR intégré à Windows)**. Détection automatique des chapitres, suppression des en-têtes/pieds de page, réparation des césures, **aperçu du découpage avant import** (5 modes, inclusion, fusion, renommage). |
 | ✍️ **Éditeur de manuscrit** | Coloration des balises, chapitres réorganisables par glisser-déposer, fusion/découpe, rechercher-remplacer, statistiques et durée estimée, « Écouter la sélection », **aperçu de lecture** (le texte exact qui sera lu). |
 | 🗣️ **Voix gratuites** | Plus de 300 voix neuronales Microsoft (dont ~15 en français, très naturelles), voix Windows hors ligne, Kokoro hors ligne. |
+| ⚡ **Clonage rapide** | Une voix Microsoft lit le texte puis un convertisseur gratuit lui donne votre timbre : idéal sur un ordinateur portable sans carte graphique. |
+| 🔎 **Relecture automatique** | Whisper (gratuit, hors ligne) réécoute chaque passage produit, refait ceux où des mots manquent et signale les passages à vérifier. |
+| 🎭 **Émotions** | Balises `[joyeux]`, `[triste]`, `[colère]`, `[chuchoté]`, `[calme]`, `[peur]`, `[excité]` et menu « Émotion » dans l'éditeur. |
 | 🧬 **Clonage de voix** | Assistant en 4 étapes : importez un enregistrement (audio ou vidéo) ou enregistrez-vous au micro, l'application choisit automatiquement le meilleur extrait, analyse la qualité (bruit, saturation), réduit le bruit, puis vous testez la voix. Moteurs **XTTS-v2** et **Chatterbox** (expressivité réglable), 100 % hors ligne. |
 | 🎭 **Distribution des rôles** | Narrateur, voix des dialogues (détection automatique des « — » et « »), une voix par personnage (`@Marie: …`), voix différente par chapitre. |
 | 🔤 **Prononciation** | Nombres, dates, heures, monnaies, pourcentages, unités, abréviations (M., Mme, Dr…), chiffres romains (Louis XIV, XIXe siècle) lus en toutes lettres. **Lexique** personnalisé avec détection des sigles et test d'écoute. |
 | ⚙️ **Production** | Cache intelligent (seuls les passages modifiés sont régénérés), pause/reprise, estimation du temps restant, **contrôle qualité automatique** (détection des passages ratés et nouvel essai), nouvelle prise passage par passage, réécoute immédiate. |
 | 🎚️ **Mastering pro** | Préréglages ACX/Audible (RMS -19,5 dB, crêtes ≤ -3,6 dB, bruit de fond -72 dB), Streaming (-16 LUFS), Naturel ; de-esser, compression, égalisation, réduction de bruit, ambiance de pièce, silences de début/fin conformes. |
 | 📦 **Export** | M4B avec chapitres et couverture (Apple Books, Smart AudioBook Player…), MP3 par chapitre 192 kb/s CBR 44,1 kHz (ACX), MP3 unique chapitré, WAV 24 bits, FLAC, Opus, playlist M3U, **crédits d'ouverture et de fin**, **extrait commercial**, couverture 2400 × 2400, étiquettes complètes et **rapport qualité ACX** en HTML. |
+| 🎵 **Musique** | Jingles d'ouverture et de fin, fond sonore baissé automatiquement quand la voix parle. |
+| 🎬 **Sous-titres et vidéo** | Sous-titres synchronisés SRT/LRC et vidéo MP4 par chapitre pour YouTube (couverture, onde animée, sous-titres intégrés). |
+| 🔔 **Mises à jour** | L'application vous prévient quand une nouvelle version est publiée. |
 | 💾 **Projets** | Enregistrement automatique, projets récents, partage de voix (`.alsvoice`), mode portable, thèmes sombre/clair et couleurs d'accent. |
 
 ---
@@ -58,6 +64,8 @@ Une **version portable** (`.zip`) est également produite : décompressez-la et 
 | `@Marie: Bonjour !` | Paragraphe lu par la voix du personnage « Marie » |
 | `[voix:Paul]` … `[/voix]` | Passage lu par la voix de « Paul » |
 | `%% note` | Commentaire ignoré à la lecture |
+| `[triste]` (ligne seule) … `[neutre]` | Ton des paragraphes suivants (joyeux, triste, colère, chuchoté, calme, peur, excité) |
+| `[joyeux] Youpi !` ou `@Marie: [colère] Non !` | Ton d'un seul paragraphe |
 
 ### Conseils pour cloner une voix
 
@@ -74,6 +82,7 @@ Une **version portable** (`.zip`) est également produite : décompressez-la et 
 |---|---|---|---|---|
 | Voix neuronales Microsoft | — | Non | Service en ligne | Excellente qualité, très rapide, aucune installation |
 | XTTS-v2 (Coqui) | ✅ | ✅ | CPML (non commercial) | Meilleure prosodie en français, 17 langues |
+| Clonage rapide (Microsoft + Chatterbox VC) | ✅ | Non | MIT + service Microsoft | Le plus rapide sans carte graphique |
 | Chatterbox multilingue (Resemble AI) | ✅ | ✅ | MIT | Expressivité réglable, usage commercial autorisé, filigrane inaudible |
 | Kokoro-82M | mélange de voix | ✅ | Apache 2.0 | Très rapide sans carte graphique |
 | Voix Windows (SAPI/OneCore) | — | ✅ | Windows | Toujours disponible, qualité basique |
