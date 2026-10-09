@@ -103,3 +103,20 @@ def test_clean_imported_text():
 def test_roman():
     assert roman_to_int("XIV") == 14
     assert roman_to_int("IL") is None
+
+
+@pytest.mark.parametrize("src,dialogue,spoken", [
+    ("- Bonjour, dit Marie.", True, "Bonjour, dit Marie."),
+    ("-Bonjour, dit Marie.", True, "Bonjour, dit Marie."),
+    ("—Salut.", True, "Salut."),
+    ("- Viens ici - dit-il - tout de suite.", True, "Viens ici, dit-il, tout de suite."),
+    ("-Bonjour, dit-il. -Salut, répondit Paul.", True, "Bonjour, dit-il. Salut, répondit Paul."),
+    ("-5 degrés ce matin.", False, "moins cinq degrés ce matin."),
+    ("Un porte-monnaie rouge-vif.", False, "Un porte-monnaie rouge-vif."),
+])
+def test_hyphen_dialogues(src, dialogue, spoken):
+    from audiolivre.core.textproc import parse_script
+
+    items = [i for i in parse_script(src, detect_dialogues=True) if i.kind == "para"]
+    assert (items[0].voice_key == "__dialogue__") is dialogue
+    assert normalize_for_speech(src) == spoken

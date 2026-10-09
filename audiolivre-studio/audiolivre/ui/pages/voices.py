@@ -585,7 +585,7 @@ class CastTab(QWidget):
         self.narrator.currentIndexChanged.connect(self._changed)
         self.dialogue = QComboBox()
         self.dialogue.currentIndexChanged.connect(self._changed)
-        self.detect = ToggleSwitch("Détecter automatiquement les dialogues (—, «, \")")
+        self.detect = ToggleSwitch("Détecter automatiquement les dialogues (—, -, «, \")")
         self.detect.toggled.connect(self._changed)
         g.addWidget(label("Narrateur", "Muted"), 0, 0)
         g.addWidget(self.narrator, 0, 1)

@@ -107,3 +107,26 @@ def test_split_by_size_without_titles(tmp_path):
     doc = importers.import_document(p)
     assert len(doc.chapters) >= 2
     assert doc.chapters[0].title == "Partie 1"
+
+
+def test_docx_dash_bullets_become_dialogues(tmp_path):
+    docx = pytest.importorskip("docx")
+    from docx.oxml import parse_xml
+
+    d = docx.Document()
+    w = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    numbering = d.part.numbering_part.element
+    numbering.append(parse_xml(f'<w:abstractNum {w} w:abstractNumId="90"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>'
+                               f'<w:lvlText w:val="-"/></w:lvl></w:abstractNum>'))
+    numbering.append(parse_xml(f'<w:num {w} w:numId="90"><w:abstractNumId w:val="90"/></w:num>'))
+    d.add_heading("Chapitre 1", 1)
+    d.add_paragraph("Marie entra.")
+    for line in ("Bonjour, dit-elle.", "Salut !"):
+        para = d.add_paragraph(line)
+        para._p.get_or_add_pPr().append(parse_xml(f'<w:numPr {w}><w:ilvl w:val="0"/><w:numId w:val="90"/></w:numPr>'))
+    d.add_paragraph("Liste ordinaire", style="List Bullet")
+    p = tmp_path / "dialogues.docx"
+    d.save(str(p))
+    text = importers.import_document(p).chapters[0].text
+    assert "— Bonjour, dit-elle." in text and "— Salut !" in text
+    assert "— Liste ordinaire" not in text and "— Marie entra." not in text

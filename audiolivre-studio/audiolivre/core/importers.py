@@ -381,11 +381,15 @@ def _import_docx(p: Path) -> ImportedDocument:
     import docx  # python-docx
 
     d = docx.Document(str(p))
+    bullets = _docx_dash_bullets(d)
     blocks: list[_Block] = []
     for para in d.paragraphs:
         text = para.text.strip()
         if not text:
             continue
+        # Word transforme souvent « - réplique » en liste à puces : le tiret n'est plus dans le texte.
+        if bullets and _docx_numbering(para) in bullets and not text.startswith(("-", "—", "–")):
+            text = "— " + text
         style = (para.style.name if para.style is not None else "") or ""
         level = 0
         m = _HEADING_STYLE_RE.match(style)
@@ -416,6 +420,49 @@ def _import_docx(p: Path) -> ImportedDocument:
         blocks = blocks[1:]
     doc = _from_blocks(blocks, meta)
     return doc
+
+
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_DASHES = {"-", "–", "—", "−", "‒", "―"}
+
+
+def _docx_dash_bullets(d) -> set[tuple[str, str]]:
+    """Listes à puces dont la puce est un tiret : {(numId, niveau)}."""
+    try:
+        root = d.part.numbering_part.element
+    except Exception:
+        return set()
+    abstract: dict[str, dict[str, bool]] = {}
+    for an in root.iter(_W + "abstractNum"):
+        levels = {}
+        for lvl in an.iter(_W + "lvl"):
+            fmt = lvl.find(_W + "numFmt")
+            txt = lvl.find(_W + "lvlText")
+            levels[lvl.get(_W + "ilvl", "0")] = (
+                fmt is not None and fmt.get(_W + "val") == "bullet"
+                and txt is not None and (txt.get(_W + "val") or "").strip() in _DASHES)
+        abstract[an.get(_W + "abstractNumId")] = levels
+    out = set()
+    for num in root.iter(_W + "num"):
+        ref = num.find(_W + "abstractNumId")
+        levels = abstract.get(ref.get(_W + "val") if ref is not None else "", {})
+        out.update((num.get(_W + "numId"), ilvl) for ilvl, dash in levels.items() if dash)
+    return out
+
+
+def _docx_numbering(para) -> tuple[str, str] | None:
+    """(numId, niveau) de la liste du paragraphe, directe ou héritée de son style."""
+    try:
+        for el in (para._p, para.style.element if para.style is not None else None):
+            ppr = el.find(_W + "pPr") if el is not None else None
+            num = ppr.find(_W + "numPr") if ppr is not None else None
+            if num is not None:
+                nid, lvl = num.find(_W + "numId"), num.find(_W + "ilvl")
+                return (nid.get(_W + "val") if nid is not None else "",
+                        lvl.get(_W + "val", "0") if lvl is not None else "0")
+    except Exception:
+        return None
+    return None
 
 
 def _docx_outline_level(para) -> int | None:

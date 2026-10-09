@@ -88,7 +88,9 @@ PAUSE_RE = re.compile(r"\[\s*pause\s*[:= ]?\s*(\d+(?:[.,]\d+)?)\s*(ms|s)?\s*\]",
 VOICE_SWITCH_RE = re.compile(r"^\[\s*(?:voix|voice)\s*[:=]\s*([^\]]+?)\s*\]\s*$", re.IGNORECASE)
 VOICE_END_RE = re.compile(r"^\[\s*/\s*(?:voix|voice)\s*\]\s*$", re.IGNORECASE)
 CHARACTER_LINE_RE = re.compile(r"^@([^:\n]{1,40}):\s*(.+)$", re.S)
-DIALOGUE_START_RE = re.compile(r"^\s*(?:[—–]|-\s|«|“|\")")
+# Réplique : tiret cadratin, demi-cadratin ou simple (« - Bonjour » comme « -Bonjour », mais pas « -5 »),
+# ou guillemets ouvrants.
+DIALOGUE_START_RE = re.compile(r"^\s*(?:[—–―]|-\s|-(?=[^\W\d_]|[«“\"])|«|“|\")")
 NARRATOR_NAMES = {"narrateur", "narratrice", "narrator", "défaut", "defaut", "default"}
 
 
@@ -582,8 +584,10 @@ def _cleanup_symbols(text: str, lang: str) -> str:
     text = re.sub(r"\.{4,}", "...", text)
     text = re.sub(r"([!?])\1+", r"\1", text)
     # Tirets de dialogue et incises
-    text = re.sub(r"^\s*[—–-]\s+", "", text)
-    text = re.sub(r"\s[—–]\s", ", ", text)
+    text = re.sub(r"^\s*(?:[—–―]|-(?!\d))\s*", "", text)
+    text = re.sub(r"(?<=[.!?…»])\s+(?:[—–―]|-(?!\d))\s*(?=[^\W\d_]|[«\"“])", " ", text)  # nouvelle réplique
+    text = re.sub(r"\s[—–―]\s", ", ", text)
+    text = re.sub(r"(?<=[^\d\s])\s+-\s+(?=[^\d\s])", ", ", text)  # incise « - dit-il - »
     text = re.sub(r"[“”„]", '"', text)
     text = re.sub(r"[‘’‚]", "'", text)
     # Émojis et pictogrammes
