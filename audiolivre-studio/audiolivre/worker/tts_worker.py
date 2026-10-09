@@ -142,6 +142,15 @@ class DummyBackend(Backend):
         sig = 0.3 * np.sin(2 * math.pi * 220 * t) * (0.6 + 0.4 * np.sin(2 * math.pi * 4 * t))
         return {"duration": write_wav(req["out"], sig, self.sr)}
 
+    def convert(self, req):
+        import shutil
+
+        shutil.copyfile(req["source"], req["out"])
+        return {"duration": 0.0}
+
+    def transcribe(self, req):
+        return {"text": req.get("expected", "")}
+
 
 XTTS_LANGS = {"zh": "zh-cn"}
 
@@ -284,7 +293,54 @@ class KokoroBackend(Backend):
         return {"duration": write_wav(req["out"], samples, sr)}
 
 
-BACKENDS = {"dummy": DummyBackend, "xtts": XttsBackend, "chatterbox": ChatterboxBackend, "kokoro": KokoroBackend}
+class ChatterboxVCBackend(Backend):
+    """Conversion de voix : transforme un enregistrement pour lui donner le timbre de la voix clonée."""
+
+    def load(self, device, options):
+        from chatterbox.vc import ChatterboxVC
+
+        self.device = pick_device(device)
+        log("Chargement du convertisseur de voix (le premier lancement télécharge environ 1 Go)…")
+        t0 = time.time()
+        self.model = ChatterboxVC.from_pretrained(self.device)
+        self.sr = int(self.model.sr)
+        self.current = None
+        log(f"Convertisseur prêt sur {self.device} en {time.time() - t0:.0f} s")
+        return {"sr": self.sr, **device_info(self.device)}
+
+    def convert(self, req):
+        refs = req.get("refs") or []
+        if not refs:
+            raise RuntimeError("Aucun enregistrement de référence pour la conversion.")
+        key = (refs[0], os.path.getmtime(refs[0]))
+        if key != self.current:
+            self.model.set_target_voice(refs[0])
+            self.current = key
+        wav = self.model.generate(req["source"])
+        return {"duration": write_wav(req["out"], to_numpy(wav), self.sr)}
+
+
+class WhisperBackend(Backend):
+    """Reconnaissance vocale (relecture automatique des passages produits)."""
+
+    def load(self, device, options):
+        from faster_whisper import WhisperModel
+
+        size = options.get("model") or "base"
+        log(f"Chargement de Whisper « {size} » (le premier lancement télécharge le modèle)…")
+        self.model = WhisperModel(size, device="cpu", compute_type="int8",
+                                  download_root=options.get("model_dir") or None)
+        return {"sr": 16000, "device": "cpu", "model": size}
+
+    def transcribe(self, req):
+        lang = (req.get("language") or "fr").split("-")[0]
+        segments, _info = self.model.transcribe(req["path"], language=lang, beam_size=1,
+                                                condition_on_previous_text=False, vad_filter=False)
+        return {"text": " ".join(seg.text.strip() for seg in segments).strip()}
+
+
+BACKENDS = {"dummy": DummyBackend, "xtts": XttsBackend, "chatterbox": ChatterboxBackend, "kokoro": KokoroBackend,
+            "chatterbox_vc": ChatterboxVCBackend, "whisper": WhisperBackend}
 
 
 # =======================================================================================
@@ -331,6 +387,13 @@ def main() -> int:
                 t0 = time.time()
                 res = backend.synth(req)
                 send({"id": rid, "ok": True, "out": req["out"], "elapsed": time.time() - t0, **res})
+            elif cmd in ("convert", "transcribe"):
+                if not loaded:
+                    backend.load(req.get("device", "auto"), req.get("options", {}))
+                    loaded = True
+                t0 = time.time()
+                res = getattr(backend, cmd)(req)
+                send({"id": rid, "ok": True, "elapsed": time.time() - t0, **res})
             elif cmd == "quit":
                 send({"id": rid, "ok": True})
                 break

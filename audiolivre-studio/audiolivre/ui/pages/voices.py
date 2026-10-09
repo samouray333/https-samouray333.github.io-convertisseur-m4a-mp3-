@@ -26,7 +26,7 @@ COLORS = ["#7C5CFF", "#FF4FA3", "#4FC3F7", "#69F0AE", "#FFB74D", "#FF7A6B", "#B3
 
 def engine_short(engine_id: str) -> str:
     return {"edge": "Microsoft", "sapi": "Windows", "xtts": "XTTS-v2", "chatterbox": "Chatterbox",
-            "kokoro": "Kokoro"}.get(engine_id, engine_id)
+            "kokoro": "Kokoro", "fastclone": "Clonage rapide"}.get(engine_id, engine_id)
 
 
 class VoiceCard(QFrame):
@@ -129,6 +129,12 @@ class VoiceEditor(Card):
         form.addWidget(self.lang, 0, 1)
         form.addWidget(label("Moteur", "Muted"), 1, 0)
         form.addWidget(self.engine, 1, 1)
+        self.base_lbl = label("Voix de base", "Muted")
+        self.base = QComboBox()
+        self.base.setToolTip("Voix Microsoft qui lit le texte avant la conversion vers votre timbre")
+        self.base.currentIndexChanged.connect(self._base_changed)
+        form.addWidget(self.base_lbl, 2, 0)
+        form.addWidget(self.base, 2, 1)
         self.add(form)
         self.engine_hint = label("", "Hint", wrap=True)
         self.add(self.engine_hint)
@@ -202,7 +208,7 @@ class VoiceEditor(Card):
         self.lang.setCurrentIndex(max(0, self.lang.findData(voice.language)))
         self.engine.clear()
         if voice.is_clone:
-            for eid in ("xtts", "chatterbox"):
+            for eid in engines.CLONING_ENGINES:
                 e = engines.get_engine(eid)
                 self.engine.addItem(icons.icon("mic", e.info.accent, 16), e.info.name, eid)
         else:
@@ -211,6 +217,7 @@ class VoiceEditor(Card):
         self.engine.setCurrentIndex(max(0, self.engine.findData(voice.engine)))
         self.engine.setEnabled(voice.is_clone)
         self._loading = False
+        self._fill_base()
         self._build_params()
         self._fill_refs()
         for w in (self.refs_title, self.refs, self.refs_row):
@@ -267,6 +274,29 @@ class VoiceEditor(Card):
             self.voice.color = c
             self._save()
 
+    def _fill_base(self) -> None:
+        v = self.voice
+        show = v is not None and v.engine == "fastclone"
+        self.base_lbl.setVisible(show)
+        self.base.setVisible(show)
+        if not show:
+            return
+        self.base.blockSignals(True)
+        self.base.clear()
+        self.base.addItem("Automatique (selon le timbre)", "")
+        edge = engines.get_engine("edge")
+        for b in edge.list_builtin_voices():
+            if b.language in ("fr", "en"):
+                self.base.addItem(f"{b.name} — {b.locale}", b.id)
+        self.base.setCurrentIndex(max(0, self.base.findData(v.engine_voice or "")))
+        self.base.blockSignals(False)
+
+    def _base_changed(self, _i: int) -> None:
+        if self._loading or self.voice is None or self.voice.engine != "fastclone":
+            return
+        self.voice.engine_voice = self.base.currentData() or ""
+        self.ctx.library.save(self.voice)
+
     def _engine_changed(self, _i: int) -> None:
         if self._loading or self.voice is None:
             return
@@ -274,8 +304,11 @@ class VoiceEditor(Card):
         if eid and eid != self.voice.engine:
             self.voice.engine = eid
             self.voice.params = {}
+            if self.voice.is_clone:
+                self.voice.engine_voice = ""
             self.ctx.library.save(self.voice)
             self._build_params()
+            self._fill_base()
             self.page.refresh_library(keep=self.voice.id)
 
     def _param_changed(self, key: str, value: float) -> None:

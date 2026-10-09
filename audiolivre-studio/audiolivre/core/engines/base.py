@@ -45,6 +45,7 @@ class EngineInfo:
     disk_size: str = ""
     params: list[ParamSpec] = field(default_factory=list)
     accent: str = "#7C5CFF"
+    install_id: str = ""  # moteur à installer (s'il diffère de l'identifiant)
 
 
 @dataclass

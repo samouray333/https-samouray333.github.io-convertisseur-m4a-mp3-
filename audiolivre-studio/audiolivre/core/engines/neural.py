@@ -40,8 +40,10 @@ class WorkerDied(EngineError):
 class WorkerProcess:
     """Processus Python du moteur, piloté par des messages JSON."""
 
-    def __init__(self, engine_id: str, worker_name: str, python: Path, env: dict):
+    def __init__(self, engine_id: str, worker_name: str, python: Path, env: dict, cwd: Path | None = None):
         self.engine_id = engine_id
+        self.cwd = cwd or installer.engine_root(engine_id)
+        self.cwd.mkdir(parents=True, exist_ok=True)
         self.worker_name = worker_name
         self.python = python
         self.env = env
@@ -60,7 +62,7 @@ class WorkerProcess:
         self._ready.clear()
         self.proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace", env=self.env, cwd=str(installer.engine_root(self.engine_id)),
+            encoding="utf-8", errors="replace", env=self.env, cwd=str(self.cwd),
             bufsize=1, **popen_kwargs(),
         )
         threading.Thread(target=self._read_stdout, daemon=True).start()
@@ -248,20 +250,75 @@ ENGINE_INFOS = {
 }
 
 
+ENGINE_INFOS["fastclone"] = EngineInfo(
+    id="fastclone",
+    name="Clonage rapide — Microsoft + conversion",
+    tagline="Clonage · Rapide sans carte graphique",
+    description=(
+        "Une voix Microsoft lit le texte avec une intonation très naturelle, puis un convertisseur gratuit "
+        "lui donne le timbre de votre voix clonée. Beaucoup plus rapide que les autres moteurs de clonage sur "
+        "un ordinateur portable ; la ressemblance est un peu moins fidèle. Nécessite Internet et le moteur "
+        "Chatterbox (licence MIT)."
+    ),
+    supports_cloning=True, requires_install=True, online=True, languages=CHATTERBOX_LANGUAGES,
+    license="MIT + service Microsoft", max_chars=400, min_chars=40, quality=4, speed=4,
+    params=[
+        ParamSpec("rate", "Débit", 0.6, 1.6, 1.0, 0.05),
+        ParamSpec("pitch", "Hauteur de la voix de base (Hz)", -40, 40, 0, 1,
+                  "Rapproche la voix de base de la hauteur de votre voix", decimals=0),
+    ],
+    accent="#FFB74D",
+    install_id="chatterbox",
+)
+
+ENGINE_INFOS["whisper"] = EngineInfo(
+    id="whisper",
+    name="Whisper — relecture automatique",
+    tagline="Contrôle qualité · Hors ligne",
+    description=(
+        "Réécoute chaque passage produit par une voix neuronale, le compare au texte et refait automatiquement "
+        "les passages où des mots sont sautés, mal prononcés ou inventés. Modèle de reconnaissance vocale "
+        "gratuit (OpenAI Whisper, licence MIT), exécuté sur votre ordinateur."
+    ),
+    requires_install=True, languages=["fr", "en", "es", "de", "it", "pt", "nl", "+"], license="MIT",
+    quality=4, speed=4, accent="#26C6DA",
+)
+
+# Voix Microsoft utilisées comme base du clonage rapide (langue, timbre)
+FASTCLONE_BASES = {
+    ("fr", "F"): "fr-FR-DeniseNeural", ("fr", "M"): "fr-FR-HenriNeural", ("fr", ""): "fr-FR-RemyMultilingualNeural",
+    ("en", "F"): "en-US-AvaMultilingualNeural", ("en", "M"): "en-US-AndrewMultilingualNeural",
+    ("en", ""): "en-US-AndrewMultilingualNeural",
+}
+
+
+def fastclone_base(voice: VoiceProfile, language: str) -> str:
+    if voice.engine_voice and "-" in voice.engine_voice:
+        return voice.engine_voice
+    lang = (language or voice.language or "fr").split("-")[0]
+    lang = lang if lang in ("fr", "en") else "fr"
+    return FASTCLONE_BASES.get((lang, voice.gender or ""), FASTCLONE_BASES[(lang, "")])
+
+
 class WorkerEngine(TTSEngine):
-    def __init__(self, engine_id: str):
-        self.info = ENGINE_INFOS[engine_id]
+    def __init__(self, engine_id: str, env_id: str | None = None, worker_name: str | None = None,
+                 info: EngineInfo | None = None):
+        self.info = info or ENGINE_INFOS[engine_id]
         self.engine_id = engine_id
+        self.env_id = env_id or engine_id  # environnement Python (moteur installé)
+        self.worker_name = worker_name or engine_id  # moteur chargé dans le processus
         self._worker: WorkerProcess | None = None
         self._lock = threading.RLock()
         self.load_info: dict = {}
 
     # -- état ---------------------------------------------------------------------------
     def status(self):
-        if not installer.is_installed(self.engine_id):
-            spec = installer.SPECS[self.engine_id]
+        if not installer.is_installed(self.env_id):
+            spec = installer.SPECS[self.env_id]
+            if self.env_id != self.engine_id:
+                return NOT_INSTALLED, f"Nécessite le moteur Chatterbox ({spec.size_cpu} sans GPU) — gratuit"
             return NOT_INSTALLED, f"À installer ({spec.size_gpu} avec GPU, {spec.size_cpu} sans) — gratuit"
-        info = installer.installed_info(self.engine_id) or {}
+        info = installer.installed_info(self.env_id) or {}
         where = "carte graphique" if info.get("device") == "cuda" else "processeur"
         return READY, f"Installé · {where}"
 
@@ -270,7 +327,7 @@ class WorkerEngine(TTSEngine):
 
         pref = settings().get("device", "auto")
         if pref == "auto":
-            info = installer.installed_info(self.engine_id) or {}
+            info = installer.installed_info(self.env_id) or {}
             return "cuda" if info.get("device") == "cuda" else "cpu"
         return pref
 
@@ -278,18 +335,21 @@ class WorkerEngine(TTSEngine):
         with self._lock:
             if self._worker is not None and self._worker.alive():
                 return self._worker
-            if not installer.is_installed(self.engine_id):
+            if not installer.is_installed(self.env_id):
                 raise EngineError(f"Le moteur « {self.info.name} » n'est pas installé. "
                                   "Installez-le depuis la page Moteurs.")
-            w = WorkerProcess(self.engine_id, self.engine_id, installer.env_python(self.engine_id),
-                              installer.worker_env(self.engine_id))
+            w = WorkerProcess(self.engine_id, self.worker_name, installer.env_python(self.env_id),
+                              installer.worker_env(self.env_id), installer.engine_root(self.env_id))
             w.start()
             emit_log(self.engine_id, "Chargement du modèle…")
             self.load_info = w.request("load", timeout=3600, device=self._device(),
-                                       options={"model_dir": str(installer.model_dir(self.engine_id))})
+                                       options=self.load_options())
             self._worker = w
             self._save_speakers(w)
             return w
+
+    def load_options(self) -> dict:
+        return {"model_dir": str(installer.model_dir(self.env_id))}
 
     def _speakers_file(self) -> Path:
         return installer.engine_root(self.engine_id) / "speakers.json"
@@ -371,6 +431,8 @@ class DummyWorkerEngine(WorkerEngine):
         self.info = EngineInfo(id="dummy", name="Moteur de test", tagline="Test", description="Tonalité de test",
                                max_chars=200, params=[ParamSpec("speed", "Débit", 0.5, 2.0, 1.0)])
         self.engine_id = "dummy"
+        self.env_id = "dummy"
+        self.worker_name = "dummy"
         self._worker = None
         self._lock = threading.RLock()
         self.load_info = {}
@@ -395,3 +457,76 @@ class DummyWorkerEngine(WorkerEngine):
 
     def list_builtin_voices(self, refresh: bool = False):
         return [BuiltinVoice(id="test", name="Test", language="fr")]
+
+
+class FastCloneEngine(WorkerEngine):
+    """Voix Microsoft convertie vers le timbre d'une voix clonée (Chatterbox VC)."""
+
+    def __init__(self):
+        super().__init__("fastclone", env_id="chatterbox", worker_name="chatterbox_vc")
+
+    def list_builtin_voices(self, refresh: bool = False) -> list[BuiltinVoice]:
+        return []
+
+    def synthesize(self, text, voice: VoiceProfile, out_path: Path, language: str, speed: float = 1.0,
+                   seed: int | None = None) -> Path:
+        import tempfile
+
+        from .. import audio
+        from . import get_engine
+
+        refs = [str(p) for p in voice.reference_paths() if p.exists()]
+        if not refs:
+            raise EngineError(f"La voix « {voice.name} » n'a pas d'enregistrement de référence.")
+        params = self.merged_params(voice)
+        base = VoiceProfile(name="base", engine="edge", engine_voice=fastclone_base(voice, language),
+                            params={"rate": params.get("rate", 1.0), "pitch": params.get("pitch", 0)})
+        edge = get_engine("edge")
+        target = Path(out_path).with_suffix(".wav")
+        with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
+            spoken = edge.synthesize(text, base, Path(td) / "base.mp3", language, speed, seed)
+            data, sr = audio.read_audio(spoken)
+            src = audio.write_audio(Path(td) / "base.wav", data, sr, subtype="PCM_16")
+            for attempt in range(2):
+                w = self._ensure()
+                try:
+                    w.request("convert", timeout=900, source=str(src), refs=refs, out=str(target),
+                              device=self._device())
+                    break
+                except WorkerDied:
+                    with self._lock:
+                        self._worker = None
+                    if attempt == 1:
+                        raise
+        return target
+
+
+class WhisperTool(WorkerEngine):
+    """Reconnaissance vocale pour la relecture automatique (pas une voix)."""
+
+    def __init__(self):
+        super().__init__("whisper")
+
+    def load_options(self) -> dict:
+        from ...config import settings
+
+        return {"model_dir": str(installer.model_dir("whisper")), "model": settings().get("asr_model", "base")}
+
+    def list_builtin_voices(self, refresh: bool = False) -> list[BuiltinVoice]:
+        return []
+
+    def synthesize(self, *args, **kwargs):  # pragma: no cover - outil sans voix
+        raise EngineError("Whisper ne produit pas de voix.")
+
+    def transcribe(self, path: Path, language: str = "fr") -> str:
+        for attempt in range(2):
+            w = self._ensure()
+            try:
+                return w.request("transcribe", timeout=600, path=str(path), language=language).get("text", "")
+            except WorkerDied:
+                with self._lock:
+                    self._worker = None
+                if attempt == 1:
+                    raise
+        return ""
+

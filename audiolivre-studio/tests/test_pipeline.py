@@ -138,3 +138,43 @@ def test_safe_filename(name, expected):
     from audiolivre.core.exporter import safe_filename
 
     assert safe_filename(name) == expected
+
+
+def test_emotion_changes_key_and_params(tmp_path, tone_engine, library):
+    from audiolivre.core.emotions import apply_emotion
+
+    v = library.save(VoiceProfile(name="N", engine="tone"))
+    pr = make_project(tmp_path, v.id, text="[triste]\n\nIl pleuvait.\n\n[neutre]\n\nIl pleuvait.")
+    pr.export.include_credits = False
+    segs = renderer.build_plan(pr, library)[0].segments
+    sad, neutral = segs[1], segs[2]
+    assert sad.emotion == "triste" and neutral.emotion == ""
+    assert sad.key != neutral.key
+    cb = VoiceProfile(name="C", engine="chatterbox", params={"exaggeration": 0.5})
+    adj, speed, gain = apply_emotion(cb, "colère")
+    assert adj.params["exaggeration"] > 0.5 and speed > 1.0 and gain == 0.0
+    assert cb.params["exaggeration"] == 0.5  # la voix d'origine n'est pas modifiée
+    _, _, whisper_gain = apply_emotion(cb, "chuchoté")
+    assert whisper_gain < 0
+
+
+def test_worker_convert_and_transcribe(tmp_path):
+    from audiolivre.core.engines.neural import DummyWorkerEngine
+
+    eng = DummyWorkerEngine()
+    try:
+        w = eng._ensure()
+        src = tmp_path / "src.wav"
+        audio.write_audio(src, np.zeros(1600, dtype=np.float32), 16000, "PCM_16")
+        w.request("convert", source=str(src), refs=[str(src)], out=str(tmp_path / "out.wav"))
+        assert (tmp_path / "out.wav").exists()
+        assert w.request("transcribe", path=str(src), expected="bonjour")["text"] == "bonjour"
+    finally:
+        eng.shutdown()
+
+
+def test_word_error():
+    from audiolivre.core.asr import word_error
+
+    assert word_error("Il revint le 1er mai 1984.", "il revint le premier mai 1984") == 0.0
+    assert word_error("Bonjour tout le monde.", "bla bla") > 0.5

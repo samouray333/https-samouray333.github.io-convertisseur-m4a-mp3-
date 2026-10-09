@@ -6,22 +6,26 @@ import threading
 
 from .base import NOT_INSTALLED, READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec, TTSEngine
 
-__all__ = ["all_engines", "get_engine", "shutdown_all", "register_engine", "TTSEngine", "EngineInfo",
-           "EngineError", "BuiltinVoice", "ParamSpec", "READY", "NOT_INSTALLED", "UNAVAILABLE"]
+__all__ = ["all_engines", "get_engine", "get_tool", "all_tools", "shutdown_all", "register_engine", "TTSEngine",
+           "EngineInfo", "EngineError", "BuiltinVoice", "ParamSpec", "READY", "NOT_INSTALLED", "UNAVAILABLE",
+           "CLONING_ENGINES"]
 
 _lock = threading.Lock()
 _engines: dict[str, TTSEngine] | None = None
-ORDER = ["edge", "xtts", "chatterbox", "kokoro", "sapi"]
+ORDER = ["edge", "xtts", "fastclone", "chatterbox", "kokoro", "sapi"]
+CLONING_ENGINES = ["xtts", "fastclone", "chatterbox"]
+_tools: dict[str, TTSEngine] = {}
 
 
 def _build() -> dict[str, TTSEngine]:
     from .edge import EdgeEngine
-    from .neural import WorkerEngine
+    from .neural import FastCloneEngine, WorkerEngine
     from .sapi import SapiEngine
 
     return {
         "edge": EdgeEngine(),
         "xtts": WorkerEngine("xtts"),
+        "fastclone": FastCloneEngine(),
         "chatterbox": WorkerEngine("chatterbox"),
         "kokoro": WorkerEngine("kokoro"),
         "sapi": SapiEngine(),
@@ -49,7 +53,26 @@ def register_engine(engine: TTSEngine) -> None:
     _registry()[engine.info.id] = engine
 
 
+def get_tool(tool_id: str):
+    """Outils neuronaux qui ne sont pas des voix (ex. Whisper pour la relecture)."""
+    with _lock:
+        if tool_id not in _tools and tool_id == "whisper":
+            from .neural import WhisperTool
+
+            _tools[tool_id] = WhisperTool()
+        return _tools.get(tool_id)
+
+
+def all_tools() -> list:
+    return [t for t in (get_tool("whisper"),) if t is not None]
+
+
 def shutdown_all() -> None:
+    for t in list(_tools.values()):
+        try:
+            t.shutdown()
+        except Exception:
+            pass
     if _engines is None:
         return
     for e in list(_engines.values()):

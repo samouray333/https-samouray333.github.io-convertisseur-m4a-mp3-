@@ -63,6 +63,25 @@ class ScriptItem:
     voice_key: str | None = None  # None = narrateur ; nom de personnage ; "__dialogue__"
     pause_ms: int = 0
     level: int = 0
+    emotion: str = ""
+
+
+# Émotions : balise -> nom canonique
+EMOTION_ALIASES = {
+    "joyeux": "joyeux", "joyeuse": "joyeux", "joie": "joyeux", "heureux": "joyeux", "happy": "joyeux",
+    "triste": "triste", "tristesse": "triste", "sad": "triste",
+    "colère": "colère", "colere": "colère", "fâché": "colère", "fache": "colère", "angry": "colère",
+    "chuchoté": "chuchoté", "chuchote": "chuchoté", "murmure": "chuchoté", "whisper": "chuchoté",
+    "calme": "calme", "doux": "calme", "douce": "calme", "calm": "calme",
+    "peur": "peur", "effrayé": "peur", "effraye": "peur", "scared": "peur",
+    "excité": "excité", "excite": "excité", "enthousiaste": "excité", "excited": "excité",
+    "neutre": "", "normal": "", "neutral": "",
+}
+EMOTION_LABELS = {"joyeux": "Joyeux", "triste": "Triste", "colère": "En colère", "chuchoté": "Chuchoté",
+                  "calme": "Calme", "peur": "Effrayé", "excité": "Excité"}
+EMOTION_RE = re.compile(r"^\[\s*(?:émotion\s*[:=]\s*)?(" + "|".join(sorted(EMOTION_ALIASES, key=len, reverse=True))
+                        + r")\s*\]\s*", re.IGNORECASE)
+EMOTION_END_RE = re.compile(r"^\[\s*/\s*(?:émotion|" + "|".join(EMOTION_ALIASES) + r")\s*\]\s*$", re.IGNORECASE)
 
 
 PAUSE_RE = re.compile(r"\[\s*pause\s*[:= ]?\s*(\d+(?:[.,]\d+)?)\s*(ms|s)?\s*\]", re.IGNORECASE)
@@ -84,6 +103,7 @@ def parse_script(text: str, detect_dialogues: bool = False) -> list[ScriptItem]:
     """Transforme le texte d'un chapitre en éléments (titres, paragraphes, pauses)."""
     items: list[ScriptItem] = []
     current_voice: str | None = None
+    current_emotion = ""
     paragraphs = re.split(r"\n\s*\n|\n(?=#)|\n(?=@)|\n(?=\[)|(?<=\])\n", text.replace("\r\n", "\n"))
     for raw in paragraphs:
         para = raw.strip()
@@ -101,6 +121,17 @@ def parse_script(text: str, detect_dialogues: bool = False) -> list[ScriptItem]:
         if VOICE_END_RE.match(para):
             current_voice = None
             continue
+        if EMOTION_END_RE.match(para):
+            current_emotion = ""
+            continue
+        em = EMOTION_RE.match(para)
+        emotion = current_emotion
+        if em:
+            emotion = EMOTION_ALIASES[em.group(1).lower()]
+            para = para[em.end():].strip()
+            if not para:  # balise seule : s'applique aux paragraphes suivants
+                current_emotion = emotion
+                continue
         full_pause = PAUSE_RE.fullmatch(para)
         if full_pause:
             items.append(ScriptItem("pause", pause_ms=_pause_to_ms(full_pause.group(1), full_pause.group(2))))
@@ -115,6 +146,10 @@ def parse_script(text: str, detect_dialogues: bool = False) -> list[ScriptItem]:
             name = cm.group(1).strip()
             voice = None if name.lower() in NARRATOR_NAMES else name
             para = cm.group(2).strip()
+            em2 = EMOTION_RE.match(para)
+            if em2:
+                emotion = EMOTION_ALIASES[em2.group(1).lower()]
+                para = para[em2.end():].strip()
         elif voice is None and detect_dialogues and DIALOGUE_START_RE.match(para):
             voice = "__dialogue__"
         # pauses en ligne : on coupe le paragraphe
@@ -122,12 +157,12 @@ def parse_script(text: str, detect_dialogues: bool = False) -> list[ScriptItem]:
         for pm in PAUSE_RE.finditer(para):
             chunk = para[pos:pm.start()].strip()
             if chunk:
-                items.append(ScriptItem("para", chunk, voice_key=voice))
+                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion))
             items.append(ScriptItem("pause", pause_ms=_pause_to_ms(pm.group(1), pm.group(2))))
             pos = pm.end()
         rest = para[pos:].strip()
         if rest:
-            items.append(ScriptItem("para", rest, voice_key=voice))
+            items.append(ScriptItem("para", rest, voice_key=voice, emotion=emotion))
     return items
 
 

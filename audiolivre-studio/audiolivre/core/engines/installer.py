@@ -69,6 +69,11 @@ SPECS: dict[str, EngineSpec] = {
         pin_torch=True,
         size_gpu="≈ 6 Go", size_cpu="≈ 2,5 Go", model_size="3 Go",
     ),
+    "whisper": EngineSpec(
+        id="whisper",
+        packages=["faster-whisper==1.2.1", "soundfile"],
+        size_gpu="≈ 0,4 Go", size_cpu="≈ 0,4 Go", model_size="0,15 Go",
+    ),
     "kokoro": EngineSpec(
         id="kokoro",
         packages=["kokoro-onnx==0.6.1", "soundfile"],
@@ -314,7 +319,8 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
     check = {"xtts": "import TTS, torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",
              "chatterbox": "import chatterbox, perth, torch; assert perth.PerthImplicitWatermarker is not None, "
                            "'module perth incomplet'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",
-             "kokoro": "import kokoro_onnx, onnxruntime; print('onnxruntime', onnxruntime.__version__)"}[engine_id]
+             "kokoro": "import kokoro_onnx, onnxruntime; print('onnxruntime', onnxruntime.__version__)",
+             "whisper": "import faster_whisper, ctranslate2; print('ctranslate2', ctranslate2.__version__)"}[engine_id]
     _run([py, "-c", check], log_cb, cancel, env=worker_env(engine_id))
 
     info = {"engine": engine_id, "device": device, "flavor": flavor, "torch": torch_ver, "recipe": spec.version,

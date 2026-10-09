@@ -169,11 +169,15 @@ class ProductionPage(Page):
         self.t_numbers = ToggleSwitch("Lire nombres, dates et heures en toutes lettres")
         self.t_abbr = ToggleSwitch("Développer les abréviations (M., Dr, etc.)")
         self.t_trim = ToggleSwitch("Uniformiser les silences des voix")
-        for t in (self.t_announce, self.t_numbers, self.t_abbr, self.t_trim):
+        self.t_asr = ToggleSwitch("Relecture automatique par l'IA (Whisper)")
+        self.t_asr.setToolTip("Réécoute les passages des voix neuronales et refait ceux où des mots manquent")
+        for t in (self.t_announce, self.t_numbers, self.t_abbr, self.t_trim, self.t_asr):
             st.add(t)
+        self.asr_hint = label("", "Hint", wrap=True)
+        st.add(self.asr_hint)
         for w in (self.speed, self.p_sentence, self.p_para, self.p_head, self.p_start, self.p_end):
             w.valueChanged.connect(self._settings_changed)
-        for t in (self.t_announce, self.t_numbers, self.t_abbr, self.t_trim):
+        for t in (self.t_announce, self.t_numbers, self.t_abbr, self.t_trim, self.t_asr):
             t.toggled.connect(self._settings_changed)
         sl.addWidget(st)
         lg = Card(margins=(14, 12, 14, 12), spacing=6)
@@ -222,6 +226,7 @@ class ProductionPage(Page):
         self.rebuild_plan()
 
     def on_show(self) -> None:
+        self._update_asr_hint()
         if not self.ctx.rendering:
             self.rebuild_plan()
 
@@ -238,7 +243,17 @@ class ProductionPage(Page):
         self.t_numbers.setChecked(p.normalize_numbers)
         self.t_abbr.setChecked(p.expand_abbreviations)
         self.t_trim.setChecked(p.trim_silence)
+        self.t_asr.setChecked(p.asr_check)
         self._loading = False
+        self._update_asr_hint()
+
+    def _update_asr_hint(self) -> None:
+        from ...core.asr import asr_ready
+
+        if asr_ready():
+            self.asr_hint.setText("Whisper est installé : les passages suspects sont refaits automatiquement.")
+        else:
+            self.asr_hint.setText("Pour activer la relecture, installez Whisper (gratuit) dans « Moteurs IA ».")
 
     def _settings_changed(self, *_a) -> None:
         if self._loading:
@@ -254,6 +269,7 @@ class ProductionPage(Page):
         p.normalize_numbers = self.t_numbers.isChecked()
         p.expand_abbreviations = self.t_abbr.isChecked()
         p.trim_silence = self.t_trim.isChecked()
+        p.asr_check = self.t_asr.isChecked()
         self.ctx.mark_dirty()
 
     def rebuild_plan(self) -> None:
@@ -398,8 +414,16 @@ class ProductionPage(Page):
             ic, col = {"done": ("check", p.success), "running": ("clock", p.accent), "error": ("alert", p.danger)}.get(
                 st, ("clock", p.faint))
             v = self.ctx.library.get(s.voice_id)
-            it = QListWidgetItem(icons.icon(ic, col, 16), f"{s.index + 1}. {s.text}" + (f"   — {v.name}" if v else ""))
+            extra = f"   — {v.name}" if v else ""
+            if s.emotion:
+                extra += f" · {s.emotion}"
+            it = QListWidgetItem(icons.icon(ic, col, 16), f"{s.index + 1}. {s.text}{extra}")
             it.setData(Qt.UserRole, s.index)
+            if st == "done":
+                qc = renderer.read_qc(self.ctx.project, s.key)
+                if qc and qc.get("wer", 0) > self.ctx.project.production.asr_threshold:
+                    it.setIcon(icons.icon("alert", p.warning, 16))
+                    it.setToolTip(f"À vérifier : la relecture a entendu « {qc.get('heard', '')} »")
             self.segments.addItem(it)
 
     def _current_segment(self):

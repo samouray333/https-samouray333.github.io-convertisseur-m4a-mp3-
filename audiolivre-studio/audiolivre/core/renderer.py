@@ -19,7 +19,8 @@ import soundfile as sf
 
 from .. import paths
 from ..config import settings
-from . import audio, engines, project_io
+from . import asr, audio, engines, project_io
+from .emotions import apply_emotion
 from .exporter import credits_text
 from .models import Chapter, Project, VoiceProfile
 from .textproc import NormalizeOptions, chunk_text, normalize_for_speech, parse_script
@@ -29,7 +30,8 @@ log = logging.getLogger(__name__)
 
 RENDER_VERSION = 3  # à incrémenter si le post-traitement change (invalide le cache)
 SR = audio.DEFAULT_SR
-NEURAL_ENGINES = {"xtts", "chatterbox", "kokoro"}
+NEURAL_ENGINES = {"xtts", "chatterbox", "kokoro", "fastclone"}
+RETRY_ENGINES = {"xtts", "chatterbox", "fastclone", "kokoro"}
 
 
 class RenderError(RuntimeError):
@@ -46,6 +48,7 @@ class Segment:
     kind: str = "para"
     key: str = ""
     paragraph: int = 0
+    emotion: str = ""
 
 
 @dataclass
@@ -85,9 +88,11 @@ def _voice_fingerprint(voice: VoiceProfile) -> list:
     return [voice.engine, voice.engine_voice, refs, sorted((voice.params or {}).items())]
 
 
-def segment_key(text: str, voice: VoiceProfile, language: str, speed: float, trim: bool) -> str:
-    payload = json.dumps([RENDER_VERSION, text, _voice_fingerprint(voice), language, round(speed, 3), trim],
-                         ensure_ascii=False, default=str)
+def segment_key(text: str, voice: VoiceProfile, language: str, speed: float, trim: bool, emotion: str = "") -> str:
+    parts = [RENDER_VERSION, text, _voice_fingerprint(voice), language, round(speed, 3), trim]
+    if emotion:
+        parts.append(emotion)
+    payload = json.dumps(parts, ensure_ascii=False, default=str)
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
@@ -144,7 +149,7 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
     segs: list[Segment] = []
     paragraph = 0
 
-    def add_text(raw: str, voice: VoiceProfile, kind_: str, end_pause: int):
+    def add_text(raw: str, voice: VoiceProfile, kind_: str, end_pause: int, emotion: str = ""):
         nonlocal paragraph
         spoken = normalize_for_speech(raw, opts, project.lexicon)
         if not spoken.strip() or not any(ch.isalnum() for ch in spoken):
@@ -158,7 +163,8 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
             segs.append(Segment(
                 index=len(segs), text=c, display=raw if len(chunks) == 1 else c, voice_id=voice.id,
                 pause_after_ms=end_pause if last else prod.pause_sentence_ms, kind=kind_,
-                key=segment_key(c, voice, lang, prod.speed, prod.trim_silence), paragraph=paragraph,
+                key=segment_key(c, voice, lang, prod.speed, prod.trim_silence, emotion), paragraph=paragraph,
+                emotion=emotion,
             ))
         paragraph += 1
 
@@ -176,7 +182,7 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
             add_text(item.text.rstrip(".") + ".", resolver.narrator(chapter), "heading", prod.pause_heading_ms)
         else:
             voice = resolver.resolve(item.voice_key, chapter)
-            add_text(item.text, voice, "para", prod.pause_paragraph_ms)
+            add_text(item.text, voice, "para", prod.pause_paragraph_ms, item.emotion)
     if segs:
         segs[-1].pause_after_ms = 0
     rc.segments = segs
@@ -211,6 +217,18 @@ def cache_path(project: Project, key: str) -> Path:
     d = project_io.cache_dir(project) / key[:2]
     d.mkdir(parents=True, exist_ok=True)
     return d / f"{key}.flac"
+
+
+def qc_path(project: Project, key: str) -> Path:
+    """Résultat de la relecture automatique d'un passage (texte entendu, taux d'erreur)."""
+    return cache_path(project, key).with_suffix(".qc.json")
+
+
+def read_qc(project: Project, key: str) -> dict:
+    try:
+        return json.loads(qc_path(project, key).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def chapter_output(project: Project, chapter_id: str) -> Path:
@@ -308,11 +326,14 @@ class Renderer:
         engine = engines.get_engine(voice.engine)
         if engine is None:
             raise RenderError(f"Moteur inconnu : {voice.engine}")
+        voice, emo_speed, emo_gain = apply_emotion(voice, seg.emotion)
         lang = self.project.metadata.language or voice.language or "fr"
-        speed = self.project.production.speed
+        speed = self.project.production.speed * emo_speed
         base_seed = int(seg.key[:8], 16) if seed is None else seed
-        best: tuple[float, np.ndarray] | None = None
-        attempts = 3 if voice.engine in NEURAL_ENGINES else 1
+        best: tuple[float, np.ndarray, dict] | None = None
+        attempts = 3 if voice.engine in RETRY_ENGINES else 1
+        check_asr = (self.project.production.asr_check and voice.engine in RETRY_ENGINES
+                     and len(seg.text.split()) >= 3 and asr.asr_ready())
         last_error: Exception | None = None
         for attempt in range(attempts):
             if self.cancel_event.is_set():
@@ -332,33 +353,59 @@ class Renderer:
                     continue
                 data, sr = audio.read_audio(written)
                 elapsed = time.time() - t0
+                qc: dict = {}
+                if check_asr:
+                    try:
+                        heard = engines.get_tool("whisper").transcribe(written, lang)
+                        qc = {"heard": heard, "wer": round(asr.word_error(seg.text, heard, lang), 3)}
+                    except Exception as exc:  # la relecture ne doit jamais bloquer la production
+                        log.warning("Relecture impossible : %s", exc)
             data = audio.resample(data, sr, SR)
             data = audio.remove_dc(data)
             if self.project.production.trim_silence:
                 trimmed = audio.trim_silence(data, SR, -45.0, pad_ms=40)
                 if trimmed.size > SR * 0.1:
                     data = trimmed
+            if emo_gain:
+                data = (data * audio.db_to_lin(emo_gain)).astype(np.float32)
             data = audio.apply_fades(data, SR, 5, 20)
             dur = len(data) / SR
             exp = expected_duration(seg.text, speed)
             rms = audio.lin_to_db(float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))) if data.size else -120
             ratio = dur / max(exp, 0.3)
             score = abs(np.log(max(ratio, 1e-3)))
-            if rms < -55:
+            if rms < -55 - abs(emo_gain):
                 score += 10
+            wer = qc.get("wer", 0.0)
+            score += 4 * wer
             with self._stats_lock:
                 self._chars_done += len(seg.text)
                 self._time_spent += elapsed
             if best is None or score < best[0]:
-                best = (score, data)
-            suspicious = len(seg.text) > 25 and (ratio > 2.3 or ratio < 0.35 or rms < -55)
-            if not suspicious:
+                best = (score, data, qc)
+            reasons = []
+            if len(seg.text) > 25 and (ratio > 2.3 or ratio < 0.35):
+                reasons.append(f"durée {dur:.1f} s pour {exp:.1f} s attendues")
+            if rms < -55 - abs(emo_gain):
+                reasons.append("passage presque silencieux")
+            if wer > self.project.production.asr_threshold:
+                reasons.append(f"{int(wer * 100)} % de mots différents du texte")
+            if not reasons:
                 break
-            self.cb.log(f"Contrôle qualité : passage {seg.index + 1} suspect (durée {dur:.1f} s pour "
-                        f"{exp:.1f} s attendues), nouvel essai…")
+            if attempt + 1 < attempts:
+                self.cb.log(f"Contrôle qualité : passage {seg.index + 1} à refaire ({', '.join(reasons)}), "
+                            "nouvel essai…")
         if best is None:
             raise RenderError(str(last_error) if last_error else "Échec de la synthèse")
         audio.write_audio(target, best[1], SR, subtype="PCM_24")
+        qc_file = qc_path(self.project, seg.key)
+        if best[2]:
+            qc_file.write_text(json.dumps(best[2], ensure_ascii=False), encoding="utf-8")
+            if best[2].get("wer", 0) > self.project.production.asr_threshold:
+                self.cb.log(f"⚠ Passage {seg.index + 1} à vérifier à l'écoute : la relecture a entendu "
+                            f"« {best[2].get('heard', '')} »")
+        elif qc_file.exists():
+            qc_file.unlink()
         return target
 
     def regenerate_segment(self, seg: Segment) -> Path:

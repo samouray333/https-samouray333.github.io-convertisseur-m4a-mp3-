@@ -107,6 +107,8 @@ class ProductionSettings:
     denoise: bool = False
     deesser: bool = True
     sample_rate: int = 44100
+    asr_check: bool = True  # relecture automatique par Whisper (si installé)
+    asr_threshold: float = 0.3
 
     @classmethod
     def from_dict(cls, d):

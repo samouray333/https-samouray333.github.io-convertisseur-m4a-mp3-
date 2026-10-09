@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout
                                QVBoxLayout, QWidget)
 
 from ...core.models import Chapter
-from ...core.textproc import clean_imported_text, find_characters, format_duration
+from ...core.textproc import EMOTION_ALIASES, EMOTION_LABELS, clean_imported_text, find_characters, format_duration
 from .. import icons, theme
 from ..widgets import Card, EmptyState, IconButton, ToggleSwitch, button, label
 from .base import Page
@@ -41,6 +41,9 @@ class ScriptHighlighter(QSyntaxHighlighter):
             (QRegularExpression(r"^\s*[—–]\s.*$"), fmt(p.text, italic=True)),
             (QRegularExpression(r"«[^»]*»"), fmt(_soft(p), italic=False)),
             (QRegularExpression(r"^%%.*$"), fmt(p.faint, italic=True)),
+            (QRegularExpression(r"\[\s*/?\s*(" + "|".join(EMOTION_ALIASES) + r")\s*\]",
+                                QRegularExpression.CaseInsensitiveOption),
+             fmt(p.warning, bold=True, bg=theme.rgba(p.warning, 0.12))),
         ]
 
     def highlightBlock(self, text):
@@ -207,6 +210,13 @@ class ManuscriptPage(Page):
         pause.clicked.connect(lambda: self.insert("[pause 1s]"))
         heading = button("Titre", "type", tooltip="Transforme la ligne en intertitre (#)")
         heading.clicked.connect(self.make_heading)
+        self.emo_btn = button("Émotion", "sparkles", tooltip="Ton du paragraphe : joyeux, triste, chuchoté…")
+        emo_menu = QMenu(self)
+        for key, lbl in EMOTION_LABELS.items():
+            emo_menu.addAction(lbl, lambda k=key: self._tag_emotion(k))
+        emo_menu.addSeparator()
+        emo_menu.addAction("Neutre (retirer)", lambda: self._tag_emotion(""))
+        self.emo_btn.setMenu(emo_menu)
         self.role_btn = button("Réplique", "users", tooltip="Attribue le paragraphe à un personnage (@Nom:)")
         self.role_menu = QMenu(self)
         self.role_menu.aboutToShow.connect(self._fill_roles)
@@ -217,7 +227,7 @@ class ManuscriptPage(Page):
         listen.clicked.connect(self.listen_selection)
         find = IconButton("search", "Rechercher / remplacer (Ctrl+F)", 36, 18)
         find.clicked.connect(self.toggle_find)
-        for w in (clean, pause, heading, self.role_btn, preview):
+        for w in (clean, pause, heading, self.role_btn, self.emo_btn, preview):
             bar.addWidget(w)
         bar.addStretch(1)
         bar.addWidget(find)
@@ -241,8 +251,8 @@ class ManuscriptPage(Page):
         status = QHBoxLayout()
         self.stats = label("", "Hint")
         status.addWidget(self.stats, 1)
-        self.help = label("Astuces : « # Titre », « [pause 2s] », « @Marie: réplique », « [voix:Paul] … [/voix] », "
-                          "« %% commentaire »", "Faint")
+        self.help = label("Astuces : « # Titre », « [pause 2s] », « @Marie: réplique », « [joyeux] », "
+                          "« [voix:Paul] … [/voix] », « %% commentaire »", "Faint")
         status.addWidget(self.help)
         rl.addLayout(status)
         self.split.addWidget(right)
@@ -547,6 +557,25 @@ class ManuscriptPage(Page):
         self.role_menu.addAction(icons.icon("plus", theme.CURRENT.text, 16), "Nouveau personnage…", self._new_role)
         self.role_menu.addAction(icons.icon("users", theme.CURRENT.text, 16), "Gérer la distribution…",
                                  lambda: (self.ctx.navigate("voices"), self.ctx.window.pages["voices"].show_cast()))
+
+    def _tag_emotion(self, emotion: str) -> None:
+        """Ajoute (ou remplace) une balise d'émotion au début du paragraphe courant."""
+        import re as _re
+
+        cur = self.editor.textCursor()
+        cur.movePosition(QTextCursor.StartOfBlock)
+        line = cur.block().text()
+        prefix = ""
+        m = _re.match(r"^@[^:\n]{1,40}:\s*", line)
+        if m:
+            prefix = m.group(0)
+            cur.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len(prefix))
+        rest = line[len(prefix):]
+        em = _re.match(r"^\[\s*(?:émotion\s*[:=]\s*)?(" + "|".join(EMOTION_ALIASES) + r")\s*\]\s*", rest, _re.I)
+        if em:
+            cur.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, em.end())
+        cur.insertText(f"[{emotion}] " if emotion else "")
+        self.editor.setFocus()
 
     def _new_role(self) -> None:
         name, ok = QInputDialog.getText(self, "Nouveau personnage", "Nom du personnage :")

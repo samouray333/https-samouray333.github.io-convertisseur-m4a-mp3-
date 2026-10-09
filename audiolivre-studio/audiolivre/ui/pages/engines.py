@@ -68,7 +68,7 @@ class EngineCard(Card):
         langs = ", ".join(info.languages[:12]) + ("…" if len(info.languages) > 12 else "")
         g.addWidget(label("Langues", "Hint"), 2, 0)
         g.addWidget(label(langs, wrap=True), 2, 1, 1, 3)
-        spec = installer.SPECS.get(info.id)
+        spec = installer.SPECS.get(info.install_id or info.id)
         if spec:
             g.addWidget(label("Espace disque", "Hint"), 3, 0)
             g.addWidget(label(f"{spec.size_gpu} (GPU) · {spec.size_cpu} (CPU) + modèle {spec.model_size}",
@@ -144,7 +144,7 @@ class EnginesPage(Page):
         self.cards: list[EngineCard] = []
         grid = QGridLayout()
         grid.setSpacing(18)
-        for i, eng in enumerate(engines.all_engines()):
+        for i, eng in enumerate(engines.all_engines() + engines.all_tools()):
             c = EngineCard(self, eng)
             self.cards.append(c)
             grid.addWidget(c, i // 2, i % 2)
@@ -188,7 +188,7 @@ class EnginesPage(Page):
         if self._busy:
             self.ctx.toast("Une installation est déjà en cours.", "warning")
             return
-        eid = card.eng.info.id
+        eid = card.eng.info.install_id or card.eng.info.id
         if eid == "xtts" and not settings().get("xtts_tos_accepted"):
             r = QMessageBox.question(self, "Licence du modèle XTTS-v2", XTTS_LICENSE)
             if r != QMessageBox.Yes:
@@ -206,6 +206,8 @@ class EnginesPage(Page):
         def done(info):
             self._busy = False
             card.set_busy(False)
+            for c in self.cards:
+                c.refresh()
             self.ctx.toast(f"{card.eng.info.name} est installé ✔", "success", 5000)
             self.ctx.engines_changed.emit()
             self.ctx.voices_changed.emit()
@@ -224,18 +226,30 @@ class EnginesPage(Page):
         if QMessageBox.question(self, "Désinstaller", f"Désinstaller {card.eng.info.name} et supprimer ses modèles ?"
                                 ) != QMessageBox.Yes:
             return
-        card.eng.shutdown()
-        installer.uninstall_engine(card.eng.info.id)
-        card.refresh()
+        eid = card.eng.info.install_id or card.eng.info.id
+        for c in self.cards:
+            if (c.eng.info.install_id or c.eng.info.id) == eid:
+                c.eng.shutdown()
+        installer.uninstall_engine(eid)
+        for c in self.cards:
+            c.refresh()
         self.ctx.engines_changed.emit()
         self.ctx.toast("Moteur désinstallé.", "info")
 
     def test(self, card: EngineCard) -> None:
         eng = card.eng
+        if eng.info.id == "whisper":
+            self._test_whisper(card)
+            return
         voice = next((v for v in self.ctx.library.all() if v.engine == eng.info.id), None)
+        if voice is None and eng.info.id == "fastclone":
+            voice = next((v for v in self.ctx.library.all() if v.is_clone), None)
+            if voice is not None:
+                voice = VoiceProfile.from_dict({**voice.to_dict(), "engine": "fastclone", "params": {}})
+                voice.dir = self.ctx.library.get(voice.id).dir
         if voice is None:
-            if eng.info.id == "chatterbox":
-                self.ctx.toast("Créez d'abord une voix clonée pour tester Chatterbox.", "warning")
+            if eng.info.id in ("chatterbox", "fastclone"):
+                self.ctx.toast("Créez d'abord une voix clonée (Voix & clonage) pour tester ce moteur.", "warning")
                 return
             builtin = eng.list_builtin_voices()
             vid = next((b.id for b in builtin if b.language in ("fr", "multi")), builtin[0].id if builtin else "")
@@ -245,3 +259,29 @@ class EnginesPage(Page):
         self.ctx.preview_voice(voice, on_done=lambda ok: (card.set_busy(False),
                                                           self._log("Test réussi ✔" if ok else "Test en échec")))
 
+    def _test_whisper(self, card: EngineCard) -> None:
+        from ...core import renderer
+        from ...core.engines.edge import FALLBACK_VOICES
+
+        phrase = "Bonjour, ceci est un test de relecture automatique des passages produits."
+        voice = VoiceProfile(name="Test", engine="edge", engine_voice=FALLBACK_VOICES[0][0], language="fr")
+        card.set_busy(True)
+        self._log("Test de Whisper : génération d'une phrase puis transcription…")
+
+        def work():
+            from ...core.asr import word_error
+
+            wav = renderer.preview(phrase, voice)
+            heard = card.eng.transcribe(wav, "fr")
+            return heard, word_error(phrase, heard)
+
+        def done(res):
+            heard, wer = res
+            card.set_busy(False)
+            self._log(f"Whisper a entendu : « {heard} » ({int((1 - wer) * 100)} % de mots reconnus) ✔")
+
+        def fail(msg, _tb):
+            card.set_busy(False)
+            self._log("Test en échec : " + msg)
+
+        self._task = tasks.run(work, on_done=done, on_error=fail)
