@@ -31,9 +31,10 @@ UninstallDisplayName={#AppName}
 WizardStyle=modern
 WizardImageFile={#AppRoot}\packaging\assets\wizard-small-scale.bmp,{#AppRoot}\packaging\assets\wizard.bmp
 WizardSmallImageFile={#AppRoot}\packaging\assets\wizard-icon.bmp
-Compression=lzma2/ultra64
+; lzma2/ultra (dictionnaire 64 Mo) : ultra64 (1 Go) dépasse la mémoire du compilateur 32 bits
+Compression=lzma2/ultra
 SolidCompression=yes
-LZMANumBlockThreads=4
+LZMAUseSeparateProcess=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
