@@ -1,0 +1,140 @@
+import sys
+
+import numpy as np
+import pytest
+
+from audiolivre.core import audio, project_io, renderer
+from audiolivre.core.models import Chapter, Project, VoiceProfile
+
+from .conftest import needs_ffmpeg
+
+
+def make_project(tmp_path, voice_id, text="Bonjour. Voici un test.\n\n@Marie: Une réplique."):
+    pr = Project(chapters=[Chapter(title="Chapitre 1", text=text), Chapter(title="Chapitre 2", text="Fin du livre.")],
+                 narrator_voice_id=voice_id)
+    pr.metadata.title = "Livre test"
+    pr.metadata.author = "Auteur"
+    project_io.save_project(pr, tmp_path / "p" / "Livre.alsproj")
+    return pr
+
+
+def test_project_roundtrip(tmp_path):
+    pr = Project(chapters=[Chapter(title="A", text="x")])
+    pr.metadata.title = "T"
+    pr.cast["Marie"] = "v1"
+    path = project_io.save_project(pr, tmp_path / "proj.alsproj")
+    back = project_io.load_project(path)
+    assert back.metadata.title == "T"
+    assert back.chapters[0].title == "A"
+    assert back.cast == {"Marie": "v1"}
+
+
+def test_plan_voices_and_cache_keys(tmp_path, tone_engine, library):
+    narr = library.save(VoiceProfile(name="Narrateur", engine="tone"))
+    marie = library.save(VoiceProfile(name="Marie", engine="tone"))
+    pr = make_project(tmp_path, narr.id)
+    pr.cast["Marie"] = marie.id
+    plan = renderer.build_plan(pr, library)
+    assert [rc.kind for rc in plan] == ["opening", "chapter", "chapter", "closing"]
+    ch1 = plan[1]
+    assert ch1.segments[0].kind == "title"
+    assert ch1.segments[-1].voice_id == marie.id
+    keys1 = [s.key for s in ch1.segments]
+    pr.production.speed = 1.1
+    keys2 = [s.key for s in renderer.build_plan(pr, library)[1].segments]
+    assert keys1 != keys2  # le débit change la clé de cache
+
+
+@needs_ffmpeg
+def test_render_assemble_and_export(tmp_path, tone_engine, library):
+    from audiolivre.core.exporter import ExportItem, export_audiobook
+    from audiolivre.core.ffmpeg import probe
+    from audiolivre.core.mastering import MasteringOptions
+
+    v = library.save(VoiceProfile(name="Narrateur", engine="tone"))
+    pr = make_project(tmp_path, v.id)
+    plan = renderer.build_plan(pr, library)
+    rep = renderer.Renderer(pr, library).render(plan)
+    assert not rep.failed_segments
+    assert all(renderer.chapter_is_current(pr, rc) for rc in plan)
+    # Les silences de début/fin de chapitre sont respectés
+    data, sr = audio.read_audio(renderer.chapter_output(pr, plan[1].id))
+    assert np.max(np.abs(data[: int(sr * 0.9)])) < 1e-4
+    # Une modification ne régénère que le chapitre concerné
+    pr.chapters[1].text = "Fin modifiée du livre."
+    plan2 = renderer.build_plan(pr, library)
+    current = [renderer.chapter_is_current(pr, rc) for rc in plan2]
+    assert current == [True, True, False, True]
+
+    pr.export.formats = ["m4b", "mp3_chapters", "mp3_single"]
+    items = [ExportItem(rc.title, renderer.chapter_output(pr, rc.id), rc.kind) for rc in plan]
+    res = export_audiobook(items, pr.metadata, pr.export, MasteringOptions(), tmp_path / "out")
+    assert res.acx_ok
+    m4b = next(f for f in res.files if f.suffix == ".m4b")
+    info = probe(m4b)
+    assert len(info["chapters"]) == 4
+    mp3s = [f for f in res.files if f.suffix == ".mp3" and "Extrait" not in f.name]
+    assert len(mp3s) == 5  # 4 pistes + fichier unique
+    assert res.report is not None and res.report.exists()
+
+
+@needs_ffmpeg
+def test_mastering_meets_acx(tmp_path):
+    from audiolivre.core.mastering import MasteringOptions, master_file
+
+    sr = 44100
+    t = np.arange(sr * 20) / sr
+    sig = (0.04 * np.sin(2 * np.pi * 220 * t) * (np.sin(2 * np.pi * 0.7 * t) > 0)).astype(np.float32)
+    src = tmp_path / "raw.flac"
+    audio.write_audio(src, sig, sr)
+    stats = master_file(src, tmp_path / "m.wav", MasteringOptions(preset="acx"))
+    assert stats.acx_ok, stats.acx_checks()
+
+
+def test_worker_protocol(tmp_path, library):
+    """Le processus moteur (protocole JSON) fonctionne avec l'interpréteur courant."""
+    from audiolivre.core import engines
+    from audiolivre.core.engines.neural import DummyWorkerEngine
+
+    eng = DummyWorkerEngine()
+    engines.register_engine(eng)
+    try:
+        v = VoiceProfile(name="Test", engine="dummy")
+        out = eng.synthesize("Bonjour tout le monde.", v, tmp_path / "a.wav", "fr", 1.0, 1)
+        data, sr = audio.read_audio(out)
+        assert len(data) / sr > 0.5
+        eng._worker.proc.kill()
+        eng._worker.proc.wait()
+        out2 = eng.synthesize("Après redémarrage.", v, tmp_path / "b.wav", "fr")
+        assert out2.exists()
+    finally:
+        eng.shutdown()
+    assert sys.executable
+
+
+def test_trim_and_best_window():
+    sr = 16000
+    sig = np.concatenate([np.zeros(sr), 0.5 * np.ones(sr * 2), np.zeros(sr)]).astype(np.float32)
+    trimmed = audio.trim_silence(sig, sr, pad_ms=0)
+    assert abs(len(trimmed) / sr - 2.0) < 0.05
+    s, e = audio.best_speech_window(np.concatenate([sig, sig]), sr, 2.0)
+    assert e - s == 2 * sr
+
+
+def test_voice_pack_roundtrip(tmp_path, library):
+    v = library.save(VoiceProfile(name="Clone", engine="xtts", kind="clone"))
+    ref = library.voice_dir(v) / "reference_01.wav"
+    audio.write_audio(ref, np.zeros(1600, dtype=np.float32), 16000)
+    v.references = ["reference_01.wav"]
+    library.save(v)
+    pack = library.export_pack(v.id, tmp_path / "voix")
+    imported = library.import_pack(pack)
+    assert imported.id != v.id
+    assert imported.reference_paths()[0].exists()
+
+
+@pytest.mark.parametrize("name, expected", [("a/b:c?", "abc"), ("CON", "_CON"), ("  titre. ", "titre")])
+def test_safe_filename(name, expected):
+    from audiolivre.core.exporter import safe_filename
+
+    assert safe_filename(name) == expected

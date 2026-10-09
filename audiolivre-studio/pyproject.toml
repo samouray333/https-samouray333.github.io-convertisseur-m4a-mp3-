@@ -1,0 +1,16 @@
+[project]
+name = "audiolivre-studio"
+version = "1.0.0"
+description = "Transformez vos documents Word et PDF en livres audio professionnels, avec clonage de voix."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gui: tests de l'interface graphique (Qt hors écran)",
+    "ffmpeg: tests nécessitant FFmpeg",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
