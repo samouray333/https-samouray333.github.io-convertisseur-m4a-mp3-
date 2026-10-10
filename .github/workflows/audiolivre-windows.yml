@@ -196,7 +196,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [kokoro, xtts, chatterbox, whisper]
+        engine: [kokoro, xtts, chatterbox, whisper, rvc]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

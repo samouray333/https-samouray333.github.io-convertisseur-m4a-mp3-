@@ -271,6 +271,31 @@ ENGINE_INFOS["fastclone"] = EngineInfo(
     install_id="chatterbox",
 )
 
+ENGINE_INFOS["rvc"] = EngineInfo(
+    id="rvc",
+    name="Modèles de voix RVC (.pth)",
+    tagline="Clonage · Modèle .pth + .index",
+    description=(
+        "Importez un modèle de voix RVC (fichier .pth, avec son index .index si vous l'avez) : une voix Microsoft "
+        "lit le texte, puis le modèle lui donne son timbre. Gratuit (code RVC, licence MIT), nécessite Internet. "
+        "N'utilisez que des modèles de votre voix, d'une personne qui vous a donné son accord, ou dont la licence "
+        "l'autorise."
+    ),
+    supports_cloning=True, requires_install=True, online=True, languages=CHATTERBOX_LANGUAGES,
+    license="MIT + service Microsoft", max_chars=400, min_chars=40, quality=4, speed=3,
+    params=[
+        ParamSpec("rate", "Débit", 0.6, 1.6, 1.0, 0.05),
+        ParamSpec("transpose", "Hauteur (demi-tons)", -24, 24, 0, 1,
+                  "−12 : une octave plus grave ; +12 : une octave plus aiguë", decimals=0),
+        ParamSpec("index_rate", "Fidélité au timbre", 0.0, 1.0, 0.75, 0.05,
+                  "Plus haut : plus proche du modèle (utilise l'index) ; plus bas : moins d'artefacts"),
+        ParamSpec("protect", "Protection des consonnes", 0.0, 0.5, 0.33, 0.01,
+                  "Évite les sifflements et la voix robotique sur les consonnes"),
+    ],
+    accent="#4DD0E1",
+    install_id="rvc",
+)
+
 ENGINE_INFOS["whisper"] = EngineInfo(
     id="whisper",
     name="Whisper — relecture automatique",
@@ -462,8 +487,17 @@ class DummyWorkerEngine(WorkerEngine):
 class FastCloneEngine(WorkerEngine):
     """Voix Microsoft convertie vers le timbre d'une voix clonée (Chatterbox VC)."""
 
-    def __init__(self):
-        super().__init__("fastclone", env_id="chatterbox", worker_name="chatterbox_vc")
+    def __init__(self, engine_id: str = "fastclone", env_id: str = "chatterbox", worker_name: str = "chatterbox_vc"):
+        super().__init__(engine_id, env_id=env_id, worker_name=worker_name)
+
+    def _base_params(self, params: dict) -> dict:
+        return {"rate": params.get("rate", 1.0), "pitch": params.get("pitch", 0)}
+
+    def _convert_args(self, voice: VoiceProfile, params: dict) -> dict:
+        refs = [str(p) for p in voice.reference_paths() if p.exists()]
+        if not refs:
+            raise EngineError(f"La voix « {voice.name} » n'a pas d'enregistrement de référence.")
+        return {"refs": refs}
 
     def load_options(self) -> dict:
         from ...config import settings
@@ -480,12 +514,10 @@ class FastCloneEngine(WorkerEngine):
         from .. import audio
         from . import get_engine
 
-        refs = [str(p) for p in voice.reference_paths() if p.exists()]
-        if not refs:
-            raise EngineError(f"La voix « {voice.name} » n'a pas d'enregistrement de référence.")
         params = self.merged_params(voice)
+        extra = self._convert_args(voice, params)
         base = VoiceProfile(name="base", engine="edge", engine_voice=fastclone_base(voice, language),
-                            params={"rate": params.get("rate", 1.0), "pitch": params.get("pitch", 0)})
+                            params=self._base_params(params))
         edge = get_engine("edge")
         target = Path(out_path).with_suffix(".wav")
         with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
@@ -495,8 +527,8 @@ class FastCloneEngine(WorkerEngine):
             for attempt in range(2):
                 w = self._ensure()
                 try:
-                    w.request("convert", timeout=900, source=str(src), refs=refs, out=str(target),
-                              device=self._device())
+                    w.request("convert", timeout=900, source=str(src), out=str(target), device=self._device(),
+                              **extra)
                     break
                 except WorkerDied:
                     with self._lock:
@@ -504,6 +536,28 @@ class FastCloneEngine(WorkerEngine):
                     if attempt == 1:
                         raise
         return target
+
+
+class RVCEngine(FastCloneEngine):
+    """Voix Microsoft convertie avec un modèle de voix RVC (.pth + .index)."""
+
+    def __init__(self):
+        super().__init__("rvc", env_id="rvc", worker_name="rvc")
+
+    def load_options(self) -> dict:
+        return WorkerEngine.load_options(self)
+
+    def _base_params(self, params: dict) -> dict:
+        return {"rate": params.get("rate", 1.0)}
+
+    def _convert_args(self, voice: VoiceProfile, params: dict) -> dict:
+        files = [p for p in voice.reference_paths() if p.exists()]
+        model = next((p for p in files if p.suffix.lower() == ".pth"), None)
+        if model is None:
+            raise EngineError(f"La voix « {voice.name} » n'a pas de modèle .pth (réimportez-le).")
+        index = next((p for p in files if p.suffix.lower() == ".index"), None)
+        return {"model": str(model), "index": str(index) if index else "", "pitch": params.get("transpose", 0),
+                "index_rate": params.get("index_rate", 0.75), "protect": params.get("protect", 0.33)}
 
 
 class WhisperTool(WorkerEngine):

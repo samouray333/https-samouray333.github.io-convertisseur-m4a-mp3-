@@ -16,6 +16,7 @@ import du manuscrit, découpage en chapitres, choix ou **clonage de voix**, dist
 | ✍️ **Éditeur de manuscrit** | Coloration des balises, chapitres réorganisables par glisser-déposer, fusion/découpe, rechercher-remplacer, statistiques et durée estimée, « Écouter la sélection », **aperçu de lecture** (le texte exact qui sera lu). |
 | 🗣️ **Voix gratuites** | Plus de 300 voix neuronales Microsoft (dont ~15 en français, très naturelles), voix Windows hors ligne, Kokoro hors ligne. |
 | ⚡ **Clonage rapide** | Une voix Microsoft lit le texte puis un convertisseur gratuit (décodeur Chatterbox Turbo) lui donne votre timbre : environ 1 minute de calcul par minute de livre sur un ordinateur portable sans carte graphique. |
+| 🧩 **Modèles de voix RVC (.pth)** | « Voix & clonage → Modèle .pth » importe un modèle RVC (.pth + .index, ou l'archive .zip) : une voix Microsoft lit le texte, le modèle lui donne son timbre. Chargement sécurisé (un .pth piégé est refusé). Uniquement pour des modèles de votre voix, d'une personne d'accord ou sous licence qui l'autorise. |
 | 🔎 **Relecture automatique** | Whisper (gratuit, hors ligne) réécoute chaque passage produit, refait ceux où des mots manquent et signale les passages à vérifier. |
 | 🤖 **Assistant IA (DeepSeek)** | Dans le Manuscrit, « Assistant IA » repère qui parle (une voix par personnage, attribuée automatiquement), propose des émotions et la prononciation des noms propres. Le texte n'est jamais réécrit : chaque proposition est validée avant d'être appliquée. Clé API personnelle (service payant à l'usage), chiffrée sur l'ordinateur. |
 | 🎭 **Émotions** | Balises `[joyeux]`, `[triste]`, `[colère]`, `[chuchoté]`, `[calme]`, `[peur]`, `[excité]` et menu « Émotion » dans l'éditeur. |
@@ -94,6 +95,7 @@ Une **version portable** (`.zip`) est également produite : décompressez-la et 
 | Voix neuronales Microsoft | — | Non | Service en ligne | Excellente qualité, très rapide, aucune installation |
 | XTTS-v2 (Coqui) | ✅ | ✅ | CPML (non commercial) | Meilleure prosodie en français, 17 langues |
 | Clonage rapide (Microsoft + Chatterbox VC) | ✅ | Non | MIT + service Microsoft | Le plus rapide sans carte graphique |
+| Modèles RVC (.pth) | ✅ | Non | MIT + service Microsoft | Modèle de voix importé ; ≈ 1 min de calcul par minute de livre |
 | Chatterbox multilingue (Resemble AI) | ✅ | ✅ | MIT | Expressivité réglable, usage commercial autorisé, filigrane inaudible |
 | Kokoro-82M | mélange de voix | ✅ | Apache 2.0 | Très rapide sans carte graphique |
 | Voix Windows (SAPI/OneCore) | — | ✅ | Windows | Toujours disponible, qualité basique |

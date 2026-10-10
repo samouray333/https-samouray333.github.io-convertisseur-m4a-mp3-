@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 RENDER_VERSION = 3  # à incrémenter si le post-traitement change (invalide le cache)
 SR = audio.DEFAULT_SR
 NEURAL_ENGINES = {"xtts", "chatterbox", "kokoro", "fastclone"}
-RETRY_ENGINES = {"xtts", "chatterbox", "fastclone", "kokoro"}
+RETRY_ENGINES = {"xtts", "chatterbox", "fastclone", "rvc", "kokoro"}
 
 
 class RenderError(RuntimeError):

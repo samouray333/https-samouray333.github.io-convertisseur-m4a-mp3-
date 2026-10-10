@@ -26,7 +26,7 @@ COLORS = ["#7C5CFF", "#FF4FA3", "#4FC3F7", "#69F0AE", "#FFB74D", "#FF7A6B", "#B3
 
 def engine_short(engine_id: str) -> str:
     return {"edge": "Microsoft", "sapi": "Windows", "xtts": "XTTS-v2", "chatterbox": "Chatterbox",
-            "kokoro": "Kokoro", "fastclone": "Clonage rapide"}.get(engine_id, engine_id)
+            "kokoro": "Kokoro", "fastclone": "Clonage rapide", "rvc": "RVC"}.get(engine_id, engine_id)
 
 
 class VoiceCard(QFrame):
@@ -207,7 +207,8 @@ class VoiceEditor(Card):
         self.sub.setText(f"{kind} · {voice.engine_voice or 'référence personnelle'}")
         self.lang.setCurrentIndex(max(0, self.lang.findData(voice.language)))
         self.engine.clear()
-        if voice.is_clone:
+        rvc = voice.engine == "rvc"
+        if voice.is_clone and not rvc:
             for eid in engines.CLONING_ENGINES:
                 e = engines.get_engine(eid)
                 self.engine.addItem(icons.icon("mic", e.info.accent, 16), e.info.name, eid)
@@ -215,13 +216,16 @@ class VoiceEditor(Card):
             e = engines.get_engine(voice.engine)
             self.engine.addItem(e.info.name if e else voice.engine, voice.engine)
         self.engine.setCurrentIndex(max(0, self.engine.findData(voice.engine)))
-        self.engine.setEnabled(voice.is_clone)
+        self.engine.setEnabled(voice.is_clone and not rvc)
         self._loading = False
         self._fill_base()
         self._build_params()
         self._fill_refs()
         for w in (self.refs_title, self.refs, self.refs_row):
             w.setVisible(voice.is_clone)
+        self.refs_title.setText("Modèle de voix" if rvc else "Enregistrements de référence")
+        for b in (self.ref_play, self.ref_add, self.ref_del):
+            b.setEnabled(not rvc)
 
     def _build_params(self) -> None:
         while self.params_box.count():
@@ -251,6 +255,12 @@ class VoiceEditor(Card):
         from ...core import audio
 
         for p in self.voice.reference_paths():
+            if p.suffix.lower() in (".pth", ".index"):
+                kind = "modèle RVC" if p.suffix.lower() == ".pth" else "index (ressemblance)"
+                size = f"{p.stat().st_size / 1e6:.0f} Mo" if p.exists() else "manquant"
+                self.refs.addItem(QListWidgetItem(icons.icon("package", theme.CURRENT.accent, 16),
+                                                  f"{p.name}  ·  {kind}  ·  {size}"))
+                continue
             dur = audio.duration_of(p) if p.exists() else 0
             it = QListWidgetItem(icons.icon("wave", theme.CURRENT.accent, 16),
                                  f"{p.name}  ·  {dur:.1f} s" if p.exists() else f"{p.name} (manquant)")
@@ -276,7 +286,7 @@ class VoiceEditor(Card):
 
     def _fill_base(self) -> None:
         v = self.voice
-        show = v is not None and v.engine == "fastclone"
+        show = v is not None and v.engine in ("fastclone", "rvc")
         self.base_lbl.setVisible(show)
         self.base.setVisible(show)
         if not show:
@@ -292,7 +302,7 @@ class VoiceEditor(Card):
         self.base.blockSignals(False)
 
     def _base_changed(self, _i: int) -> None:
-        if self._loading or self.voice is None or self.voice.engine != "fastclone":
+        if self._loading or self.voice is None or self.voice.engine not in ("fastclone", "rvc"):
             return
         self.voice.engine_voice = self.base.currentData() or ""
         self.ctx.library.save(self.voice)
@@ -729,7 +739,10 @@ class VoicesPage(Page):
         imp.clicked.connect(self._import_pack)
         clone = button("Cloner une voix", "mic", "primary")
         clone.clicked.connect(self.open_clone_wizard)
+        rvc = button("Modèle .pth", "upload", tooltip="Importer un modèle de voix RVC (.pth + .index)")
+        rvc.clicked.connect(self.import_rvc)
         self.header.add_action(imp)
+        self.header.add_action(rvc)
         self.header.add_action(clone)
 
         self.tabs = QTabWidget()
@@ -839,6 +852,15 @@ class VoicesPage(Page):
         self.ctx.toast(f"Voix « {v.name} » importée.", "success")
         self.refresh_library(keep=v.id)
         self.ctx.voices_changed.emit()
+
+    def import_rvc(self) -> None:
+        from ..dialogs.rvc_import import RVCImportDialog
+
+        dlg = RVCImportDialog(self.ctx, self)
+        if dlg.exec() and dlg.voice is not None:
+            self.tabs.setCurrentIndex(0)
+            self.refresh_library(keep=dlg.voice.id)
+            self.ctx.voices_changed.emit()
 
     def open_clone_wizard(self) -> None:
         from ..dialogs.clone_wizard import CloneWizard

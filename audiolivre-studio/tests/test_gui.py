@@ -144,3 +144,43 @@ def test_credits_dialog(app):
     app.processEvents()
     win.ctx.dirty = False
     win.close()
+
+
+def test_rvc_import_from_zip(app, tmp_path):
+    import io
+    import zipfile
+
+    from audiolivre.ui.dialogs.rvc_import import RVCImportDialog, clean_name, find_files
+    from audiolivre.ui.main_window import MainWindow
+
+    pth = io.BytesIO()
+    with zipfile.ZipFile(pth, "w") as inner:  # un .pth PyTorch est une archive zip
+        inner.writestr("archive/data.pkl", b"x")
+    archive = tmp_path / "Narrateur_v2_Ov2_450e.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("Narrateur/G_2333.pth", b"PK checkpoint")
+        zf.writestr("Narrateur/Narrateur.pth", pth.getvalue())
+        zf.writestr("Narrateur/trained_IVF775_Flat_nprobe_1_Narrateur_v2.index", b"t")
+        zf.writestr("Narrateur/added_IVF775_Flat_nprobe_1_Narrateur_v2.index", b"index")
+    assert find_files(archive) == ("Narrateur/Narrateur.pth",
+                                   "Narrateur/added_IVF775_Flat_nprobe_1_Narrateur_v2.index")
+    assert clean_name("JamyModel_v2") == "JamyModel"
+
+    win = MainWindow()
+    dlg = RVCImportDialog(win.ctx, win)
+    dlg.set_source(archive)
+    assert dlg.name.text() == "Narrateur" and not dlg.ok.isEnabled()
+    dlg.consent.setChecked(True)
+    assert dlg.ok.isEnabled()
+    dlg._import()
+    v = dlg.voice
+    assert v is not None and v.engine == "rvc" and v.consent and v.is_clone
+    assert [p.name for p in v.reference_paths()] == ["modele.pth", "modele.index"]
+    assert (v.reference_paths()[1]).read_bytes() == b"index"
+    editor = win.pages["voices"].editor
+    editor.set_voice(v)  # éditeur : modèle affiché, moteur verrouillé sur RVC
+    assert editor.engine.currentData() == "rvc" and not editor.engine.isEnabled()
+    assert editor.refs.count() == 2 and not editor.ref_add.isEnabled()
+    win.ctx.library.delete(v.id)
+    win.ctx.dirty = False
+    win.close()

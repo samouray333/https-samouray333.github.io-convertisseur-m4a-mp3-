@@ -26,6 +26,8 @@ Composants utilisés :
 Moteurs installés à la demande :
 • XTTS-v2 (Coqui) — code MPL 2.0, modèle sous Coqui Public Model License (non commercial)
 • Chatterbox (Resemble AI) — MIT (le son produit contient un filigrane inaudible « Perth »)
+• RVC (Retrieval-based Voice Conversion), ContentVec, RMVPE — MIT ; faiss — MIT
+• faster-whisper — MIT ; Whisper (OpenAI) — MIT
 • Kokoro-82M — Apache 2.0
 • PyTorch — BSD
 

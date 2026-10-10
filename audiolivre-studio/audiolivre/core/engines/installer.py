@@ -48,6 +48,7 @@ class EngineSpec:
     python: str = "3.11"
     pin_torch: bool = False  # force la version de torch installée (le paquet en exige une autre)
     downloads: list[tuple[str, str]] = field(default_factory=list)
+    nodeps: list[str] = field(default_factory=list)  # paquets installés sans leurs dépendances
     size_gpu: str = ""
     size_cpu: str = ""
     model_size: str = ""
@@ -76,6 +77,18 @@ SPECS: dict[str, EngineSpec] = {
         id="whisper",
         packages=["faster-whisper==1.2.1", "soundfile"],
         size_gpu="≈ 0,4 Go", size_cpu="≈ 0,4 Go", model_size="0,15 Go",
+    ),
+    "rvc": EngineSpec(
+        id="rvc",
+        # le paquet « rvc » dépend de fairseq (compilation impossible sous Windows sans outils) : on n'en prend que
+        # le code d'inférence, l'analyseur ContentVec étant chargé avec transformers
+        packages=["transformers>=4.46,<5", "huggingface-hub", "faiss-cpu", "praat-parselmouth", "librosa",
+                  "soundfile", "scipy", "tqdm"],
+        nodeps=["rvc==0.3.5"],
+        torch_version="2.6.0",
+        torch_version_blackwell="2.7.1",
+        pin_torch=True,
+        size_gpu="≈ 5 Go", size_cpu="≈ 1,5 Go", model_size="0,6 Go",
     ),
     "kokoro": EngineSpec(
         id="kokoro",
@@ -412,6 +425,9 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
         if override is not None:
             override.unlink(missing_ok=True)
 
+    if spec.nodeps:
+        _run([uv, "pip", "install", "--python", py, "--no-deps", *spec.nodeps], log_cb, cancel)
+
     for url, name in spec.downloads:
         target = model_dir(engine_id) / name
         if not target.exists():
@@ -422,7 +438,10 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
              "chatterbox": "import chatterbox, perth, torch; assert perth.PerthImplicitWatermarker is not None, "
                            "'module perth incomplet'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",
              "kokoro": "import kokoro_onnx, onnxruntime; print('onnxruntime', onnxruntime.__version__)",
-             "whisper": "import faster_whisper, ctranslate2; print('ctranslate2', ctranslate2.__version__)"}[engine_id]
+             "whisper": "import faster_whisper, ctranslate2; print('ctranslate2', ctranslate2.__version__)",
+             "rvc": "import torch, transformers, faiss, parselmouth; "
+                    "from rvc.lib.infer_pack.models import SynthesizerTrnMs768NSFsid; from rvc.lib.rmvpe import RMVPE; "
+                    "print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"}[engine_id]
     _run([py, "-c", check], log_cb, cancel, env=worker_env(engine_id))
 
     info = {"engine": engine_id, "device": device, "flavor": flavor, "torch": torch_ver, "recipe": spec.version,

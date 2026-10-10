@@ -363,6 +363,232 @@ class ChatterboxVCBackend(Backend):
         return {"duration": write_wav(req["out"], to_numpy(wav), self.sr)}
 
 
+class RVCBackend(Backend):
+    """Conversion RVC : modèle de voix .pth (+ index .index facultatif) appliqué à une voix lue par Microsoft.
+
+    Code d'inférence du projet RVC (licence MIT) ; l'analyseur ContentVec est chargé avec transformers pour
+    éviter fairseq, qui ne s'installe pas sous Windows sans compilateur.
+    """
+
+    CONTENTVEC = "lengyue233/content-vec-best"
+    RMVPE = ("lj1995/VoiceConversionWebUI", "rmvpe.pt")
+
+    def load(self, device, options):
+        from torch import nn
+        from transformers import HubertModel
+
+        self.device = pick_device(device)
+        log("Chargement de l'analyseur de voix RVC (le premier lancement télécharge environ 0,6 Go)…")
+        t0 = time.time()
+
+        class ContentVec(HubertModel):
+            def __init__(self, config):
+                super().__init__(config)
+                self.final_proj = nn.Linear(config.hidden_size, config.classifier_proj_size)
+
+        self.hubert = ContentVec.from_pretrained(self.CONTENTVEC).to(self.device).float().eval()
+        self.rmvpe = None
+        try:
+            from huggingface_hub import hf_hub_download
+            from rvc.lib.rmvpe import RMVPE
+
+            self.rmvpe = RMVPE(hf_hub_download(*self.RMVPE), is_half=False, device=self.device)
+        except Exception as exc:
+            log(f"Détection de hauteur RMVPE indisponible ({exc}) : méthode simple utilisée")
+        self.cur_key = None
+        self.cur = None
+        log(f"RVC prêt sur {self.device} en {time.time() - t0:.0f} s")
+        return {"sr": 0, **device_info(self.device)}
+
+    def _model(self, model_path, index_path):
+        import torch
+        from rvc.lib.infer_pack.models import (SynthesizerTrnMs256NSFsid, SynthesizerTrnMs256NSFsid_nono,
+                                               SynthesizerTrnMs768NSFsid, SynthesizerTrnMs768NSFsid_nono)
+
+        has_index = bool(index_path) and os.path.exists(index_path)
+        key = (model_path, os.path.getmtime(model_path), index_path if has_index else "",
+               os.path.getmtime(index_path) if has_index else 0)
+        if key == self.cur_key:
+            return self.cur
+        try:
+            # weights_only : un .pth est un fichier « pickle » ; ce mode refuse tout code caché dans le fichier
+            cpt = torch.load(model_path, map_location="cpu", weights_only=True)
+        except Exception as exc:
+            raise RuntimeError("Ce fichier .pth ne peut pas être ouvert en toute sécurité : ce n'est pas un "
+                               f"modèle RVC standard ({str(exc)[:200]}).") from None
+        if not isinstance(cpt, dict) or "weight" not in cpt or "config" not in cpt:
+            raise RuntimeError("Ce fichier .pth n'est pas un modèle de voix RVC utilisable (il manque « weight » "
+                               "ou « config »). S'il s'agit d'un fichier d'entraînement (G_….pth, D_….pth), "
+                               "utilisez le modèle final exporté.")
+        vocoder = cpt.get("vocoder") or "HiFi-GAN"
+        if vocoder != "HiFi-GAN":
+            raise RuntimeError(f"Ce modèle utilise le vocodeur « {vocoder} », qui n'est pas encore pris en charge.")
+        config = list(cpt["config"])
+        sr = config[-1]
+        sr = {"32k": 32000, "40k": 40000, "48k": 48000}.get(sr, sr) if isinstance(sr, str) else int(sr)
+        config[-3] = cpt["weight"]["emb_g.weight"].shape[0]
+        if_f0 = int(cpt.get("f0", 1))
+        version = str(cpt.get("version", "v1"))
+        cls = {("v1", 1): SynthesizerTrnMs256NSFsid, ("v1", 0): SynthesizerTrnMs256NSFsid_nono,
+               ("v2", 1): SynthesizerTrnMs768NSFsid, ("v2", 0): SynthesizerTrnMs768NSFsid_nono
+               }.get((version, if_f0), SynthesizerTrnMs256NSFsid)
+        net = cls(*config, is_half=False)
+        del net.enc_q
+        net.load_state_dict(cpt["weight"], strict=False)
+        net = net.float().eval().to(self.device)
+        index = big = None
+        if has_index:
+            try:
+                import faiss
+
+                index = faiss.read_index(index_path)
+                big = index.reconstruct_n(0, index.ntotal)
+            except Exception as exc:
+                log(f"Index ignoré ({exc})")
+        log(f"Modèle RVC {version} chargé ({sr // 1000} kHz{', avec index' if index is not None else ''})")
+        self.cur_key = key
+        self.cur = {"net": net, "sr": int(sr), "f0": if_f0, "version": version, "index": index, "big": big}
+        return self.cur
+
+    def _f0(self, x, p_len, transpose):
+        import numpy as np
+
+        f0_min, f0_max = 50, 1100
+        mel_min, mel_max = 1127 * np.log(1 + f0_min / 700), 1127 * np.log(1 + f0_max / 700)
+        if self.rmvpe is not None:
+            f0 = self.rmvpe.infer_from_audio(x, thred=0.03)
+        else:
+            import parselmouth
+
+            f0 = parselmouth.Sound(x, 16000).to_pitch_ac(time_step=0.01, voicing_threshold=0.6, pitch_floor=f0_min,
+                                                          pitch_ceiling=f0_max).selected_array["frequency"]
+            pad = (p_len - len(f0) + 1) // 2
+            if pad > 0 or p_len - len(f0) - pad > 0:
+                f0 = np.pad(f0, [[pad, p_len - len(f0) - pad]], mode="constant")
+        f0 = f0 * pow(2, transpose / 12)
+        f0bak = f0.copy()
+        f0_mel = 1127 * np.log(1 + f0 / 700)
+        f0_mel[f0_mel > 0] = (f0_mel[f0_mel > 0] - mel_min) * 254 / (mel_max - mel_min) + 1
+        f0_mel[f0_mel <= 1] = 1
+        f0_mel[f0_mel > 255] = 255
+        return np.rint(f0_mel).astype(np.int32), f0bak
+
+    def _vc(self, m, sid, audio0, pitch, pitchf, index_rate, protect):
+        import numpy as np
+        import torch
+        import torch.nn.functional as F
+
+        feats = torch.from_numpy(np.ascontiguousarray(audio0, dtype=np.float32)).view(1, -1).to(self.device)
+        with torch.no_grad():
+            if m["version"] == "v1":
+                feats = self.hubert.final_proj(self.hubert(feats, output_hidden_states=True).hidden_states[9])
+            else:
+                feats = self.hubert(feats).last_hidden_state
+        hasp = pitch is not None and pitchf is not None
+        feats0 = feats.clone() if protect < 0.5 and hasp else None
+        if m["index"] is not None and index_rate > 0:
+            npy = feats[0].cpu().numpy().astype("float32")
+            score, ix = m["index"].search(npy, k=8)
+            weight = np.square(1 / np.maximum(score, 1e-12))
+            weight /= weight.sum(axis=1, keepdims=True)
+            npy = np.sum(m["big"][ix] * np.expand_dims(weight, axis=2), axis=1)
+            feats = torch.from_numpy(npy).unsqueeze(0).to(self.device) * index_rate + (1 - index_rate) * feats
+        feats = F.interpolate(feats.permute(0, 2, 1), scale_factor=2).permute(0, 2, 1)
+        if feats0 is not None:
+            feats0 = F.interpolate(feats0.permute(0, 2, 1), scale_factor=2).permute(0, 2, 1)
+        p_len = audio0.shape[0] // 160
+        if feats.shape[1] < p_len:
+            p_len = feats.shape[1]
+            if hasp:
+                pitch, pitchf = pitch[:, :p_len], pitchf[:, :p_len]
+        if feats0 is not None:
+            pitchff = pitchf.clone()
+            pitchff[pitchf > 0] = 1
+            pitchff[pitchf < 1] = protect
+            pitchff = pitchff.unsqueeze(-1)
+            feats = (feats * pitchff + feats0 * (1 - pitchff)).to(feats0.dtype)
+        lengths = torch.tensor([p_len], device=self.device).long()
+        with torch.no_grad():
+            args = (feats, lengths, pitch, pitchf, sid) if hasp else (feats, lengths, sid)
+            return m["net"].infer(*args)[0][0, 0].data.cpu().float().numpy()
+
+    def _pipeline(self, m, audio, transpose, index_rate, protect, rms_mix):
+        import numpy as np
+        import torch
+        from scipy import signal
+
+        sr, window = 16000, 160
+        t_pad, t_pad_tgt = sr * 1, m["sr"] * 1  # réglages RVC sans carte graphique (x_pad=1…)
+        t_pad2, t_query, t_center, t_max = t_pad * 2, sr * 6, sr * 38, sr * 41
+        bh, ah = signal.butter(N=5, Wn=48, btype="high", fs=16000)
+        audio = signal.filtfilt(bh, ah, audio)
+        audio_pad = np.pad(audio, (window // 2, window // 2), mode="reflect")
+        opt_ts = []
+        if audio_pad.shape[0] > t_max:
+            audio_sum = np.zeros_like(audio)
+            for i in range(window):
+                audio_sum += np.abs(audio_pad[i:i - window])
+            for t in range(t_center, audio.shape[0], t_center):
+                seg = audio_sum[t - t_query:t + t_query]
+                opt_ts.append(t - t_query + int(np.where(seg == seg.min())[0][0]))
+        audio_pad = np.pad(audio, (t_pad, t_pad), mode="reflect")
+        p_len = audio_pad.shape[0] // window
+        sid = torch.tensor([0], device=self.device).long()
+        pitch = pitchf = None
+        if m["f0"]:
+            coarse, fine = self._f0(audio_pad, p_len, transpose)
+            pitch = torch.tensor(coarse[:p_len], device=self.device).unsqueeze(0).long()
+            pitchf = torch.tensor(fine[:p_len].astype(np.float32), device=self.device).unsqueeze(0).float()
+        out = []
+        s, t = 0, None
+        for t in opt_ts:
+            t = t // window * window
+            sl = slice(s // window, (t + t_pad2) // window)
+            out.append(self._vc(m, sid, audio_pad[s:t + t_pad2 + window],
+                                pitch[:, sl] if pitch is not None else None,
+                                pitchf[:, sl] if pitchf is not None else None,
+                                index_rate, protect)[t_pad_tgt:-t_pad_tgt])
+            s = t
+        start = t // window if t is not None else 0
+        out.append(self._vc(m, sid, audio_pad[t:] if t is not None else audio_pad,
+                            pitch[:, start:] if pitch is not None else None,
+                            pitchf[:, start:] if pitchf is not None else None,
+                            index_rate, protect)[t_pad_tgt:-t_pad_tgt])
+        audio_opt = np.concatenate(out)
+        if rms_mix != 1:
+            audio_opt = self._change_rms(audio, audio_opt, m["sr"], rms_mix)
+        return audio_opt
+
+    @staticmethod
+    def _change_rms(src, out, out_sr, rate):
+        import librosa
+        import torch
+        import torch.nn.functional as F
+
+        rms1 = librosa.feature.rms(y=src, frame_length=16000 // 2 * 2, hop_length=16000 // 2)
+        rms2 = librosa.feature.rms(y=out, frame_length=out_sr // 2 * 2, hop_length=out_sr // 2)
+        rms1 = F.interpolate(torch.from_numpy(rms1).unsqueeze(0), size=out.shape[0], mode="linear").squeeze()
+        rms2 = F.interpolate(torch.from_numpy(rms2).unsqueeze(0), size=out.shape[0], mode="linear").squeeze()
+        rms2 = torch.max(rms2, torch.zeros_like(rms2) + 1e-6)
+        return out * (torch.pow(rms1, torch.tensor(1 - rate)) * torch.pow(rms2, torch.tensor(rate - 1))).numpy()
+
+    def convert(self, req):
+        import librosa
+        import numpy as np
+
+        m = self._model(req["model"], req.get("index"))
+        audio, _ = librosa.load(req["source"], sr=16000, mono=True)
+        peak = float(np.abs(audio).max()) / 0.95 if audio.size else 0.0
+        if peak > 1:
+            audio = audio / peak
+        t0 = time.time()
+        out = self._pipeline(m, audio.astype(np.float32), float(req.get("pitch", 0)),
+                             float(req.get("index_rate", 0.75)), float(req.get("protect", 0.33)),
+                             float(req.get("rms_mix", 0.25)))
+        log(f"Conversion RVC : {len(audio) / 16000:.1f} s d'audio en {time.time() - t0:.1f} s")
+        return {"duration": write_wav(req["out"], out, m["sr"])}
+
+
 class WhisperBackend(Backend):
     """Reconnaissance vocale (relecture automatique des passages produits)."""
 
@@ -383,7 +609,7 @@ class WhisperBackend(Backend):
 
 
 BACKENDS = {"dummy": DummyBackend, "xtts": XttsBackend, "chatterbox": ChatterboxBackend, "kokoro": KokoroBackend,
-            "chatterbox_vc": ChatterboxVCBackend, "whisper": WhisperBackend}
+            "chatterbox_vc": ChatterboxVCBackend, "whisper": WhisperBackend, "rvc": RVCBackend}
 
 
 # =======================================================================================

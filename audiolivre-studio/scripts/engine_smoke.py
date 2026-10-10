@@ -21,7 +21,7 @@ def log(msg: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--engine", required=True, choices=["kokoro", "xtts", "chatterbox", "whisper"])
+    ap.add_argument("--engine", required=True, choices=["kokoro", "xtts", "chatterbox", "whisper", "rvc"])
     ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
 
@@ -61,6 +61,29 @@ def main() -> int:
     eng = engines.get_engine(args.engine)
     assert eng.is_ready(), eng.status()
     lib = VoiceLibrary(work / "voices")
+
+    if args.engine == "rvc":
+        import subprocess
+
+        rvc = lib.save(VoiceProfile(name="RVC test", engine="rvc", kind="clone", consent=True, gender="M"))
+        d = lib.voice_dir(rvc)
+        subprocess.run([str(installer.env_python("rvc")), str(ROOT / "scripts" / "make_test_rvc.py"),
+                        str(d / "modele.pth"), str(d / "modele.index")], check=True, env=installer.worker_env("rvc"))
+        rvc.references = ["modele.pth", "modele.index"]
+        lib.save(rvc)
+        for i in range(2):  # le premier passage inclut le chargement des modèles
+            t1 = time.time()
+            out = eng.synthesize("Il était une fois, dans un petit village au bord de la mer, une histoire "
+                                 "extraordinaire qui allait changer la vie de tous ses habitants.",
+                                 rvc, work / f"rvc{i}.wav", "fr", 1.0, 1)
+            data, sr = audio.read_audio(out)
+            stats = audio.analyze_array(data, sr)
+            log(f"RVC (essai {i + 1}) : {stats.duration:.1f} s d'audio à {sr} Hz en {time.time() - t1:.0f} s "
+                f"(RMS {stats.rms_db:.1f} dB)")
+            assert stats.duration > 2 and stats.rms_db > -90  # modèle aléatoire : seul le fonctionnement compte
+        engines.shutdown_all()
+        log("SUCCÈS")
+        return 0
 
     voices: list[VoiceProfile] = []
     if args.engine in ("kokoro", "xtts"):

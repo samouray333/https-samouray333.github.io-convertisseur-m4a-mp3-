@@ -247,6 +247,10 @@ class EnginesPage(Page):
             if voice is not None:
                 voice = VoiceProfile.from_dict({**voice.to_dict(), "engine": "fastclone", "params": {}})
                 voice.dir = self.ctx.library.get(voice.id).dir
+        if voice is None and eng.info.id == "rvc":
+            self.ctx.toast("Importez d'abord un modèle .pth (Voix & clonage → Modèle .pth) pour tester ce moteur.",
+                           "warning")
+            return
         if voice is None:
             if eng.info.id in ("chatterbox", "fastclone"):
                 self.ctx.toast("Créez d'abord une voix clonée (Voix & clonage) pour tester ce moteur.", "warning")

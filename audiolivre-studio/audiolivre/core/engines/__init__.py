@@ -12,20 +12,21 @@ __all__ = ["all_engines", "get_engine", "get_tool", "all_tools", "shutdown_all",
 
 _lock = threading.Lock()
 _engines: dict[str, TTSEngine] | None = None
-ORDER = ["edge", "xtts", "fastclone", "chatterbox", "kokoro", "sapi"]
+ORDER = ["edge", "xtts", "fastclone", "rvc", "chatterbox", "kokoro", "sapi"]
 CLONING_ENGINES = ["xtts", "fastclone", "chatterbox"]
 _tools: dict[str, TTSEngine] = {}
 
 
 def _build() -> dict[str, TTSEngine]:
     from .edge import EdgeEngine
-    from .neural import FastCloneEngine, WorkerEngine
+    from .neural import FastCloneEngine, RVCEngine, WorkerEngine
     from .sapi import SapiEngine
 
     return {
         "edge": EdgeEngine(),
         "xtts": WorkerEngine("xtts"),
         "fastclone": FastCloneEngine(),
+        "rvc": RVCEngine(),
         "chatterbox": WorkerEngine("chatterbox"),
         "kokoro": WorkerEngine("kokoro"),
         "sapi": SapiEngine(),
