@@ -553,7 +553,13 @@ class ProductionPage(Page):
         self.pause_btn.setText("Pause")
         self._update_buttons()
         elapsed = format_duration(report.elapsed)
-        if report.cancelled:
+        if report.blocked:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, "Service de voix Microsoft indisponible",
+                                report.blocked + "\n\nLes passages déjà produits sont conservés : relancez la "
+                                "production plus tard, elle reprendra où elle s'est arrêtée.")
+        elif report.cancelled:
             self.ctx.toast("Production arrêtée. Les passages produits sont conservés.", "warning")
         elif report.failed_segments:
             self.ctx.toast(f"Production terminée avec {len(report.failed_segments)} erreur(s). Consultez le journal.",

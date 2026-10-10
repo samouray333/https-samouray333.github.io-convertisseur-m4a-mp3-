@@ -259,3 +259,58 @@ def test_credits_text_paragraphs_and_voice(tmp_path, tone_engine, library):
     assert closing.segments[0].voice_id == annonce.id
     pr.export.credits_voice_id = ""
     assert renderer.build_plan(pr, library)[0].segments[0].voice_id == narr.id
+
+
+def test_edge_refusal_stops_quickly(tmp_path, monkeypatch):
+    import edge_tts
+
+    from audiolivre.core.engines import ServiceBlocked
+    from audiolivre.core.engines import edge as edge_mod
+
+    calls = []
+
+    class Refused(Exception):
+        status = 403
+
+    class FakeCommunicate:
+        def __init__(self, *a, **k):
+            calls.append(a)
+
+        async def save(self, path):
+            raise Refused("403, message='Invalid response status'")
+
+    monkeypatch.setattr(edge_tts, "Communicate", FakeCommunicate)
+    monkeypatch.setattr(edge_mod.time, "sleep", lambda s: None)
+    voice = VoiceProfile(name="Denise", engine="edge", engine_voice="fr-FR-DeniseNeural")
+    with pytest.raises(ServiceBlocked) as err:
+        edge_mod.EdgeEngine().synthesize("Bonjour.", voice, tmp_path / "x.mp3", "fr")
+    assert len(calls) == 2 and "403" in str(err.value) and "hors ligne" in str(err.value)
+
+
+@needs_ffmpeg
+def test_blocked_service_stops_production(tmp_path, library):
+    from audiolivre.core import engines
+    from audiolivre.core.engines import ServiceBlocked
+    from audiolivre.selftest import make_tone_engine
+
+    base = make_tone_engine()
+    calls = []
+
+    class Blocked(type(base)):
+        info = type(base).info.__class__(**{**type(base).info.__dict__, "id": "blocked", "name": "Bloqué"})
+
+        def synthesize(self, *a, **k):
+            calls.append(1)
+            raise ServiceBlocked("Le service refuse les demandes (erreur 403).")
+
+    engines.register_engine(Blocked())
+    v = library.save(VoiceProfile(name="B", engine="blocked"))
+    text = "\n\n".join(f"Paragraphe numéro {i} du livre." for i in range(12))
+    pr = make_project(tmp_path, v.id, text=text)
+    pr.export.include_credits = False
+    logs = []
+    rep = renderer.Renderer(pr, library, renderer.RenderCallbacks(log=logs.append)).render(
+        renderer.build_plan(pr, library))
+    assert rep.blocked and rep.cancelled
+    assert len(calls) <= 3  # arrêt immédiat au lieu de 12 passages × 4 essais
+    assert any(m.startswith("Production interrompue") for m in logs)

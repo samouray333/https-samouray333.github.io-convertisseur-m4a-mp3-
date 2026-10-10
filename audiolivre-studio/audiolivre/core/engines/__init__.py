@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import threading
 
-from .base import NOT_INSTALLED, READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec, TTSEngine
+from .base import (NOT_INSTALLED, READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec,
+                   ServiceBlocked, TTSEngine)
 
 __all__ = ["all_engines", "get_engine", "get_tool", "all_tools", "shutdown_all", "register_engine", "TTSEngine",
-           "EngineInfo", "EngineError", "BuiltinVoice", "ParamSpec", "READY", "NOT_INSTALLED", "UNAVAILABLE",
+           "EngineInfo", "EngineError", "ServiceBlocked", "BuiltinVoice", "ParamSpec", "READY", "NOT_INSTALLED", "UNAVAILABLE",
            "CLONING_ENGINES"]
 
 _lock = threading.Lock()

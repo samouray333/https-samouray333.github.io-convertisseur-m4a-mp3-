@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ... import paths
 from ..models import VoiceProfile
-from .base import READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec, TTSEngine
+from .base import READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec, ServiceBlocked, TTSEngine
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +42,20 @@ def voice_language(short_name: str, locale: str) -> tuple[str, str]:
     if "Multilingual" in short_name and lang != "fr":
         return "multi", "lit aussi le français (léger accent possible)"
     return lang, ""
+
+
+BLOCKED_MESSAGE = (
+    "Le service de voix Microsoft refuse les demandes de cet ordinateur (erreur 403). Causes habituelles : "
+    "trop de demandes en peu de temps (Microsoft bloque temporairement : attendez 30 à 60 minutes, puis "
+    "réduisez « Requêtes simultanées » à 1 dans Paramètres → Performances) ; un VPN, un proxy ou un antivirus "
+    "qui filtre Internet (désactivez-le le temps d'essayer) ; ou l'heure de l'ordinateur décalée (Paramètres "
+    "Windows → Heure et langue → Synchroniser maintenant). En attendant, les voix hors ligne fonctionnent "
+    "(Kokoro, XTTS-v2, voix Windows)."
+)
+LIMITED_MESSAGE = (
+    "Le service de voix Microsoft limite temporairement les demandes (trop de demandes). Patientez 15 à 30 minutes "
+    "et réduisez « Requêtes simultanées » à 1 dans Paramètres → Performances."
+)
 
 
 class EdgeEngine(TTSEngine):
@@ -139,6 +153,7 @@ class EdgeEngine(TTSEngine):
         target = Path(out_path).with_suffix(".mp3")
         voice_name = voice.engine_voice or "fr-FR-DeniseNeural"
         last_exc: Exception | None = None
+        refused = 0
         for attempt in range(4):
             try:
                 comm = edge_tts.Communicate(text, voice_name, rate=rate, pitch=pitch)
@@ -148,6 +163,14 @@ class EdgeEngine(TTSEngine):
                 raise EngineError("Aucun son reçu")
             except Exception as exc:  # erreurs réseau : on réessaie
                 last_exc = exc
+                status = getattr(exc, "status", None)
+                if status in (403, 429, 503):
+                    # refus du service : un seul nouvel essai, espacé, puis arrêt (inutile d'insister)
+                    refused += 1
+                    if refused >= 2:
+                        raise ServiceBlocked(BLOCKED_MESSAGE if status == 403 else LIMITED_MESSAGE) from None
+                    time.sleep(10)
+                    continue
                 time.sleep(1.5 * (attempt + 1))
         raise EngineError(
             "Le service de voix Microsoft ne répond pas. Vérifiez votre connexion Internet. "

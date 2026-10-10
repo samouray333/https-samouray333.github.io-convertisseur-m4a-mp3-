@@ -108,7 +108,7 @@ class SettingsPage(Page):
         g3.addWidget(self.device, 0, 1)
         self.edge_conc = QSpinBox()
         self.edge_conc.setRange(1, 8)
-        self.edge_conc.setValue(int(s.get("edge_concurrency", 4)))
+        self.edge_conc.setValue(int(s.get("edge_concurrency", 2)))
         self.edge_conc.valueChanged.connect(lambda v: s.set("edge_concurrency", v))
         g3.addWidget(label("Requêtes simultanées (voix Microsoft)", "Muted"), 1, 0)
         g3.addWidget(self.edge_conc, 1, 1)

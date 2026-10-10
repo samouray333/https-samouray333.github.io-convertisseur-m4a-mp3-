@@ -306,6 +306,7 @@ class RenderReport:
     warnings: list[str] = field(default_factory=list)
     cancelled: bool = False
     elapsed: float = 0.0
+    blocked: str = ""  # service en ligne qui refuse les demandes (production interrompue)
 
 
 def expected_duration(text: str, speed: float = 1.0) -> float:
@@ -369,7 +370,8 @@ class Renderer:
                 except Exception as exc:
                     last_error = exc
                     log.warning("Échec segment %s (essai %d) : %s", seg.index, attempt + 1, exc)
-                    if isinstance(exc, engines.EngineError) and "pas installé" in str(exc):
+                    if isinstance(exc, engines.ServiceBlocked) or (
+                            isinstance(exc, engines.EngineError) and "pas installé" in str(exc)):
                         raise
                     time.sleep(0.5)
                     continue
@@ -510,7 +512,7 @@ class Renderer:
                 eng = engines.get_engine(self._voice(s.voice_id).engine)
                 workers = eng.info.max_workers if eng else 1
                 if eng is not None and eng.info.id == "edge":
-                    workers = int(settings().get("edge_concurrency", 4) or 1)
+                    workers = int(settings().get("edge_concurrency", 2) or 1)
                 groups.setdefault(max(1, workers), []).append(s)
 
             def run_one(seg: Segment):
@@ -522,6 +524,8 @@ class Renderer:
                     self.synth_segment(seg)
                     return seg, "done", None
                 except Exception as exc:  # noqa: BLE001
+                    if self.cancel_event.is_set() and not isinstance(exc, engines.ServiceBlocked):
+                        return seg, "cancelled", None  # arrêt demandé pendant le passage : pas une erreur
                     return seg, "error", exc
 
             for workers, segs in groups.items():
@@ -539,8 +543,13 @@ class Renderer:
                         else:
                             failed = True
                             report.failed_segments.append((rc.id, seg.index, str(exc)))
-                            self.cb.log(f"Erreur sur « {rc.title} », passage {seg.index + 1} : {exc}")
+                            if not isinstance(exc, engines.ServiceBlocked):
+                                self.cb.log(f"Erreur sur « {rc.title} », passage {seg.index + 1} : {exc}")
                         self.cb.progress(done, total, f"{rc.title} — passage {seg.index + 1}/{len(rc.segments)}")
+                        if isinstance(exc, engines.ServiceBlocked) and not report.blocked:
+                            report.blocked = str(exc)
+                            self.cb.log("Production interrompue : " + str(exc))
+                            self.cancel_event.set()
                         if isinstance(exc, engines.EngineError) and "pas installé" in str(exc):
                             self.cancel_event.set()
             if self.cancel_event.is_set():

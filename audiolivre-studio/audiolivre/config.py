@@ -23,7 +23,7 @@ DEFAULTS: dict[str, Any] = {
     "autosave_minutes": 3,
     "ffmpeg_path": "",
     "default_voice_id": "",
-    "edge_concurrency": 4,
+    "edge_concurrency": 2,  # au-delà, Microsoft peut bloquer temporairement
     "preview_sentence": "Bonjour, je suis la voix qui va lire votre livre. "
     "Il était une fois, dans un petit village au bord de la mer, une histoire extraordinaire.",
     "window_geometry": "",

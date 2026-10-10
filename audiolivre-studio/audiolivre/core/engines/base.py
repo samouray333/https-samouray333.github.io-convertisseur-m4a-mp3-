@@ -14,6 +14,10 @@ class EngineError(RuntimeError):
     """Erreur de synthèse affichable à l'utilisateur."""
 
 
+class ServiceBlocked(EngineError):
+    """Le service en ligne refuse les demandes : inutile de réessayer chaque passage, la production s'arrête."""
+
+
 @dataclass
 class ParamSpec:
     key: str
