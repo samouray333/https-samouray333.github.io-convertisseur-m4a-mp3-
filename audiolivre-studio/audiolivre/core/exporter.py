@@ -67,11 +67,10 @@ def credits_text(template: str, meta: BookMetadata) -> str:
         "year": meta.year,
         "copyright": meta.copyright,
     }
-    try:
-        text = template.format(**values)
-    except (KeyError, IndexError, ValueError):
-        text = template
-    return re.sub(r"\s{2,}", " ", text).strip()
+    # variables remplacées une à une : une accolade isolée dans le texte ne casse rien
+    text = re.sub(r"\{(\w+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
+    lines = [re.sub(r"[ \t]{2,}", " ", line).strip() for line in text.replace("\r\n", "\n").split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 # ---------------------------------------------------------------------------------------

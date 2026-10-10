@@ -238,3 +238,24 @@ def test_edge_multilingual_voices_listed_for_french():
     assert voice_language("en-US-AvaMultilingualNeural", "en-US")[0] == "multi"
     assert voice_language("fr-FR-VivienneMultilingualNeural", "fr-FR") == ("fr", "")
     assert voice_language("en-US-GuyNeural", "en-US") == ("en", "")
+
+
+def test_credits_text_paragraphs_and_voice(tmp_path, tone_engine, library):
+    from audiolivre.core.exporter import credits_text
+    from audiolivre.core.models import BookMetadata
+
+    meta = BookMetadata(title="Le Phare", author="Jeanne", narrator="Paul")
+    text = credits_text("{title}.\n\n\n\nÉcrit par  {author}.\n\nMerci à {inconnu} {", meta)
+    assert text == "Le Phare.\n\nÉcrit par Jeanne.\n\nMerci à {inconnu} {"
+    narr = library.save(VoiceProfile(name="Narrateur", engine="tone"))
+    annonce = library.save(VoiceProfile(name="Annonce", engine="tone"))
+    pr = make_project(tmp_path, narr.id)
+    pr.export.opening_credits = "{title}.\n\n[pause 1s]\n\nLu par {narrator}."
+    pr.export.credits_voice_id = annonce.id
+    plan = renderer.build_plan(pr, library)
+    opening, closing = plan[0], plan[-1]
+    assert [s.voice_id for s in opening.segments] == [annonce.id, annonce.id]
+    assert opening.segments[0].pause_after_ms >= 1000
+    assert closing.segments[0].voice_id == annonce.id
+    pr.export.credits_voice_id = ""
+    assert renderer.build_plan(pr, library)[0].segments[0].voice_id == narr.id

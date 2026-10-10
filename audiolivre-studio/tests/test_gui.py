@@ -116,3 +116,31 @@ def test_ai_assistant_dialog_applies_suggestions(app):
         win.ctx.library.delete(vid)
     win.ctx.dirty = False
     win.close()
+
+
+def test_credits_dialog(app):
+    from audiolivre.core.models import Chapter, Project
+    from audiolivre.ui.dialogs.credits import CreditsDialog
+    from audiolivre.ui.main_window import MainWindow
+
+    win = MainWindow()
+    pr = Project(chapters=[Chapter(title="Chapitre 1", text="Bonjour.")])
+    pr.metadata.title = "Le Phare"
+    win.ctx.set_project(pr)
+    dlg = CreditsDialog(win.ctx, win)
+    dlg._template("opening")
+    dlg.editors["closing"].setPlainText("Fin.\n\nMerci à ma famille.")
+    from PySide6.QtGui import QTextCursor
+
+    dlg.editors["closing"].moveCursor(QTextCursor.End)
+    dlg._focused = dlg.editors["closing"]
+    dlg._insert("{title}")
+    assert "mots" in dlg.counts.text()
+    assert dlg._chapter("opening").text.startswith("Le Phare.")
+    dlg._save()
+    assert pr.export.closing_credits == "Fin.\n\nMerci à ma famille.{title}"
+    assert "{author}" in pr.export.opening_credits
+    win.show_page("export")
+    app.processEvents()
+    win.ctx.dirty = False
+    win.close()

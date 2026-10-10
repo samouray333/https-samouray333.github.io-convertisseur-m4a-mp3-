@@ -138,6 +138,7 @@ class ExportSettings:
     include_credits: bool = True
     opening_credits: str = "{title}. {subtitle_sentence}Écrit par {author}. Lu par {narrator}."
     closing_credits: str = "Fin. Vous venez d'écouter {title}, écrit par {author}, lu par {narrator}."
+    credits_voice_id: str = ""  # vide : voix du narrateur
     make_sample: bool = True
     sample_minutes: float = 3.0
     acx_cover: bool = True

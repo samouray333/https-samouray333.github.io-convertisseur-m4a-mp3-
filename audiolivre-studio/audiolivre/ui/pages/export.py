@@ -235,15 +235,15 @@ class ExportPage(Page):
         self.t_credits = ToggleSwitch("Ajouter les crédits d'ouverture et de fin")
         self.t_credits.toggled.connect(self._export_changed)
         cr_card.add(self.t_credits)
-        self.open_tpl = QLineEdit()
-        self.close_tpl = QLineEdit()
-        for w in (self.open_tpl, self.close_tpl):
-            w.textEdited.connect(self._export_changed)
+        self.open_tpl = label("", "Hint", wrap=True)
+        self.close_tpl = label("", "Hint", wrap=True)
         cr_card.add(label("Crédits d'ouverture", "Muted"))
         cr_card.add(self.open_tpl)
         cr_card.add(label("Crédits de fin", "Muted"))
         cr_card.add(self.close_tpl)
-        cr_card.add(label("Variables : {title} {subtitle} {author} {narrator} {publisher} {year}", "Faint"))
+        edit_credits = button("Écrire les crédits…", "edit")
+        edit_credits.clicked.connect(self._edit_credits)
+        cr_card.add(edit_credits)
         sr = QHBoxLayout()
         self.t_sample = ToggleSwitch("Créer un extrait de")
         self.t_sample.toggled.connect(self._export_changed)
@@ -331,8 +331,7 @@ class ExportPage(Page):
         self.t_deess.setChecked(prod.deesser)
         self.t_room.setChecked(prod.room_tone)
         self.t_credits.setChecked(e.include_credits)
-        self.open_tpl.setText(e.opening_credits)
-        self.close_tpl.setText(e.closing_credits)
+        self._show_credits()
         self.t_sample.setChecked(e.make_sample)
         self.sample_min.setValue(e.sample_minutes)
         self.out_dir.setText(str(default_export_dir(pr)))
@@ -375,6 +374,21 @@ class ExportPage(Page):
             self.produce_btn.show()
 
     # -- modifications -----------------------------------------------------------------
+    def _show_credits(self) -> None:
+        from ...core.exporter import credits_text
+
+        e, meta = self.ctx.project.export, self.ctx.project.metadata
+        for lbl, tpl in ((self.open_tpl, e.opening_credits), (self.close_tpl, e.closing_credits)):
+            text = " ".join(credits_text(tpl, meta).split()) or "(vides)"
+            lbl.setText(text if len(text) <= 160 else text[:157] + "…")
+
+    def _edit_credits(self) -> None:
+        from ..dialogs.credits import CreditsDialog
+
+        if CreditsDialog(self.ctx, self).exec():
+            self._show_credits()
+            self.on_show()
+
     def _meta_changed(self, *_a) -> None:
         if self._loading:
             return
@@ -396,8 +410,6 @@ class ExportPage(Page):
         e.mp3_bitrate = self.mp3_rate.currentText()
         e.acx_cover = self.acx_cover.isChecked()
         e.include_credits = self.t_credits.isChecked()
-        e.opening_credits = self.open_tpl.text()
-        e.closing_credits = self.close_tpl.text()
         e.make_sample = self.t_sample.isChecked()
         e.sample_minutes = self.sample_min.value()
         e.file_pattern = self.pattern.text() or "{index:02d} - {title}"

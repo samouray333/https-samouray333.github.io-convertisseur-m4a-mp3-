@@ -208,6 +208,14 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
     return rc
 
 
+def credits_chapter(project: Project, kind: str) -> Chapter:
+    """Crédits d'ouverture (« opening ») ou de fin (« closing ») sous forme de chapitre à lire."""
+    e = project.export
+    template = e.opening_credits if kind == "opening" else e.closing_credits
+    return Chapter(id=f"__{kind}__", title="Crédits d'ouverture" if kind == "opening" else "Crédits de fin",
+                   text=credits_text(template, project.metadata), voice_id=e.credits_voice_id)
+
+
 def build_plan(project: Project, library: VoiceLibrary, chapter_ids: list[str] | None = None,
                include_credits: bool | None = None) -> list[RenderChapter]:
     resolver = VoiceResolver(project, library)
@@ -215,16 +223,12 @@ def build_plan(project: Project, library: VoiceLibrary, chapter_ids: list[str] |
     credits = project.export.include_credits if include_credits is None else include_credits
     wanted = set(chapter_ids) if chapter_ids else None
     if credits and (wanted is None or "__opening__" in wanted):
-        text = credits_text(project.export.opening_credits, project.metadata)
-        plan.append(build_chapter_plan(project, Chapter(id="__opening__", title="Crédits d'ouverture", text=text),
-                                       library, "opening", resolver))
+        plan.append(build_chapter_plan(project, credits_chapter(project, "opening"), library, "opening", resolver))
     for ch in project.included_chapters():
         if wanted is None or ch.id in wanted:
             plan.append(build_chapter_plan(project, ch, library, "chapter", resolver))
     if credits and (wanted is None or "__closing__" in wanted):
-        text = credits_text(project.export.closing_credits, project.metadata)
-        plan.append(build_chapter_plan(project, Chapter(id="__closing__", title="Crédits de fin", text=text),
-                                       library, "closing", resolver))
+        plan.append(build_chapter_plan(project, credits_chapter(project, "closing"), library, "closing", resolver))
     return plan
 
 
