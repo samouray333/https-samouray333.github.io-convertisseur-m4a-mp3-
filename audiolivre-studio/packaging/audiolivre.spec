@@ -46,7 +46,7 @@ if TOOLS.is_dir():
             datas.append((str(f), "tools"))
 
 hiddenimports = collect_submodules("num2words") + [
-    "win32com", "win32com.client", "pythoncom", "pywintypes",
+    "win32com", "win32com.client", "pythoncom", "pywintypes", "win32crypt",
     "edge_tts", "aiohttp", "certifi",
     "ebooklib", "ebooklib.epub", "bs4", "lxml", "lxml.etree", "docx", "striprtf.striprtf", "pymupdf",
     "soundfile", "sounddevice", "soxr", "mutagen.mp4", "mutagen.id3", "mutagen.flac",

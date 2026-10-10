@@ -33,6 +33,9 @@ DEFAULTS: dict[str, Any] = {
     "check_updates": True,
     "asr_model": "base",
     "fastclone_mode": "fast",  # fast (décodeur Turbo) | best
+    "ai_key": "",  # clé DeepSeek chiffrée (voir core/secrets.py)
+    "ai_model": "",  # vide : choisi automatiquement parmi les modèles du compte
+    "ai_base_url": "https://api.deepseek.com",
 }
 
 

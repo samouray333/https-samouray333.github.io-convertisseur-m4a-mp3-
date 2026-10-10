@@ -221,6 +221,9 @@ class ManuscriptPage(Page):
         self.role_menu = QMenu(self)
         self.role_menu.aboutToShow.connect(self._fill_roles)
         self.role_btn.setMenu(self.role_menu)
+        ia = button("Assistant IA", "sparkles", tooltip="DeepSeek repère qui parle, les émotions et les noms difficiles "
+                    "à prononcer ; vous validez chaque proposition")
+        ia.clicked.connect(self.ai_assistant)
         preview = button("Aperçu", "eye",
                          tooltip="Aperçu de lecture : montre exactement ce qui sera lu, segment par segment")
         preview.clicked.connect(self.reading_preview)
@@ -228,7 +231,7 @@ class ManuscriptPage(Page):
         listen.clicked.connect(self.listen_selection)
         find = IconButton("search", "Rechercher / remplacer (Ctrl+F)", 36, 18)
         find.clicked.connect(self.toggle_find)
-        for w in (clean, pause, heading, self.role_btn, self.emo_btn, preview):
+        for w in (clean, pause, heading, self.role_btn, self.emo_btn, ia, preview):
             bar.addWidget(w)
         bar.addStretch(1)
         bar.addWidget(find)
@@ -643,6 +646,19 @@ class ManuscriptPage(Page):
             self.ctx.toast("Aucune voix disponible.", "error")
             return
         self.ctx.preview_voice(voice, text)
+
+    def ai_assistant(self) -> None:
+        if self._current is None:
+            return
+        self._commit_text()
+        from ..dialogs.ai_annotate import AIAnnotateDialog
+
+        if AIAnnotateDialog(self.ctx, self._current, self).exec():
+            self._loading = True
+            self.editor.setPlainText(self._current.text)
+            self._loading = False
+            self._update_stats()
+            self._refresh_items()
 
     def reading_preview(self) -> None:
         if self._current is None:

@@ -12,6 +12,7 @@ from ... import __version__, paths
 from ...config import settings
 from ...core import ffmpeg
 from ...core.engines import installer
+from ...core.secrets import protect, unprotect
 from .. import theme
 from ..widgets import Card, ToggleSwitch, button, card_title, label
 from .base import Page
@@ -129,6 +130,34 @@ class SettingsPage(Page):
         perf.add(self.ff_info)
         self.body.addWidget(perf)
 
+        aic = Card()
+        aic.add(card_title("Assistant IA (DeepSeek)", "Repère qui parle, les émotions et les noms difficiles à "
+                           "prononcer (Manuscrit → Assistant IA).", "sparkles"))
+        g4 = QGridLayout()
+        g4.setHorizontalSpacing(14)
+        g4.setVerticalSpacing(10)
+        self.ai_key = QLineEdit()
+        self.ai_key.setEchoMode(QLineEdit.Password)
+        self.ai_key.setPlaceholderText("Clé enregistrée" if unprotect(s.get("ai_key", "")) else "sk-…")
+        self.ai_key.editingFinished.connect(self._save_ai_key)
+        g4.addWidget(label("Clé API", "Muted"), 0, 0)
+        g4.addWidget(self.ai_key, 0, 1)
+        test = button("Tester", "check")
+        test.clicked.connect(self._test_ai)
+        g4.addWidget(test, 0, 2)
+        self.ai_model = QLineEdit(s.get("ai_model", ""))
+        self.ai_model.setPlaceholderText("Automatique")
+        self.ai_model.editingFinished.connect(lambda: s.set("ai_model", self.ai_model.text().strip()))
+        g4.addWidget(label("Modèle", "Muted"), 1, 0)
+        g4.addWidget(self.ai_model, 1, 1)
+        g4.setColumnStretch(1, 1)
+        aic.add(g4)
+        self.ai_info = label("Créez une clé sur platform.deepseek.com (API keys). Elle est chiffrée sur cet "
+                             "ordinateur. Service payant à l'usage : quelques centimes par livre ; le texte des "
+                             "chapitres analysés est envoyé à DeepSeek.", "Hint", wrap=True)
+        aic.add(self.ai_info)
+        self.body.addWidget(aic)
+
         data = Card()
         data.add(card_title("Données et stockage", "", "folder"))
         self.data_info = label("", "Muted", wrap=True)
@@ -213,6 +242,37 @@ class SettingsPage(Page):
         from ...core.engines import get_engine
 
         get_engine("fastclone").shutdown()
+
+    def _save_ai_key(self) -> None:
+        key = self.ai_key.text().strip()
+        if not key:
+            return
+        settings().set("ai_key", protect(key))
+        settings().set("ai_model", "")
+        self.ai_model.clear()
+        self.ai_key.clear()
+        self.ai_key.setPlaceholderText("Clé enregistrée")
+        self.ctx.toast("Clé DeepSeek enregistrée.", "success")
+
+    def _test_ai(self) -> None:
+        from ...core import ai
+        from .. import tasks
+
+        self._save_ai_key()
+        try:
+            client = ai.client_from_settings()
+        except ai.AIError as exc:
+            self.ai_info.setText(str(exc))
+            return
+        self.ai_info.setText("Connexion à DeepSeek…")
+
+        def ok(model: str) -> None:
+            settings().set("ai_model", model)
+            self.ai_model.setText(model)
+            self.ai_info.setText(f"✓ Clé valide. Modèle utilisé : {model}.")
+
+        self._ai_task = tasks.run(lambda: (client.list_models(), client.pick_model())[1], on_done=ok,
+                                  on_error=lambda m, _t: self.ai_info.setText("⚠ " + m))
 
     def _pick_projects(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Dossier des projets", self.proj_dir.text())

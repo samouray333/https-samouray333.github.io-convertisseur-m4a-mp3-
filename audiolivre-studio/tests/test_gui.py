@@ -85,3 +85,34 @@ def test_import_preview_dialog(app):
     dlg._merge_prev()
     dlg._accept()
     assert len(doc.chapters) == 2
+
+
+def test_ai_assistant_dialog_applies_suggestions(app):
+    from PySide6.QtCore import Qt
+
+    from audiolivre.core import ai
+    from audiolivre.core.models import Chapter, Project
+    from audiolivre.ui.dialogs.ai_annotate import AIAnnotateDialog
+    from audiolivre.ui.main_window import MainWindow
+
+    win = MainWindow()
+    ch = Chapter(title="Chapitre 1", text="Marie entra.\n\n— Bonjour ! dit-elle.\n\n— Salut, répondit Paul.")
+    win.ctx.set_project(Project(chapters=[ch]))
+    dlg = AIAnnotateDialog(win.ctx, ch, win)
+    dlg.show_result(ai.Annotation(
+        paragraphs=[ai.ParagraphSuggestion(2, "— Bonjour ! dit-elle.", "Marie", "joyeux"),
+                    ai.ParagraphSuggestion(3, "— Salut, répondit Paul.", "Paul", "")],
+        names=[ai.NameSuggestion("Marie", "Mari")], characters={"Marie": "F", "Paul": "M"}))
+    assert dlg.apply_btn.isEnabled()
+    dlg.table.item(1, 2).setText("Paulo")  # correction manuelle du nom
+    dlg.names.item(0, 0).setCheckState(Qt.Unchecked)
+    dlg._apply()
+    assert ch.text == "Marie entra.\n\n@Marie: [joyeux] — Bonjour ! dit-elle.\n\n@Paulo: — Salut, répondit Paul."
+    pr = win.ctx.project
+    assert set(pr.cast) == {"Marie", "Paulo"} and all(pr.cast.values())
+    assert win.ctx.library.get(pr.cast["Marie"]).engine == "edge"
+    assert pr.lexicon == []
+    for vid in pr.cast.values():
+        win.ctx.library.delete(vid)
+    win.ctx.dirty = False
+    win.close()
