@@ -27,11 +27,21 @@ FALLBACK_VOICES = [
     ("en-US-AndrewMultilingualNeural", "Andrew (multilingual)", "M"),
     ("en-US-AvaMultilingualNeural", "Ava (multilingual)", "F"),
     ("en-US-EmmaMultilingualNeural", "Emma (multilingual)", "F"),
-    ("en-US-BrianMultilingualNeural", "Brian (multilingual)", "M"), ("en-GB-SoniaNeural", "Sonia", "F"),
+    ("en-US-BrianMultilingualNeural", "Brian (multilingual)", "M"),
+    ("de-DE-SeraphinaMultilingualNeural", "Seraphina (multilingual)", "F"),
+    ("de-DE-FlorianMultilingualNeural", "Florian (multilingual)", "M"), ("en-GB-SoniaNeural", "Sonia", "F"),
     ("en-GB-RyanNeural", "Ryan", "M"), ("es-ES-ElviraNeural", "Elvira", "F"), ("es-ES-AlvaroNeural", "Álvaro", "M"),
     ("de-DE-KatjaNeural", "Katja", "F"), ("de-DE-ConradNeural", "Conrad", "M"),
     ("it-IT-ElsaNeural", "Elsa", "F"), ("it-IT-DiegoNeural", "Diego", "M"),
 ]
+
+
+def voice_language(short_name: str, locale: str) -> tuple[str, str]:
+    """(langue, remarque) d'une voix : les voix « Multilingual » étrangères lisent aussi le français."""
+    lang = locale.split("-")[0]
+    if "Multilingual" in short_name and lang != "fr":
+        return "multi", "lit aussi le français (léger accent possible)"
+    return lang, ""
 
 
 class EdgeEngine(TTSEngine):
@@ -101,15 +111,19 @@ class EdgeEngine(TTSEngine):
                 locale = v.get("Locale", "")
                 friendly = short.split("-")[-1].replace("Neural", "")
                 friendly = friendly.replace("Multilingual", " (multilingue)")
+                lang, note = voice_language(short, locale)
+                traits = ", ".join(v.get("VoiceTag", {}).get("VoicePersonalities", []) or [])
                 voices.append(BuiltinVoice(
-                    id=short, name=friendly, language=locale.split("-")[0], locale=locale,
+                    id=short, name=friendly, language=lang, locale=locale,
                     gender="F" if v.get("Gender") == "Female" else "M",
-                    description=", ".join(v.get("VoiceTag", {}).get("VoicePersonalities", []) or []),
+                    description=" · ".join(x for x in (note, traits) if x),
                 ))
         else:
             for vid, name, g in FALLBACK_VOICES:
                 loc = "-".join(vid.split("-")[:2])
-                voices.append(BuiltinVoice(id=vid, name=name, language=loc.split("-")[0], locale=loc, gender=g))
+                lang, note = voice_language(vid, loc)
+                voices.append(BuiltinVoice(id=vid, name=name.replace("multilingual", "multilingue"), language=lang,
+                                           locale=loc, gender=g, description=note))
         voices.sort(key=lambda b: (b.language != "fr", b.locale, b.name))
         self._voices = voices
         return voices

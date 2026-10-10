@@ -230,3 +230,11 @@ def test_dialogue_voice_inside_paragraphs(tmp_path, tone_engine, library):
     pr.production.dialogue_voice_id = ""
     segs = renderer.build_plan(pr, library)[0].segments
     assert [s.display for s in segs] == ["Marie se retourna et dit : Qui est là ?", "Moi, répondit Paul."]
+
+
+def test_edge_multilingual_voices_listed_for_french():
+    from audiolivre.core.engines.edge import voice_language
+
+    assert voice_language("en-US-AvaMultilingualNeural", "en-US")[0] == "multi"
+    assert voice_language("fr-FR-VivienneMultilingualNeural", "fr-FR") == ("fr", "")
+    assert voice_language("en-US-GuyNeural", "en-US") == ("en", "")
