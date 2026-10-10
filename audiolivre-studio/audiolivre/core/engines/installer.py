@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import shutil
 import subprocess
+import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -259,6 +262,81 @@ def download(url: str, dest: Path, log_cb: LogCb, cancel: threading.Event | None
     log_cb(f"{dest.name} téléchargé ({done / 1e6:.0f} Mo)")
 
 
+# Python de base des moteurs sous Windows, extrait dans un dossier ordinaire. Sinon, uv crée pour sa
+# propre copie de Python un « lien de version » (jonction NTFS) que les versions récentes de Windows
+# peuvent refuser de traverser (erreur 448 : « point de montage non approuvé »).
+_PBS = "cpython-3.11.15+20260718-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+BASE_PYTHON_SHA256 = "a48c2dbe832319f61aa8557c9900caec70f7fed0cbee391a4c9ff9f98b50222d"
+BASE_PYTHON_URLS = [
+    f"https://github.com/astral-sh/python-build-standalone/releases/download/20260718/{_PBS.replace('+', '%2B')}",
+    f"https://releases.astral.sh/github/python-build-standalone/releases/download/20260718/"
+    f"{_PBS.replace('+', '%2B')}",
+]
+
+
+def base_python_dir() -> Path:
+    return paths.data_dir() / "python-base" / "3.11"
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _remove_links(folder: Path) -> None:
+    """Supprime les jonctions laissées par uv (sans les traverser)."""
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.is_symlink():
+                entry.unlink()
+            elif entry.is_junction():
+                os.rmdir(entry)
+        except OSError as exc:
+            log.debug("Lien %s non supprimé : %s", entry, exc)
+
+
+def ensure_base_python(log_cb: LogCb, cancel: threading.Event | None = None) -> Path:
+    """Télécharge (une fois) Python 3.11 et renvoie le chemin de python.exe."""
+    target = base_python_dir()
+    exe = target / "python.exe"
+    if exe.exists():
+        return exe
+    _remove_links(paths.data_dir() / "python")
+    log_cb("Téléchargement de Python 3.11 (26 Mo, une seule fois)…")
+    with tempfile.TemporaryDirectory(dir=str(paths.temp_dir())) as td:
+        archive = Path(td) / "python.tar.gz"
+        error: Exception | None = None
+        for url in BASE_PYTHON_URLS:
+            try:
+                download(url, archive, log_cb, cancel)
+                error = None
+                break
+            except Cancelled:
+                raise
+            except Exception as exc:
+                error = exc
+                log_cb(f"Source indisponible ({exc}), essai de la suivante…")
+        if error is not None:
+            raise InstallError(f"Impossible de télécharger Python : {error}. Vérifiez votre connexion Internet.")
+        if _sha256(archive) != BASE_PYTHON_SHA256:
+            raise InstallError("Le fichier Python téléchargé est incomplet ou altéré. Réessayez l'installation.")
+        staging = Path(td) / "extrait"
+        with tarfile.open(archive) as tf:
+            tf.extractall(staging, filter="data")
+        shutil.rmtree(target, ignore_errors=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(staging / "python"), str(target))
+    log_cb("Python 3.11 prêt.")
+    return exe
+
+
 def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
                    cancel: threading.Event | None = None) -> dict:
     """Crée l'environnement du moteur et installe ses dépendances. Peut prendre plusieurs minutes."""
@@ -277,8 +355,13 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
         shutil.rmtree(venv, ignore_errors=True)
 
     log_cb(f"Création de l'environnement Python {spec.python} pour « {engine_id} »…")
-    _run([uv, "venv", "--python", spec.python, "--python-preference", "only-managed", "--seed", str(venv)],
-         log_cb, cancel)
+    if sys.platform == "win32":
+        base = ensure_base_python(log_cb, cancel)
+        _run([uv, "venv", "--python", str(base), "--python-preference", "only-system", "--no-python-downloads",
+              "--seed", str(venv)], log_cb, cancel)
+    else:
+        _run([uv, "venv", "--python", spec.python, "--python-preference", "only-managed", "--seed", str(venv)],
+             log_cb, cancel)
     py = str(env_python(engine_id))
 
     flavor = None
