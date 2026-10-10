@@ -208,6 +208,13 @@ jobs:
         run: |
           pip install -r requirements-dev.txt
           choco install ffmpeg -y --no-progress
+      - name: eSpeak défaillant sur le PATH (comme sur certains PC)
+        if: matrix.engine == 'xtts'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\faux-espeak | Out-Null
+          Copy-Item C:\Windows\System32\where.exe C:\faux-espeak\espeak-ng.exe
+          "C:\faux-espeak" >> $env:GITHUB_PATH
       - name: Installation et synthèse réelles
         env:
           PYTHONIOENCODING: utf-8

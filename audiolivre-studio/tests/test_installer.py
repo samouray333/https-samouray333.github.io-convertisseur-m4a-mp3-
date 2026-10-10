@@ -54,3 +54,18 @@ def test_remove_uv_links(tmp_path):
     installer._remove_links(folder)
     assert [p.name for p in folder.iterdir()] == ["cpython-3.11.17"]
     assert paths.data_dir().exists()
+
+
+def test_espeak_hidden_from_xtts(tmp_path, monkeypatch):
+    import os
+
+    bad = tmp_path / "espeak"
+    bad.mkdir()
+    (bad / "espeak-ng.exe").write_bytes(b"")
+    other = tmp_path / "tools"
+    other.mkdir()
+    path = os.pathsep.join([str(bad), str(other)])
+    assert installer.path_without_espeak(path) == str(other)
+    monkeypatch.setenv("PATH", path)
+    assert str(bad) not in installer.worker_env("xtts")["PATH"].split(os.pathsep)
+    assert str(bad) in installer.worker_env("kokoro")["PATH"].split(os.pathsep)

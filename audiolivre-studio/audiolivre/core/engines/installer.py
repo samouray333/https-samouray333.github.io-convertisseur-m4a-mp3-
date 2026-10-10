@@ -172,6 +172,23 @@ def is_installed(engine_id: str) -> bool:
     return bool(info) and (spec is None or info.get("recipe", 1) >= spec.version)
 
 
+def path_without_espeak(path: str) -> str:
+    """Retire du PATH les dossiers qui contiennent eSpeak.
+
+    Au démarrage, XTTS interroge le programme eSpeak s'il en trouve un, alors qu'il ne s'en sert pas : une
+    installation d'eSpeak cassée sur l'ordinateur suffit à le faire planter.
+    """
+    system = os.path.normcase(os.environ.get("SystemRoot", "C:\\Windows"))
+    keep = []
+    for d in path.split(os.pathsep):
+        has_espeak = d and any(os.path.isfile(os.path.join(d, name + ext)) for name in ("espeak-ng", "espeak")
+                               for ext in ("", ".exe", ".com", ".bat", ".cmd"))
+        if has_espeak and not os.path.normcase(d).startswith(system):
+            continue
+        keep.append(d)
+    return os.pathsep.join(keep)
+
+
 def worker_env(engine_id: str) -> dict[str, str]:
     """Variables d'environnement pour le processus du moteur (modèles rangés dans nos dossiers)."""
     env = dict(os.environ)
@@ -185,6 +202,8 @@ def worker_env(engine_id: str) -> dict[str, str]:
     env["TOKENIZERS_PARALLELISM"] = "false"
     env["HF_HUB_DISABLE_TELEMETRY"] = "1"
     env["GRADIO_ANALYTICS_ENABLED"] = "False"
+    if engine_id == "xtts":
+        env["PATH"] = path_without_espeak(env.get("PATH", ""))
     return env
 
 
