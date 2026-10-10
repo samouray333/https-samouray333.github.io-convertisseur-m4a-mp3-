@@ -95,7 +95,7 @@ Une **version portable** (`.zip`) est également produite : décompressez-la et 
 | Voix neuronales Microsoft | — | Non | Service en ligne | Excellente qualité, très rapide, aucune installation |
 | XTTS-v2 (Coqui) | ✅ | ✅ | CPML (non commercial) | Meilleure prosodie en français, 17 langues |
 | Clonage rapide (Microsoft + Chatterbox VC) | ✅ | Non | MIT + service Microsoft | Le plus rapide sans carte graphique |
-| Modèles RVC (.pth) | ✅ | Non | MIT + service Microsoft | Modèle de voix importé ; ≈ 1 min de calcul par minute de livre |
+| Modèles RVC (.pth) | ✅ | Non | MIT + service Microsoft | Modèle de voix importé ; ≈ 1,5 min de calcul par minute de livre sans carte graphique |
 | Chatterbox multilingue (Resemble AI) | ✅ | ✅ | MIT | Expressivité réglable, usage commercial autorisé, filigrane inaudible |
 | Kokoro-82M | mélange de voix | ✅ | Apache 2.0 | Très rapide sans carte graphique |
 | Voix Windows (SAPI/OneCore) | — | ✅ | Windows | Toujours disponible, qualité basique |
