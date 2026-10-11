@@ -313,7 +313,16 @@ def expected_duration(text: str, speed: float = 1.0) -> float:
     return len(text) / 14.5 / max(0.3, speed)
 
 
+# Moteurs qui passent par le service en ligne de Microsoft (directement ou comme voix de base)
+ONLINE_ENGINES = {"edge", "fastclone", "rvc"}
+
+
 class Renderer:
+    def _voice_label(self, voice_id: str) -> str:
+        v = self._voice(voice_id)
+        eng = engines.get_engine(v.engine)
+        return f"« {v.name} » ({eng.info.name if eng else v.engine})"
+
     def __init__(self, project: Project, library: VoiceLibrary, callbacks: RenderCallbacks | None = None):
         self.project = project
         self.library = library
@@ -544,11 +553,16 @@ class Renderer:
                             failed = True
                             report.failed_segments.append((rc.id, seg.index, str(exc)))
                             if not isinstance(exc, engines.ServiceBlocked):
-                                self.cb.log(f"Erreur sur « {rc.title} », passage {seg.index + 1} : {exc}")
+                                self.cb.log(f"Erreur sur « {rc.title} », passage {seg.index + 1} "
+                                            f"({self._voice_label(seg.voice_id)}) : {exc}")
                         self.cb.progress(done, total, f"{rc.title} — passage {seg.index + 1}/{len(rc.segments)}")
                         if isinstance(exc, engines.ServiceBlocked) and not report.blocked:
-                            report.blocked = str(exc)
-                            self.cb.log("Production interrompue : " + str(exc))
+                            online = sorted({self._voice_label(s.voice_id) for c in plan for s in c.segments
+                                             if self._voice(s.voice_id).engine in ONLINE_ENGINES})
+                            report.blocked = (f"Passage {seg.index + 1} de « {rc.title} », lu par "
+                                              f"{self._voice_label(seg.voice_id)}.\n\n{exc}\n\nVoix de ce projet "
+                                              "qui passent par Microsoft : " + ", ".join(online) + ".")
+                            self.cb.log("Production interrompue : " + report.blocked)
                             self.cancel_event.set()
                         if isinstance(exc, engines.EngineError) and "pas installé" in str(exc):
                             self.cancel_event.set()
