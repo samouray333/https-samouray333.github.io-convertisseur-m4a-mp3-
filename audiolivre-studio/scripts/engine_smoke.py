@@ -123,6 +123,14 @@ def main() -> int:
         assert stats.duration > 1.5, "audio trop court"
         assert stats.rms_db > -45, "audio silencieux"
 
+    # Passage très court (incise) : la génération doit rester bornée
+    if args.engine == "chatterbox":
+        t1 = time.time()
+        out = eng.synthesize("Si, dit-il.", voices[-1], work / "court.wav", "fr", 1.0, 3)
+        stats = audio.analyze_array(*audio.read_audio(out))
+        log(f"Passage très court : {stats.duration:.1f} s d'audio en {time.time() - t1:.0f} s")
+        assert stats.duration < 8, "génération non bornée"
+
     # Clonage rapide (voix Microsoft + conversion), qui utilise l'environnement de Chatterbox
     if args.engine == "chatterbox":
         fast = engines.get_engine("fastclone")

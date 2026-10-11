@@ -236,10 +236,25 @@ class ChatterboxBackend(Backend):
             raise RuntimeError("Chatterbox nécessite une voix clonée (enregistrement de référence).")
         set_seed(req.get("seed"))
         lang = req.get("language", "fr").lower().split("-")[0]
-        wav = self.model.generate(
-            req["text"], language_id=lang, exaggeration=exaggeration,
-            cfg_weight=float(p.get("cfg_weight", 0.5)), temperature=float(p.get("temperature", 0.8)),
-        )
+        text = req["text"]
+        # Sur un texte très court (« dit-il. »), Chatterbox ne s'arrête parfois pas et produit jusqu'à 1000 jetons
+        # (40 s d'audio, plusieurs minutes de calcul) : limite selon la durée attendue (25 jetons par seconde).
+        cap = min(1000, int(25 * max(2.0, len(text) / 14.5 * 2.5)) + 25)
+        t3 = self.model.t3
+        original = t3.inference
+
+        def capped(*args, **kwargs):
+            kwargs["max_new_tokens"] = min(kwargs.get("max_new_tokens") or cap, cap)
+            return original(*args, **kwargs)
+
+        t3.inference = capped
+        try:
+            wav = self.model.generate(
+                text, language_id=lang, exaggeration=exaggeration,
+                cfg_weight=float(p.get("cfg_weight", 0.5)), temperature=float(p.get("temperature", 0.8)),
+            )
+        finally:
+            del t3.inference
         return {"duration": write_wav(req["out"], to_numpy(wav), self.sr)}
 
 
