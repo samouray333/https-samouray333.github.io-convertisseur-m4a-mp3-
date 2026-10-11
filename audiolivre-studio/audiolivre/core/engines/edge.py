@@ -58,6 +58,56 @@ LIMITED_MESSAGE = (
 )
 
 
+# Depuis octobre 2026, Microsoft migre le service vers api.msedgeservices.com : l'ancienne adresse répond 403
+# dans certains pays (France, Espagne…). On bascule automatiquement sur la nouvelle et on s'en souvient.
+_NEW_HOST = "api.msedgeservices.com/tts/cognitiveservices"
+_endpoint = {"current": "legacy"}
+
+
+def _endpoints():
+    from edge_tts import constants
+
+    token = constants.TRUSTED_CLIENT_TOKEN
+    return {
+        "legacy": (constants.WSS_URL, constants.VOICE_LIST),
+        "new": (f"wss://{_NEW_HOST}/websocket/v1?Ocp-Apim-Subscription-Key={token}",
+                f"https://{_NEW_HOST}/voices/list?Ocp-Apim-Subscription-Key={token}"),
+    }
+
+
+def use_endpoint(name: str) -> None:
+    """Fait pointer edge-tts vers l'adresse choisie (« legacy » ou « new »)."""
+    import edge_tts.communicate as cm
+    import edge_tts.voices as vm
+
+    wss, voices = _endpoints()[name]
+    cm.WSS_URL = wss
+    vm.VOICE_LIST = voices
+    _endpoint["current"] = name
+
+
+def _remember_endpoint() -> None:
+    try:
+        from ...config import settings
+
+        settings().set("edge_endpoint", _endpoint["current"])
+    except Exception:
+        pass
+
+
+def _restore_endpoint() -> None:
+    if _endpoint.get("restored"):
+        return
+    _endpoint["restored"] = True
+    try:
+        from ...config import settings
+
+        if settings().get("edge_endpoint") == "new":
+            use_endpoint("new")
+    except Exception:
+        pass
+
+
 class EdgeEngine(TTSEngine):
     info = EngineInfo(
         id="edge",
@@ -109,7 +159,12 @@ class EdgeEngine(TTSEngine):
             try:
                 import edge_tts
 
-                raw = asyncio.run(edge_tts.list_voices())
+                _restore_endpoint()
+                try:
+                    raw = asyncio.run(edge_tts.list_voices())
+                except Exception:
+                    use_endpoint("new" if _endpoint["current"] == "legacy" else "legacy")
+                    raw = asyncio.run(edge_tts.list_voices())
                 cache.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
             except Exception as exc:
                 log.info("Liste des voix Edge indisponible (%s), liste intégrée utilisée", exc)
@@ -154,16 +209,25 @@ class EdgeEngine(TTSEngine):
         voice_name = voice.engine_voice or "fr-FR-DeniseNeural"
         last_exc: Exception | None = None
         refused = 0
-        for attempt in range(4):
+        _restore_endpoint()
+        tried = {_endpoint["current"]}
+        for attempt in range(5):
             try:
                 comm = edge_tts.Communicate(text, voice_name, rate=rate, pitch=pitch)
                 asyncio.run(comm.save(str(target)))
                 if target.exists() and target.stat().st_size > 0:
+                    _remember_endpoint()
                     return target
                 raise EngineError("Aucun son reçu")
             except Exception as exc:  # erreurs réseau : on réessaie
                 last_exc = exc
                 status = getattr(exc, "status", None)
+                if status == 403 and len(tried) < 2:
+                    # l'autre adresse du service (migration de Microsoft) : essai immédiat
+                    other = "new" if _endpoint["current"] == "legacy" else "legacy"
+                    use_endpoint(other)
+                    tried.add(other)
+                    continue
                 if status in (403, 429, 503):
                     # refus du service : un seul nouvel essai, espacé, puis arrêt (inutile d'insister)
                     refused += 1

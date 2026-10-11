@@ -282,9 +282,46 @@ def test_edge_refusal_stops_quickly(tmp_path, monkeypatch):
     monkeypatch.setattr(edge_tts, "Communicate", FakeCommunicate)
     monkeypatch.setattr(edge_mod.time, "sleep", lambda s: None)
     voice = VoiceProfile(name="Denise", engine="edge", engine_voice="fr-FR-DeniseNeural")
-    with pytest.raises(ServiceBlocked) as err:
-        edge_mod.EdgeEngine().synthesize("Bonjour.", voice, tmp_path / "x.mp3", "fr")
-    assert len(calls) == 2 and "403" in str(err.value) and "hors ligne" in str(err.value)
+    edge_mod._endpoint.update(current="legacy", restored=True)
+    import edge_tts.communicate as cm
+
+    try:
+        with pytest.raises(ServiceBlocked) as err:
+            edge_mod.EdgeEngine().synthesize("Bonjour.", voice, tmp_path / "x.mp3", "fr")
+        assert "api.msedgeservices.com" in cm.WSS_URL  # bascule sur la nouvelle adresse de Microsoft
+        assert len(calls) == 3 and "403" in str(err.value) and "hors ligne" in str(err.value)
+    finally:
+        edge_mod.use_endpoint("legacy")
+
+
+def test_edge_switches_to_new_endpoint(tmp_path, monkeypatch):
+    import edge_tts
+    import edge_tts.communicate as cm
+
+    from audiolivre.core.engines import edge as edge_mod
+
+    class Refused(Exception):
+        status = 403
+
+    class FakeCommunicate:
+        def __init__(self, *a, **k):
+            pass
+
+        async def save(self, path):
+            if "msedgeservices" not in cm.WSS_URL:
+                raise Refused("403")
+            Path(path).write_bytes(b"ID3audio")
+
+    from pathlib import Path
+
+    monkeypatch.setattr(edge_tts, "Communicate", FakeCommunicate)
+    edge_mod._endpoint.update(current="legacy", restored=True)
+    try:
+        voice = VoiceProfile(name="Denise", engine="edge", engine_voice="fr-FR-DeniseNeural")
+        out = edge_mod.EdgeEngine().synthesize("Bonjour.", voice, tmp_path / "x.mp3", "fr")
+        assert out.exists() and edge_mod._endpoint["current"] == "new"
+    finally:
+        edge_mod.use_endpoint("legacy")
 
 
 @needs_ffmpeg
