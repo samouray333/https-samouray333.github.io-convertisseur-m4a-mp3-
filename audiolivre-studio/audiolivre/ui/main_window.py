@@ -279,6 +279,16 @@ class MainWindow(QMainWindow):
             a.setEnabled(False)
         for r in recents:
             self.recent_menu.addAction(Path(r).stem, lambda r=r: self.open_project(r))
+        if recents:
+            self.recent_menu.addSeparator()
+            self.recent_menu.addAction(icons.icon("x", theme.CURRENT.text, 16), "Vider la liste",
+                                       self._clear_recent)
+
+    def _clear_recent(self) -> None:
+        settings().clear_recent()
+        home = self.pages.get("home")
+        if home is not None:
+            home._fill_recent()
 
     def _build_shortcuts(self) -> None:
         play = QAction(self)

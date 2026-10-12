@@ -92,6 +92,13 @@ class Settings:
         recents.insert(0, p)
         self.set("recent_projects", recents[:12])
 
+    def remove_recent(self, project_path: str | Path) -> None:
+        p = str(Path(project_path))
+        self.set("recent_projects", [r for r in self.get("recent_projects", []) if r != p])
+
+    def clear_recent(self) -> None:
+        self.set("recent_projects", [])
+
     def recent_projects(self) -> list[str]:
         return [r for r in self.get("recent_projects", []) if Path(r).exists()]
 

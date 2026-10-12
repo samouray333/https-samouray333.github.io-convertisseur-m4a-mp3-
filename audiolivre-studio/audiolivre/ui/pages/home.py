@@ -8,10 +8,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QMenu, QMessageBox, QToolButton, QVBoxLayout
 
 from ...config import settings
-from ...core import engines
+from ...core import engines, project_io
 from ...core.importers import SUPPORTED_EXTENSIONS
 from .. import icons, theme
 from ..widgets import Badge, Card, DropZone, button, card_title, label
@@ -56,12 +56,24 @@ class HeroBanner(QFrame):
 
 
 class RecentCard(QFrame):
-    def __init__(self, path: str, on_open):
+    def __init__(self, path: str, on_open, on_forget=None, on_delete=None, on_reveal=None):
         super().__init__()
         self.setObjectName("CardHover")
         self.setCursor(Qt.PointingHandCursor)
         self._path = path
         self._on_open = on_open
+        self.menu = QMenu(self)
+        self.menu.addAction(icons.icon("book", theme.CURRENT.text, 16), "Ouvrir", lambda: on_open(path))
+        if on_reveal is not None:
+            self.menu.addAction(icons.icon("folder", theme.CURRENT.text, 16), "Afficher dans l'explorateur",
+                                lambda: on_reveal(path))
+        self.menu.addSeparator()
+        if on_forget is not None:
+            self.menu.addAction(icons.icon("x", theme.CURRENT.text, 16), "Retirer de la liste",
+                                lambda: on_forget(path))
+        if on_delete is not None:
+            self.menu.addAction(icons.icon("trash", theme.CURRENT.danger, 16), "Supprimer le projet…",
+                                lambda: on_delete(path))
         lay = QVBoxLayout(self)
         lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(6)
@@ -76,6 +88,13 @@ class RecentCard(QFrame):
         except OSError:
             mtime = ""
         top.addWidget(label(mtime, "Faint"))
+        self.more = QToolButton()
+        self.more.setIcon(icons.icon("more", theme.CURRENT.text, 18))
+        self.more.setToolTip("Retirer de la liste, supprimer…")
+        self.more.setAutoRaise(True)
+        self.more.setPopupMode(QToolButton.InstantPopup)
+        self.more.setMenu(self.menu)
+        top.addWidget(self.more)
         lay.addLayout(top)
         title = p.stem
         info = ""
@@ -97,6 +116,9 @@ class RecentCard(QFrame):
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton:
             self._on_open(self._path)
+
+    def contextMenuEvent(self, e):
+        self.menu.exec(e.globalPos())
 
 
 class HomePage(Page):
@@ -181,7 +203,15 @@ class HomePage(Page):
         grid.addWidget(steps, 2)
         self.body.addLayout(grid)
 
-        self.recent_title = label("Projets récents", "SectionTitle")
+        self.recent_title = QFrame()
+        rt = QHBoxLayout(self.recent_title)
+        rt.setContentsMargins(0, 0, 0, 0)
+        rt.addWidget(label("Projets récents", "SectionTitle"))
+        rt.addStretch(1)
+        clear = button("Vider la liste", "x", "ghost",
+                       tooltip="Retire tous les projets de cette liste (les fichiers ne sont pas supprimés)")
+        clear.clicked.connect(self.clear_recent)
+        rt.addWidget(clear)
         self.body.addWidget(self.recent_title)
         self.recent_grid = QGridLayout()
         self.recent_grid.setSpacing(14)
@@ -212,7 +242,52 @@ class HomePage(Page):
         recents = settings().recent_projects()[:6]
         self.recent_title.setVisible(bool(recents))
         for i, r in enumerate(recents):
-            self.recent_grid.addWidget(RecentCard(r, self.window_.open_project), i // 3, i % 3)
+            self.recent_grid.addWidget(RecentCard(r, self.window_.open_project, self.forget_recent,
+                                                  self.delete_project, self._reveal), i // 3, i % 3)
+
+    def _reveal(self, path: str) -> None:
+        from ..main_window import open_path
+
+        open_path(Path(path).parent)
+
+    def forget_recent(self, path: str) -> None:
+        settings().remove_recent(path)
+        self._fill_recent()
+        self.ctx.toast("Projet retiré de la liste (le fichier est conservé).", "info", 2500)
+
+    def clear_recent(self) -> None:
+        settings().clear_recent()
+        self._fill_recent()
+        self.ctx.toast("Liste des projets récents vidée.", "info", 2500)
+
+    def delete_project(self, path: str, confirm: bool = True) -> bool:
+        p = Path(path)
+        current = self.ctx.project.path
+        if current is not None and Path(current).resolve() == p.resolve():
+            QMessageBox.information(self, "Projet ouvert",
+                                    "Ce projet est actuellement ouvert. Ouvrez ou créez un autre projet avant de "
+                                    "le supprimer.")
+            return False
+        if confirm:
+            r = QMessageBox.warning(
+                self, "Supprimer le projet",
+                f"Supprimer définitivement le projet « {p.stem} » ?\n\n"
+                f"Seront supprimés : le fichier du projet et ses fichiers de travail (audio en cache, chapitres "
+                f"déjà produits).\nVos livres audio exportés et vos documents Word/PDF d'origine sont conservés.\n\n"
+                f"Dossier : {p.parent}",
+                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
+            if r != QMessageBox.Yes:
+                return False
+        try:
+            project_io.delete_project_files(p)
+        except OSError as exc:
+            QMessageBox.warning(self, "Suppression impossible", f"{exc}\n\nLe projet est peut-être ouvert dans un "
+                                "autre programme.")
+            return False
+        settings().remove_recent(path)
+        self._fill_recent()
+        self.ctx.toast(f"Projet « {p.stem} » supprimé.", "success", 3000)
+        return True
 
     def _fill_engines(self) -> None:
         while self.engines_row.count():

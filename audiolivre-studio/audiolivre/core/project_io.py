@@ -51,6 +51,39 @@ def load_project(path: str | Path) -> Project:
     return project
 
 
+def delete_project_files(path: str | Path) -> list[Path]:
+    """Supprime un projet du disque : fichier .alsproj, sa sauvegarde et son dossier de travail.
+
+    Le dossier du projet n'est retiré que s'il ne contient plus rien d'autre que la couverture ;
+    les exports (MP3, M4B…) et les documents d'origine sont toujours conservés.
+    """
+    p = Path(path)
+    removed: list[Path] = []
+    for f in (p, p.with_suffix(PROJECT_EXT + ".bak")):
+        if f.is_file():
+            f.unlink()
+            removed.append(f)
+    work = p.parent / f"{p.stem}_fichiers"
+    if work.is_dir():
+        shutil.rmtree(work, ignore_errors=True)
+        removed.append(work)
+    folder = p.parent
+    try:
+        rest = list(folder.iterdir())
+    except OSError:
+        return removed
+    if folder.name.startswith(p.stem) and all(f.is_file() and f.stem.lower() == "couverture" for f in rest):
+        for f in rest:
+            f.unlink()
+            removed.append(f)
+        try:
+            folder.rmdir()
+            removed.append(folder)
+        except OSError:
+            pass
+    return removed
+
+
 def project_data_dir(project: Project) -> Path:
     """Dossier de travail associé à un projet (cache audio, rendus)."""
     if project.path is None:

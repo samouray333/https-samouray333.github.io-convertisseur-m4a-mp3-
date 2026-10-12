@@ -184,3 +184,52 @@ def test_rvc_import_from_zip(app, tmp_path):
     win.ctx.library.delete(v.id)
     win.ctx.dirty = False
     win.close()
+
+
+def test_recent_projects_forget_and_delete(app, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from audiolivre.config import settings
+    from audiolivre.core import project_io
+    from audiolivre.core.models import Chapter, Project
+    from audiolivre.ui.main_window import MainWindow
+
+    paths = []
+    for name in ("Livre A", "Livre B"):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / "couverture.jpg").write_bytes(b"x")
+        pr = Project(chapters=[Chapter(title="Ch", text="Bonjour.")])
+        target = project_io.save_project(pr, folder / f"{name}.alsproj")
+        project_io.save_project(pr, target)  # crée aussi le .bak
+        project_io.cache_dir(pr)
+        settings().add_recent(target)
+        paths.append(target)
+    keep = tmp_path / "Livre B" / "Export"
+    keep.mkdir()
+    (keep / "livre.m4b").write_bytes(b"audio")
+
+    win = MainWindow()
+    home = win.pages["home"]
+    home.on_show()
+    cards = [home.recent_grid.itemAt(i).widget() for i in range(home.recent_grid.count())]
+    assert len(cards) == 2 and cards[0].menu.actions()
+
+    home.forget_recent(str(paths[0]))
+    assert str(paths[0]) not in settings().recent_projects() and paths[0].exists()
+
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: QMessageBox.Yes)
+    assert home.delete_project(str(paths[1]))
+    assert not paths[1].exists() and not (tmp_path / "Livre B" / "Livre B_fichiers").exists()
+    assert (keep / "livre.m4b").exists()  # les exports sont conservés
+    assert str(paths[1]) not in settings().recent_projects()
+
+    # un dossier qui ne contient plus que la couverture est retiré
+    project_io.delete_project_files(paths[0])
+    assert not (tmp_path / "Livre A").exists()
+
+    settings().add_recent(paths[0])
+    win._clear_recent()
+    assert settings().get("recent_projects") == []
+    win.ctx.dirty = False
+    win.close()
