@@ -14,6 +14,30 @@ class EngineError(RuntimeError):
     """Erreur de synthèse affichable à l'utilisateur."""
 
 
+def words_path(audio_path: str | Path) -> Path:
+    """Fichier facultatif écrit à côté de l'audio : début et fin de chaque mot (voix Microsoft)."""
+    return Path(audio_path).with_suffix(".words.jsonl")
+
+
+def read_words(audio_path: str | Path) -> list[tuple[float, float, str]]:
+    """[(début s, fin s, mot)] si le moteur les a fournis, sinon liste vide."""
+    import json
+
+    p = words_path(audio_path)
+    out: list[tuple[float, float, str]] = []
+    if not p.exists():
+        return out
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            m = json.loads(line) if line.strip() else None
+            if m and m.get("type") == "WordBoundary":
+                start = float(m["offset"]) / 1e7
+                out.append((start, start + float(m["duration"]) / 1e7, str(m.get("text", ""))))
+    except (OSError, ValueError, KeyError):
+        return []
+    return out
+
+
 class ServiceBlocked(EngineError):
     """Le service en ligne refuse les demandes : inutile de réessayer chaque passage, la production s'arrête."""
 

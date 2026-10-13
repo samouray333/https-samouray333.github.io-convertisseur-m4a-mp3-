@@ -106,7 +106,7 @@ def test_ai_assistant_dialog_applies_suggestions(app):
         names=[ai.NameSuggestion("Marie", "Mari")], characters={"Marie": "F", "Paul": "M"}))
     assert dlg.apply_btn.isEnabled()
     dlg.table.item(2, 2).setText("Paulo")  # correction manuelle du nom
-    pc = dlg.table.cellWidget(0, 4)
+    pc = dlg.table.cellWidget(0, 6)
     pc.setCurrentIndex(pc.findData(2000))  # pause allongée à la main
     dlg.names.item(0, 0).setCheckState(Qt.Unchecked)
     dlg._apply()
@@ -234,5 +234,90 @@ def test_recent_projects_forget_and_delete(app, tmp_path, monkeypatch):
     settings().add_recent(paths[0])
     win._clear_recent()
     assert settings().get("recent_projects") == []
+    win.ctx.dirty = False
+    win.close()
+
+
+def test_rate_emphasis_tools_and_correction(app, tmp_path):
+    from PySide6.QtGui import QTextCursor
+
+    from audiolivre.core import engines, project_io, renderer
+    from audiolivre.core.models import Chapter, Project, VoiceProfile
+    from audiolivre.selftest import make_tone_engine
+    from audiolivre.ui.main_window import MainWindow
+
+    engines.register_engine(make_tone_engine())
+    win = MainWindow()
+    voice = win.ctx.library.save(VoiceProfile(name="Test tonalité", engine="tone"))
+    ch = Chapter(title="Chapitre 1", text="@Paul: [triste] Il ne reviendrait jamais.\n\nLe soir tombait.")
+    pr = Project(chapters=[ch], narrator_voice_id=voice.id)
+    pr.export.include_credits = False
+    pr.production.announce_chapter_titles = False
+    project_io.save_project(pr, tmp_path / "Livre.alsproj")
+    win.ctx.set_project(pr)
+
+    # Manuscrit : débit et mise en valeur
+    win.show_page("manuscript")
+    page = win.pages["manuscript"]
+    ed = page.editor
+    ed.moveCursor(QTextCursor.Start)
+    page._tag_rate("lent")
+    page._tag_rate("très rapide")
+    assert ed.toPlainText().startswith("@Paul: [triste] [très rapide] Il ne")
+    page._tag_rate("")
+    cur = ed.textCursor()
+    pos = ed.toPlainText().index("jamais")
+    cur.setPosition(pos + 2)
+    ed.setTextCursor(cur)
+    page.emphasize_selection()
+    assert "*jamais*" in ed.toPlainText() and "[très rapide]" not in ed.toPlainText()
+    page.emphasize_selection()  # deuxième clic : retire
+    assert "*jamais*" not in ed.toPlainText()
+
+    # Production : respirations et correction d'un seul passage
+    ch.text = "Le soir tombait sur Siobhan.\n\nTout était calme."
+    win.show_page("production")
+    prod = win.pages["production"]
+    prod.breaths.setCurrentIndex(prod.breaths.findData("natural"))
+    assert pr.production.breaths == "natural"
+    plan = renderer.build_plan(pr, win.ctx.library)
+    renderer.Renderer(pr, win.ctx.library).render(plan)
+    prod.plan = plan
+    prod.table.setRowCount(1)
+    from PySide6.QtWidgets import QTableWidgetItem
+
+    item = QTableWidgetItem(plan[0].title)
+    item.setData(256, plan[0].id)
+    prod.table.setItem(0, 0, item)
+    prod._selected_ids = lambda: [plan[0].id]
+    prod._show_segments()
+    prod.segments.setCurrentRow(0)
+    old_key = plan[0].segments[0].key
+    prod.correct_segment(("Le soir tombait doucement sur Siobhan.", "Siobhan", "Chivône"))
+    import time
+
+    for _ in range(200):
+        app.processEvents()
+        if prod._retake_task is not None and not prod._retake_task.is_running():
+            break
+        time.sleep(0.02)
+    app.processEvents()
+    assert ch.text.startswith("Le soir tombait doucement sur Siobhan.")
+    assert pr.lexicon[-1].replacement == "Chivône"
+    new_rc = renderer.build_plan(pr, win.ctx.library)[0]
+    assert new_rc.segments[0].key != old_key and "Chivône" in new_rc.segments[0].text
+    assert renderer.chapter_is_current(pr, new_rc)  # seul ce passage a été refait, chapitre réassemblé
+
+    # Voix : la voix de base peut être Kokoro (hors ligne)
+    clone = win.ctx.library.save(VoiceProfile(name="Moi", engine="fastclone", kind="clone"))
+    win.show_page("voices")
+    editor = win.pages["voices"].editor
+    editor.set_voice(clone)
+    i = editor.base.findData("kokoro:ff_siwis")
+    assert i > 0 and editor.base.findData("fr-FR-DeniseNeural") > 0
+    editor.base.setCurrentIndex(i)
+    assert win.ctx.library.get(clone.id).engine_voice == "kokoro:ff_siwis"
+    win.ctx.library.delete(clone.id)
+    win.ctx.library.delete(voice.id)
     win.ctx.dirty = False
     win.close()

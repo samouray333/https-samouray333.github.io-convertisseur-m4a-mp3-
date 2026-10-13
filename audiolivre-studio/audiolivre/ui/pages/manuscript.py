@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout
                                QVBoxLayout, QWidget)
 
 from ...core.models import Chapter
-from ...core.textproc import EMOTION_ALIASES, EMOTION_LABELS, clean_imported_text, find_characters, format_duration
+from ...core.textproc import (EMOTION_ALIASES, EMOTION_LABELS, EMPHASIS_RE, RATE_ALIASES, clean_imported_text, find_characters,
+                              format_duration)
 from .. import icons, theme
 from ..widgets import Card, EmptyState, IconButton, ToggleSwitch, button, label
 from .base import Page
@@ -44,6 +45,10 @@ class ScriptHighlighter(QSyntaxHighlighter):
             (QRegularExpression(r"\[\s*/?\s*(" + "|".join(EMOTION_ALIASES) + r")\s*\]",
                                 QRegularExpression.CaseInsensitiveOption),
              fmt(p.warning, bold=True, bg=theme.rgba(p.warning, 0.12))),
+            (QRegularExpression(r"\[\s*/?\s*(?:débit\s*[:=]\s*)?(" + "|".join(RATE_ALIASES) + r")\s*\]",
+                                QRegularExpression.CaseInsensitiveOption),
+             fmt(p.success, bold=True, bg=theme.rgba(p.success, 0.12))),
+            (QRegularExpression(r"(?<![\w*])\*(?![\s*])[^*\n]{1,60}?(?<!\s)\*(?![\w*])"), fmt(p.accent, bold=True)),
         ]
 
     def highlightBlock(self, text):
@@ -217,6 +222,17 @@ class ManuscriptPage(Page):
         emo_menu.addSeparator()
         emo_menu.addAction("Neutre (retirer)", lambda: self._tag_emotion(""))
         self.emo_btn.setMenu(emo_menu)
+        self.rate_btn = button("Débit", "clock", tooltip="Lire le paragraphe plus lentement ou plus vite")
+        rate_menu = QMenu(self)
+        for key, lbl in (("très lent", "Très lent"), ("lent", "Lent"), ("rapide", "Rapide"),
+                         ("très rapide", "Très rapide")):
+            rate_menu.addAction(lbl, lambda k=key: self._tag_rate(k))
+        rate_menu.addSeparator()
+        rate_menu.addAction("Normal (retirer)", lambda: self._tag_rate(""))
+        self.rate_btn.setMenu(rate_menu)
+        stress = button("Insister", "type", tooltip="Met en valeur le mot sélectionné (*mot*) : lu un peu plus fort, "
+                        "précédé d'un court temps (voix Microsoft, clonage rapide et RVC)")
+        stress.clicked.connect(self.emphasize_selection)
         self.role_btn = button("Réplique", "users", tooltip="Attribue le paragraphe à un personnage (@Nom:)")
         self.role_menu = QMenu(self)
         self.role_menu.aboutToShow.connect(self._fill_roles)
@@ -231,7 +247,7 @@ class ManuscriptPage(Page):
         listen.clicked.connect(self.listen_selection)
         find = IconButton("search", "Rechercher / remplacer (Ctrl+F)", 36, 18)
         find.clicked.connect(self.toggle_find)
-        for w in (clean, pause, heading, self.role_btn, self.emo_btn, ia, preview):
+        for w in (clean, pause, heading, self.role_btn, self.emo_btn, self.rate_btn, stress, ia, preview):
             bar.addWidget(w)
         bar.addStretch(1)
         bar.addWidget(find)
@@ -255,7 +271,7 @@ class ManuscriptPage(Page):
         status = QHBoxLayout()
         self.stats = label("", "Hint")
         status.addWidget(self.stats, 1)
-        self.help = label("Astuces : « # Titre », « [pause 2s] », « *** » (changement de scène), « @Marie: réplique », « [joyeux] », "
+        self.help = label("Astuces : « # Titre », « [pause 2s] », « *** » (changement de scène), « @Marie: réplique », « [joyeux] », « [lent] », « *mot* », "
                           "« [voix:Paul] … [/voix] », « %% commentaire »", "Faint")
         status.addWidget(self.help)
         rl.addLayout(status)
@@ -579,6 +595,54 @@ class ManuscriptPage(Page):
         if em:
             cur.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, em.end())
         cur.insertText(f"[{emotion}] " if emotion else "")
+        self.editor.setFocus()
+
+    def _tag_rate(self, rate: str) -> None:
+        """Ajoute, remplace ou retire la balise de débit au début du paragraphe courant."""
+        cur = self.editor.textCursor()
+        cur.movePosition(QTextCursor.StartOfBlock)
+        line = cur.block().text()
+        m = re.match(r"^@[^:\n]{1,40}:\s*", line)
+        start = m.end() if m else 0
+        tags = re.match(r"(?:\[[^\]\n]*\]\s*)*", line[start:]).group(0)
+        rate_rx = r"\[\s*(?:débit\s*[:=]\s*)?(?:" + "|".join(RATE_ALIASES) + r")\s*\]\s*"
+        new_tags = re.sub(rate_rx, "", tags, flags=re.I) + (f"[{rate}] " if rate else "")
+        cur.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, start)
+        cur.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, len(tags))
+        cur.insertText(new_tags)
+        self.editor.setFocus()
+
+    def emphasize_selection(self) -> None:
+        """Entoure la sélection (ou le mot sous le curseur) d'astérisques, ou les retire."""
+        cur = self.editor.textCursor()
+        if not cur.hasSelection():
+            block = cur.block()
+            col = cur.position() - block.position()
+            for m in EMPHASIS_RE.finditer(block.text()):
+                if m.start() <= col <= m.end():  # curseur sur un mot déjà mis en valeur : on retire
+                    cur.setPosition(block.position() + m.start())
+                    cur.setPosition(block.position() + m.end(), QTextCursor.KeepAnchor)
+                    cur.insertText(m.group(1))
+                    self.editor.setFocus()
+                    return
+            cur.select(QTextCursor.WordUnderCursor)
+        text = cur.selectedText().strip()
+        if not text:
+            self.ctx.toast("Sélectionnez le mot à mettre en valeur.", "info")
+            return
+        if len(text) > 2 and text.startswith("*") and text.endswith("*"):
+            cur.insertText(text[1:-1])
+        else:
+            doc = self.editor.document()
+            a, b = cur.selectionStart(), cur.selectionEnd()
+            before = doc.characterAt(a - 1) if a > 0 else ""
+            after = doc.characterAt(b)
+            if before == "*" and after == "*":  # déjà mis en valeur : on retire
+                cur.setPosition(a - 1)
+                cur.setPosition(b + 1, QTextCursor.KeepAnchor)
+                cur.insertText(text)
+            else:
+                cur.insertText(f"*{text}*")
         self.editor.setFocus()
 
     def _new_role(self) -> None:

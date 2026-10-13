@@ -6,7 +6,7 @@ import json
 import time
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
                                QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QProgressBar, QScrollArea,
                                QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -129,8 +129,12 @@ class ProductionPage(Page):
         retake.clicked.connect(self._retake)
         play_seg = button("Écouter", "play")
         play_seg.clicked.connect(self._play_segment)
+        fix = button("Corriger…", "edit", tooltip="Corrige le texte ou la prononciation d'un mot, puis refait "
+                     "seulement ce passage")
+        fix.clicked.connect(self.correct_segment)
         sh.addWidget(play_seg)
         sh.addWidget(retake)
+        sh.addWidget(fix)
         seg_card.add(sh)
         self.segments = QListWidget()
         self.segments.setWordWrap(True)
@@ -158,9 +162,16 @@ class ProductionPage(Page):
         self.p_head = self._ms_spin(0, 6000)
         self.p_start = self._ms_spin(500, 5000)
         self.p_end = self._ms_spin(1000, 5000)
+        self.breaths = QComboBox()
+        self.breaths.addItem("Aucune", "off")
+        self.breaths.addItem("Discrètes", "light")
+        self.breaths.addItem("Naturelles", "natural")
+        self.breaths.setToolTip("Légère respiration dans certains silences entre les phrases, comme un vrai "
+                                "narrateur")
         rows = [("Vitesse de lecture", self.speed), ("Pause entre phrases", self.p_sentence),
                 ("Pause entre paragraphes", self.p_para), ("Pause après un titre", self.p_head),
-                ("Silence en début de chapitre", self.p_start), ("Silence en fin de chapitre", self.p_end)]
+                ("Silence en début de chapitre", self.p_start), ("Silence en fin de chapitre", self.p_end),
+                ("Respirations", self.breaths)]
         for i, (t, w) in enumerate(rows):
             g.addWidget(label(t, "Muted"), i, 0)
             g.addWidget(w, i, 1)
@@ -180,6 +191,7 @@ class ProductionPage(Page):
         st.add(self.asr_hint)
         for w in (self.speed, self.p_sentence, self.p_para, self.p_head, self.p_start, self.p_end):
             w.valueChanged.connect(self._settings_changed)
+        self.breaths.currentIndexChanged.connect(self._settings_changed)
         for t in (self.t_natural, self.t_announce, self.t_numbers, self.t_abbr, self.t_trim, self.t_asr):
             t.toggled.connect(self._settings_changed)
         sl.addWidget(st)
@@ -243,6 +255,7 @@ class ProductionPage(Page):
         self.p_start.setValue(p.chapter_head_ms)
         self.p_end.setValue(p.chapter_tail_ms)
         self.t_natural.setChecked(p.natural_pauses)
+        self.breaths.setCurrentIndex(max(0, self.breaths.findData(p.breaths)))
         self.t_announce.setChecked(p.announce_chapter_titles)
         self.t_numbers.setChecked(p.normalize_numbers)
         self.t_abbr.setChecked(p.expand_abbreviations)
@@ -270,6 +283,7 @@ class ProductionPage(Page):
         p.chapter_head_ms = self.p_start.value()
         p.chapter_tail_ms = self.p_end.value()
         p.natural_pauses = self.t_natural.isChecked()
+        p.breaths = self.breaths.currentData() or "off"
         p.announce_chapter_titles = self.t_announce.isChecked()
         p.normalize_numbers = self.t_numbers.isChecked()
         p.expand_abbreviations = self.t_abbr.isChecked()
@@ -468,6 +482,69 @@ class ProductionPage(Page):
         def done(path):
             self.ctx.play(path, f"{rc.title} — passage {seg.index + 1} (nouvelle prise)")
             self.rebuild_plan()
+
+        self._retake_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 6000))
+
+    def correct_segment(self, values: tuple[str, str, str] | None = None) -> None:
+        """Corrige le texte ou la prononciation d'un passage, puis ne refait que ce qui a changé."""
+        rc, seg = self._current_segment()
+        if seg is None or self.ctx.rendering:
+            if seg is None:
+                self.ctx.toast("Choisissez d'abord un passage dans la liste.", "info")
+            return
+        project = self.ctx.project
+        chapter = next((c for c in project.chapters if c.id == rc.id), None)
+        if chapter is None:
+            self.ctx.toast("Les crédits se corrigent dans Export → « Écrire les crédits ».", "info", 5000)
+            return
+        if values is None:
+            from ..dialogs.correct_segment import CorrectSegmentDialog
+
+            qc = renderer.read_qc(project, seg.key) or {}
+            dlg = CorrectSegmentDialog(seg.display, qc.get("heard", ""), self)
+            if not dlg.exec():
+                return
+            values = dlg.values()
+        new_text, word, say = values
+        changed = False
+        if new_text and new_text != seg.display:
+            if seg.display in chapter.text:
+                chapter.text = chapter.text.replace(seg.display, new_text, 1)
+                changed = True
+            else:
+                self.ctx.toast("Ce passage est écrit sur plusieurs lignes dans le manuscrit : corrigez-le dans la "
+                               "page Manuscrit.", "warning", 6500)
+        if word and say:
+            from ...core.models import LexiconEntry
+
+            project.lexicon = [e for e in project.lexicon if e.pattern != word]
+            project.lexicon.append(LexiconEntry(pattern=word, replacement=say, note="Ajouté depuis Production"))
+            changed = True
+        if not changed:
+            return
+        self.ctx.mark_dirty()
+        library = self.ctx.library
+        r = renderer.Renderer(project, library)
+        index = seg.index
+        self.ctx.toast("Correction enregistrée, le passage est refait…", "info", 2500)
+
+        def work():
+            new_rc = renderer.build_chapter_plan(project, chapter, library)
+            todo = [s for s in new_rc.segments if not renderer.cache_path(project, s.key).exists()]
+            for s in todo:
+                r.synth_segment(s)
+            r.assemble(new_rc)
+            target = next((s for s in todo if s.index == index), todo[0] if todo else None)
+            return (renderer.cache_path(project, target.key) if target else None), len(todo)
+
+        def done(res):
+            path, n = res
+            self.rebuild_plan()
+            if path is not None:
+                self.ctx.play(path, f"{rc.title} — passage corrigé")
+            if n > 1:
+                self.ctx.toast(f"{n} passages refaits dans ce chapitre (le mot y apparaissait plusieurs fois). "
+                               "Les autres chapitres seront mis à jour à la prochaine production.", "success", 7000)
 
         self._retake_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 6000))
 

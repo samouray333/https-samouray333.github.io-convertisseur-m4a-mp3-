@@ -1,7 +1,8 @@
 """Préparation du texte pour la synthèse vocale.
 
 - nettoyage des textes importés (césures, retours à la ligne, notes…)
-- balises de mise en scène : ``# Titre``, ``[pause 2s]``, ``@Personnage: réplique``, ``[voix:Nom]``
+- balises de mise en scène : ``# Titre``, ``[pause 2s]``, ``@Personnage: réplique``, ``[voix:Nom]``,
+  ``[lent]`` / ``[rapide]`` (débit), ``*mot*`` (mot mis en valeur)
 - normalisation (abréviations, nombres, heures, monnaies, chiffres romains, unités)
 - lexique de prononciation personnalisé
 - découpage en phrases puis en segments adaptés à chaque moteur
@@ -65,6 +66,7 @@ class ScriptItem:
     level: int = 0
     emotion: str = ""
     joined: bool = False  # la suite du même paragraphe suit (changement de voix au milieu d'un paragraphe)
+    rate: float = 1.0  # débit relatif ([lent], [rapide]…)
 
 
 # Émotions : balise -> nom canonique
@@ -83,6 +85,40 @@ EMOTION_LABELS = {"joyeux": "Joyeux", "triste": "Triste", "colère": "En colère
 EMOTION_RE = re.compile(r"^\[\s*(?:émotion\s*[:=]\s*)?(" + "|".join(sorted(EMOTION_ALIASES, key=len, reverse=True))
                         + r")\s*\]\s*", re.IGNORECASE)
 EMOTION_END_RE = re.compile(r"^\[\s*/\s*(?:émotion|" + "|".join(EMOTION_ALIASES) + r")\s*\]\s*$", re.IGNORECASE)
+
+
+# Débit : balise -> multiplicateur de vitesse
+RATE_ALIASES = {"très lent": 0.82, "tres lent": 0.82, "lent": 0.9, "lente": 0.9, "posé": 0.9, "pose": 0.9,
+                "rapide": 1.1, "très rapide": 1.18, "tres rapide": 1.18}
+RATE_NAMES = {0.82: "très lent", 0.9: "lent", 1.1: "rapide", 1.18: "très rapide"}
+_RATE_ALT = "|".join(sorted(RATE_ALIASES, key=len, reverse=True))
+RATE_RE = re.compile(r"^\[\s*(?:débit\s*[:=]\s*)?(" + _RATE_ALT + r")\s*\]\s*", re.IGNORECASE)
+RATE_END_RE = re.compile(r"^\[\s*/\s*(?:débit|" + _RATE_ALT + r")\s*\]\s*$", re.IGNORECASE)
+# Mot ou groupe de mots mis en valeur : *mot*
+EMPHASIS_RE = re.compile(r"(?<![\w*])\*(?![\s*])([^*\n]{1,60}?)(?<!\s)\*(?![\w*])")
+
+
+def rate_name(rate: float) -> str:
+    return RATE_NAMES.get(round(rate, 2), "")
+
+
+def parse_prefixes(text: str, emotion: str = "", rate: float = 1.0) -> tuple[str, str, float, bool, bool]:
+    """Balises d'émotion et de débit en tête de texte, dans n'importe quel ordre.
+
+    Renvoie (texte restant, émotion, débit, émotion trouvée, débit trouvé)."""
+    seen_e = seen_r = False
+    while True:
+        em = EMOTION_RE.match(text)
+        if em:
+            emotion, seen_e = EMOTION_ALIASES[em.group(1).lower()], True
+            text = text[em.end():].strip()
+            continue
+        rm = RATE_RE.match(text)
+        if rm:
+            rate, seen_r = RATE_ALIASES[rm.group(1).lower()], True
+            text = text[rm.end():].strip()
+            continue
+        return text, emotion, rate, seen_e, seen_r
 
 
 # Séparateur de scène seul sur sa ligne : « *** », « * * * », « ⁂ », « ~~~ », « # », « --- »
@@ -223,6 +259,7 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
     items: list[ScriptItem] = []
     current_voice: str | None = None
     current_emotion = ""
+    current_rate = 1.0
     paragraphs = re.split(r"\n\s*\n|\n(?=#)|\n(?=@)|\n(?=\[)|(?<=\])\n", text.replace("\r\n", "\n"))
     for raw in paragraphs:
         para = raw.strip()
@@ -240,17 +277,19 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
         if VOICE_END_RE.match(para):
             current_voice = None
             continue
+        if RATE_END_RE.match(para):
+            current_rate = 1.0
+            continue
         if EMOTION_END_RE.match(para):
             current_emotion = ""
             continue
-        em = EMOTION_RE.match(para)
-        emotion = current_emotion
-        if em:
-            emotion = EMOTION_ALIASES[em.group(1).lower()]
-            para = para[em.end():].strip()
-            if not para:  # balise seule : s'applique aux paragraphes suivants
+        para, emotion, rate, seen_e, seen_r = parse_prefixes(para, current_emotion, current_rate)
+        if not para:  # balise seule : s'applique aux paragraphes suivants
+            if seen_e:
                 current_emotion = emotion
-                continue
+            if seen_r:
+                current_rate = rate
+            continue
         if SCENE_BREAK_RE.match(para):
             items.append(ScriptItem("pause", "scene", pause_ms=SCENE_BREAK_MS))
             continue
@@ -269,11 +308,7 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
             mode = "character"
             name = cm.group(1).strip()
             voice = None if name.lower() in NARRATOR_NAMES else name
-            para = cm.group(2).strip()
-            em2 = EMOTION_RE.match(para)
-            if em2:
-                emotion = EMOTION_ALIASES[em2.group(1).lower()]
-                para = para[em2.end():].strip()
+            para, emotion, rate, _e, _r = parse_prefixes(cm.group(2).strip(), emotion, rate)
         elif voice is None and detect_dialogues:
             mode = "detect"
             if DIALOGUE_START_RE.match(para):
@@ -282,7 +317,7 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
 
         def add_para(chunk: str) -> None:
             if not split or not mode or (mode == "character" and (voice is None or not incises)):
-                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion))
+                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion, rate=rate))
                 return
             parts = split_dialogue(chunk, incises, speech=mode == "character")
             if not parts:
@@ -291,7 +326,7 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
             for i, (t, sp) in enumerate(parts):
                 items.append(ScriptItem("para", t, voice_key=speaker if sp else None,
                                         emotion=emotion if sp or not any_speech else "",
-                                        joined=i < len(parts) - 1))
+                                        joined=i < len(parts) - 1, rate=rate))
 
         # pauses en ligne : on coupe le paragraphe
         pos = 0

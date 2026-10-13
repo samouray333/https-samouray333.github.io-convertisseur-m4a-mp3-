@@ -7,6 +7,7 @@ import itertools
 import json
 import logging
 import queue
+import shutil
 import subprocess
 import threading
 import time
@@ -17,7 +18,7 @@ from ... import paths
 from ..ffmpeg import popen_kwargs
 from ..models import VoiceProfile
 from . import installer
-from .base import NOT_INSTALLED, READY, BuiltinVoice, EngineError, EngineInfo, ParamSpec, TTSEngine
+from .base import NOT_INSTALLED, READY, BuiltinVoice, EngineError, EngineInfo, ParamSpec, TTSEngine, words_path
 
 log = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ ENGINE_INFOS["fastclone"] = EngineInfo(
         "Une voix Microsoft lit le texte avec une intonation très naturelle, puis un convertisseur gratuit "
         "lui donne le timbre de votre voix clonée. Sans carte graphique, environ 1 minute de calcul par minute "
         "de livre, soit 3 fois plus vite que XTTS-v2 ; la ressemblance est un peu moins fidèle. Nécessite "
-        "Internet et le moteur Chatterbox (licence MIT)."
+        "le moteur Chatterbox (licence MIT) et Internet, ou Kokoro comme voix de base pour travailler hors ligne."
     ),
     supports_cloning=True, requires_install=True, online=True, languages=CHATTERBOX_LANGUAGES,
     license="MIT + service Microsoft", max_chars=400, min_chars=40, quality=4, speed=4,
@@ -277,7 +278,7 @@ ENGINE_INFOS["rvc"] = EngineInfo(
     tagline="Clonage · Modèle .pth + .index",
     description=(
         "Importez un modèle de voix RVC (fichier .pth, avec son index .index si vous l'avez) : une voix Microsoft "
-        "lit le texte, puis le modèle lui donne son timbre. Gratuit (code RVC, licence MIT), nécessite Internet. "
+        "lit le texte (ou Kokoro, hors ligne), puis le modèle lui donne son timbre. Gratuit (code RVC, licence MIT). "
         "N'utilisez que des modèles de votre voix, d'une personne qui vous a donné son accord, ou dont la licence "
         "l'autorise."
     ),
@@ -317,12 +318,29 @@ FASTCLONE_BASES = {
 }
 
 
+# Voix de base hors ligne (Kokoro) : identifiants « kokoro:<voix> »
+KOKORO_BASES = {("fr", "F"): "kokoro:ff_siwis", ("fr", "M"): "kokoro:ff_siwis", ("fr", ""): "kokoro:ff_siwis",
+                ("en", "F"): "kokoro:af_heart", ("en", "M"): "kokoro:am_michael", ("en", ""): "kokoro:af_heart"}
+KOKORO_BASE_CHOICES = [("kokoro:ff_siwis", "Siwis (française)"), ("kokoro:af_heart", "Heart (anglaise, F)"),
+                       ("kokoro:am_michael", "Michael (anglais, M)"), ("kokoro:bf_emma", "Emma (anglaise UK, F)"),
+                       ("kokoro:bm_george", "George (anglais UK, M)")]
+
+
+def clone_base_default() -> str:
+    """« microsoft » (en ligne, intonation la plus naturelle) ou « kokoro » (hors ligne)."""
+    from ...config import settings
+
+    return "kokoro" if settings().get("clone_base", "microsoft") == "kokoro" else "microsoft"
+
+
 def fastclone_base(voice: VoiceProfile, language: str) -> str:
-    if voice.engine_voice and "-" in voice.engine_voice:
+    """Voix qui lit le texte avant la conversion : voix Microsoft (« fr-FR-… ») ou « kokoro:<voix> »."""
+    if voice.engine_voice and ("-" in voice.engine_voice or voice.engine_voice.startswith("kokoro:")):
         return voice.engine_voice
     lang = (language or voice.language or "fr").split("-")[0]
     lang = lang if lang in ("fr", "en") else "fr"
-    return FASTCLONE_BASES.get((lang, voice.gender or ""), FASTCLONE_BASES[(lang, "")])
+    table = KOKORO_BASES if clone_base_default() == "kokoro" else FASTCLONE_BASES
+    return table.get((lang, voice.gender or ""), table[(lang, "")])
 
 
 class WorkerEngine(TTSEngine):
@@ -516,12 +534,24 @@ class FastCloneEngine(WorkerEngine):
 
         params = self.merged_params(voice)
         extra = self._convert_args(voice, params)
-        base = VoiceProfile(name="base", engine="edge", engine_voice=fastclone_base(voice, language),
-                            params=self._base_params(params))
-        edge = get_engine("edge")
+        base_id = fastclone_base(voice, language)
         target = Path(out_path).with_suffix(".wav")
+        if base_id.startswith("kokoro:"):
+            reader = get_engine("kokoro")
+            if reader is None or not installer.is_installed("kokoro"):
+                raise EngineError("La voix de base hors ligne (Kokoro) n'est pas installée : installez « Kokoro » "
+                                  "dans Moteurs IA, ou choisissez une voix de base Microsoft pour cette voix.")
+            base = VoiceProfile(name="base", engine="kokoro", engine_voice=base_id.split(":", 1)[1],
+                                params={"speed": float(params.get("rate", 1.0))})
+            base_name = "base.wav"
+        else:
+            reader = get_engine("edge")
+            base = VoiceProfile(name="base", engine="edge", engine_voice=base_id, params=self._base_params(params))
+            base_name = "base.mp3"
         with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
-            spoken = edge.synthesize(text, base, Path(td) / "base.mp3", language, speed, seed)
+            spoken = reader.synthesize(text, base, Path(td) / base_name, language, speed, seed)
+            if words_path(spoken).exists():  # la conversion garde le rythme : positions des mots valables
+                shutil.copyfile(words_path(spoken), words_path(target))
             data, sr = audio.read_audio(spoken)
             src = audio.write_audio(Path(td) / "base.wav", data, sr, subtype="PCM_16")
             for attempt in range(2):

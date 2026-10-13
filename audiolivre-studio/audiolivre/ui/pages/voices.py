@@ -131,7 +131,8 @@ class VoiceEditor(Card):
         form.addWidget(self.engine, 1, 1)
         self.base_lbl = label("Voix de base", "Muted")
         self.base = QComboBox()
-        self.base.setToolTip("Voix Microsoft qui lit le texte avant la conversion vers votre timbre")
+        self.base.setToolTip("Voix qui lit le texte avant la conversion vers votre timbre : Microsoft (en ligne) "
+                             "ou Kokoro (hors ligne, à installer dans Moteurs IA)")
         self.base.currentIndexChanged.connect(self._base_changed)
         form.addWidget(self.base_lbl, 2, 0)
         form.addWidget(self.base, 2, 1)
@@ -293,11 +294,17 @@ class VoiceEditor(Card):
             return
         self.base.blockSignals(True)
         self.base.clear()
-        self.base.addItem("Automatique (selon le timbre)", "")
+        from ...config import settings
+        from ...core.engines.neural import KOKORO_BASE_CHOICES
+
+        auto = "Kokoro, hors ligne" if settings().get("clone_base") == "kokoro" else "Microsoft"
+        self.base.addItem(f"Automatique ({auto}, selon le timbre — voir Paramètres)", "")
+        for vid, name in KOKORO_BASE_CHOICES:
+            self.base.addItem(f"Kokoro — {name} · hors ligne", vid)
         edge = engines.get_engine("edge")
         for b in edge.list_builtin_voices():
             if b.language in ("fr", "en"):
-                self.base.addItem(f"{b.name} — {b.locale}", b.id)
+                self.base.addItem(f"Microsoft — {b.name} — {b.locale}", b.id)
         self.base.setCurrentIndex(max(0, self.base.findData(v.engine_voice or "")))
         self.base.blockSignals(False)
 

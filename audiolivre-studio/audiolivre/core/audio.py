@@ -180,6 +180,56 @@ def room_tone_loop(n: int, level_db: float, sr: int = DEFAULT_SR) -> np.ndarray:
     return np.tile(base, reps)[:n]
 
 
+def breath(sr: int, ms: float, level_db: float, seed: int = 0) -> np.ndarray:
+    """Respiration discrète (inspiration par la bouche) : souffle filtré avec une enveloppe douce.
+
+    ``level_db`` est le niveau efficace visé (dBFS)."""
+    n = int(sr * ms / 1000)
+    if n < sr // 20:
+        return np.zeros(max(0, n), dtype=np.float32)
+    rng = np.random.default_rng(seed)
+    spec = np.fft.rfft(rng.standard_normal(n))
+    f = np.fft.rfftfreq(n, 1 / sr)
+    # souffle : large bande 300 Hz – 5 kHz, un peu plus marqué vers 1–2 kHz (bouche entrouverte)
+    centre = 1100 + 700 * rng.random()
+    shape = np.exp(-0.5 * (np.log(np.maximum(f, 1) / centre) / 0.75) ** 2)
+    shape += 0.35 * np.exp(-0.5 * (np.log(np.maximum(f, 1) / 3200) / 0.5) ** 2)
+    shape[f < 150] = 0
+    noise = np.fft.irfft(spec * shape, n)
+    t = np.linspace(0.0, 1.0, n)
+    peak = 0.55 + 0.15 * rng.random()  # l'inspiration enfle puis retombe
+    env = np.where(t < peak, np.sin(0.5 * np.pi * t / peak) ** 2,
+                   np.clip(np.cos(0.5 * np.pi * (t - peak) / (1 - peak)), 0, 1) ** 1.5)
+    env *= 1 + 0.12 * np.sin(2 * np.pi * (3 + 2 * rng.random()) * t)  # léger frémissement
+    out = noise * env
+    rms = float(np.sqrt(np.mean(out ** 2))) or 1.0
+    return (out * (db_to_lin(level_db) / rms)).astype(np.float32)
+
+
+def emphasize(data: np.ndarray, sr: int, regions: list[tuple[float, float]], gain_db: float = 4.0,
+              pause_ms: float = 60.0) -> np.ndarray:
+    """Met en valeur des mots (début, fin en secondes) : un peu plus fort, précédés d'un court temps."""
+    out = data.astype(np.float32).copy()
+    ramp = max(1, int(sr * 0.025))
+    for start, end in sorted(regions, reverse=True):
+        a = max(0, int((start - 0.03) * sr))
+        b = min(len(out), int((end + 0.05) * sr))
+        if b - a < 2 * ramp:
+            continue
+        g = np.full(b - a, db_to_lin(gain_db), dtype=np.float32)
+        fade = (0.5 - 0.5 * np.cos(np.linspace(0, np.pi, ramp))).astype(np.float32)
+        g[:ramp] = 1 + (g[0] - 1) * fade
+        g[-ramp:] = 1 + (g[0] - 1) * fade[::-1]
+        out[a:b] *= g
+        if pause_ms > 0 and start > 0.35:  # pas de temps avant le tout premier mot
+            r = min(int(sr * 0.006), a, len(out) - a)
+            if r > 1:
+                out[a - r:a] *= np.linspace(1, 0, r, dtype=np.float32)  # pas de clic à la coupure
+                out[a:a + r] *= np.linspace(0, 1, r, dtype=np.float32)
+            out = np.concatenate([out[:a], silence(pause_ms, sr), out[a:]])
+    return out
+
+
 def change_speed(data: np.ndarray, sr: int, factor: float) -> np.ndarray:
     """Change le débit sans changer la hauteur (via FFmpeg atempo)."""
     if abs(factor - 1.0) < 0.01 or data.size == 0:

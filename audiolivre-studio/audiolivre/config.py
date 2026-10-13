@@ -33,10 +33,12 @@ DEFAULTS: dict[str, Any] = {
     "check_updates": True,
     "asr_model": "base",
     "fastclone_mode": "fast",  # fast (décodeur Turbo) | best
+    "clone_base": "microsoft",  # voix de base du clonage rapide et des modèles RVC : microsoft | kokoro
     "ai_key": "",  # clé DeepSeek chiffrée (voir core/secrets.py)
     "ai_model": "",  # vide : choisi automatiquement parmi les modèles du compte
     "ai_base_url": "https://api.deepseek.com",
     "ai_pauses": True,  # l'assistant propose aussi des pauses dramatiques
+    "ai_prosody": True,  # débit et mots mis en valeur
 }
 
 

@@ -277,7 +277,7 @@ def test_edge_refusal_stops_quickly(tmp_path, monkeypatch):
         def __init__(self, *a, **k):
             calls.append(a)
 
-        async def save(self, path):
+        async def save(self, path, meta=None):
             raise Refused("403, message='Invalid response status'")
 
     monkeypatch.setattr(edge_tts, "Communicate", FakeCommunicate)
@@ -308,7 +308,7 @@ def test_edge_switches_to_new_endpoint(tmp_path, monkeypatch):
         def __init__(self, *a, **k):
             pass
 
-        async def save(self, path):
+        async def save(self, path, meta=None):
             if "msedgeservices" not in cm.WSS_URL:
                 raise Refused("403")
             Path(path).write_bytes(b"ID3audio")
@@ -376,3 +376,79 @@ def test_natural_pauses(tmp_path, tone_engine, library):
     pr.production.natural_pauses = False
     flat = renderer.build_plan(pr, library)[0].segments
     assert flat[0].pause_after_ms == base and flat[1].pause_after_ms == base + 2000
+
+
+def test_rate_emphasis_and_breaths(tmp_path, tone_engine, library, monkeypatch):
+    import json as _json
+
+    from audiolivre.core import engines
+
+    calls = []
+    original = tone_engine.synthesize
+
+    def with_words(text, voice, out_path, language, speed=1.0, seed=None):
+        calls.append((text, round(speed, 3)))
+        target = original(text, voice, out_path, language, speed, seed)
+        words = text.split()
+        step = audio.duration_of(target) / max(1, len(words))
+        with open(engines.words_path(target), "w", encoding="utf-8") as fh:
+            for i, w in enumerate(words):
+                fh.write(_json.dumps({"type": "WordBoundary", "offset": int(i * step * 1e7),
+                                      "duration": int(step * 0.9 * 1e7), "text": w.strip(".,!")}) + "\n")
+        return target
+
+    monkeypatch.setattr(tone_engine, "synthesize", with_words)
+    narr = library.save(VoiceProfile(name="Narrateur", engine="tone"))
+    text = ("[lent] Il ne reviendrait *jamais* dans cette maison abandonnée.\n\n"
+            "[rapide] Alors il courut.\n\nLe soir tombait doucement sur la ville silencieuse.")
+    pr = make_project(tmp_path, narr.id, text=text)
+    pr.export.include_credits = False
+    pr.production.announce_chapter_titles = False
+    pr.production.breaths = "natural"
+    plan = renderer.build_plan(pr, library)
+    segs = plan[0].segments
+    assert [s.rate for s in segs] == [0.9, 1.1, 1.0]
+    assert segs[0].emphasis == ["jamais"] and "*" not in segs[0].text
+    plain = renderer.build_plan(make_project(tmp_path / "b", narr.id, text=text.replace("*", "")), library)
+    assert plain[0].segments[0].key != segs[0].key  # la mise en valeur change le passage
+
+    r = renderer.Renderer(pr, library)
+    path = r.synth_segment(segs[0])
+    assert calls[-1][1] == 0.9  # débit lent transmis au moteur
+    stressed, _ = audio.read_audio(path)
+    flat, _ = audio.read_audio(r.synth_segment(plain[0].segments[0]))
+    assert len(stressed) > len(flat) + int(renderer.SR * 0.04)  # court temps avant le mot mis en valeur
+
+    report = r.render(plan)
+    assert not report.failed_segments
+    data, sr = audio.read_audio(renderer.chapter_output(pr, plan[0].id))
+    manifest = _json.loads(renderer.chapter_manifest(pr, plan[0].id).read_text("utf-8"))
+    gaps = [data[int(a[1] * sr):int(b[0] * sr)] for a, b in zip(manifest["timings"], manifest["timings"][1:])]
+    assert any(np.max(np.abs(g)) > 1e-3 for g in gaps)  # au moins une respiration
+    assert all(np.max(np.abs(g)) < 0.1 for g in gaps)  # toujours discrète
+    pr.production.breaths = "off"
+    assert not renderer.chapter_is_current(pr, renderer.build_plan(pr, library)[0])
+
+
+def test_clone_base_can_be_offline(tmp_path, monkeypatch):
+    from audiolivre.config import settings
+    from audiolivre.core.engines import EngineError, installer
+    from audiolivre.core.engines.neural import FastCloneEngine, fastclone_base
+
+    v = VoiceProfile(name="Moi", engine="fastclone", kind="clone", gender="M", language="fr")
+    assert fastclone_base(v, "fr") == "fr-FR-HenriNeural"
+    key_online = renderer.segment_key("Bonjour.", v, "fr", 1.0, True)
+    settings().set("clone_base", "kokoro")
+    try:
+        assert fastclone_base(v, "fr") == "kokoro:ff_siwis"
+        assert renderer.segment_key("Bonjour.", v, "fr", 1.0, True) != key_online  # cache distinct
+        v.engine_voice = "fr-FR-DeniseNeural"  # choix propre à la voix : prioritaire
+        assert fastclone_base(v, "fr") == "fr-FR-DeniseNeural"
+        v.engine_voice = ""
+        monkeypatch.setattr(installer, "is_installed", lambda env: False)
+        eng = FastCloneEngine()
+        monkeypatch.setattr(eng, "_convert_args", lambda voice, params: {"refs": ["x.wav"]})
+        with pytest.raises(EngineError, match="pas installé"):
+            eng.synthesize("Bonjour.", v, tmp_path / "o.wav", "fr")
+    finally:
+        settings().set("clone_base", "microsoft")

@@ -132,4 +132,27 @@ def test_dramatic_pauses_are_written_into_the_text():
     again = ai.annotate(new, FakeClient([json.dumps({"paragraphes": [{"n": 1, "emotion": "calme"}]})]), [],
                         pauses=False)
     assert ai.apply_suggestions(new, again.paragraphs).startswith("[calme] Marie entra dans la pièce. [pause 1.5s]")
-    assert "pause" not in ai.system_prompt(False).split("4.")[0] and '"pause"' in ai.system_prompt(True)
+    assert "« pause »" not in ai.system_prompt(False) and "« pause »" in ai.system_prompt(True)
+
+
+def test_rate_and_emphasis_suggestions():
+    text = "[lent] Il ne reviendrait *jamais*.\n\nIl courut vers la porte sans se retourner.\n\nTout était fini."
+    _parts, paras = ai.split_paragraphs(text)
+    assert paras[0].rate == "lent" and paras[0].emphasis == ["jamais"] and paras[0].body.startswith("Il ne")
+    answer = json.dumps({"paragraphes": [
+        {"n": 2, "debit": "Rapide", "insister": ["porte", "inventé", "sans se retourner"]},
+        {"n": 3, "debit": "très lent", "insister": "fini"},
+        {"n": 1, "debit": "lent"}]})
+    client = FakeClient([answer])
+    result = ai.annotate(text, client, [])
+    got = {s.number: (s.rate, s.emphasis) for s in result.paragraphs}
+    assert got == {2: ("rapide", ["porte", "sans se retourner"]), 3: ("très lent", ["fini"])}
+    assert '"debit"' in client.calls[-1][2]["messages"][0]["content"]
+    new = ai.apply_suggestions(text, result.paragraphs)
+    assert new == ("[lent] Il ne reviendrait *jamais*.\n\n[rapide] Il courut vers la *porte* *sans se retourner*."
+                   "\n\n[très lent] Tout était *fini*.")
+    # sans l'option : ni débit ni mise en valeur demandés, les balises existantes sont gardées
+    plain = ai.annotate(new, FakeClient([json.dumps({"paragraphes": [{"n": 1, "emotion": "triste"}]})]), [],
+                        prosody=False)
+    assert ai.apply_suggestions(new, plain.paragraphs).startswith("[triste] [lent] Il ne reviendrait *jamais*.")
+    assert '"debit"' not in ai.system_prompt(prosody=False)

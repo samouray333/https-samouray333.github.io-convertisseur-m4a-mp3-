@@ -81,6 +81,15 @@ def main() -> int:
             log(f"RVC (essai {i + 1}) : {stats.duration:.1f} s d'audio à {sr} Hz en {time.time() - t1:.0f} s "
                 f"(RMS {stats.rms_db:.1f} dB)")
             assert stats.duration > 2 and stats.rms_db > -90  # modèle aléatoire : seul le fonctionnement compte
+        # Voix de base hors ligne (Kokoro) au lieu de Microsoft
+        installer.install_engine("kokoro", args.device, log_cb=lambda m: log(m))
+        rvc.engine_voice = "kokoro:ff_siwis"
+        t1 = time.time()
+        out = eng.synthesize("Il était une fois, dans un petit village au bord de la mer, une histoire.",
+                             rvc, work / "rvc_kokoro.wav", "fr", 1.0, 1)
+        stats = audio.analyze_array(*audio.read_audio(out))
+        log(f"RVC avec voix de base Kokoro (hors ligne) : {stats.duration:.1f} s en {time.time() - t1:.0f} s")
+        assert stats.duration > 2 and stats.rms_db > -90
         engines.shutdown_all()
         log("SUCCÈS")
         return 0

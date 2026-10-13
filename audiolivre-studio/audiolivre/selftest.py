@@ -235,7 +235,16 @@ def run_selftest(report_path: Path) -> int:
 
         data, sr = audio.read_audio(out)
         assert len(data) / sr > 1.0
-        return f"{len(data) / sr:.1f} s"
+        # positions des mots (mise en valeur des mots marqués *ainsi*)
+        from .core.engines import read_words
+        from .core.renderer import match_words
+
+        words = read_words(out)
+        regions = match_words(words, ["neuronales"])
+        assert regions, f"positions des mots absentes ({len(words)} mots)"
+        stressed = audio.emphasize(data, sr, regions)
+        assert len(stressed) > len(data)
+        return f"{len(data) / sr:.1f} s ; {len(words)} mots repérés, « neuronales » à {regions[0][0]:.2f} s"
 
     @check("interface graphique")
     def _():

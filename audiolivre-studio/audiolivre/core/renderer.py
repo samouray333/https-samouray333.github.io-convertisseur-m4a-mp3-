@@ -23,7 +23,7 @@ from . import asr, audio, engines, project_io
 from .emotions import apply_emotion
 from .exporter import credits_text
 from .models import Chapter, Project, VoiceProfile
-from .textproc import NormalizeOptions, chunk_text, normalize_for_speech, parse_script
+from .textproc import EMPHASIS_RE, NormalizeOptions, chunk_text, normalize_for_speech, parse_script
 from .voices import VoiceLibrary
 
 log = logging.getLogger(__name__)
@@ -49,6 +49,8 @@ class Segment:
     key: str = ""
     paragraph: int = 0
     emotion: str = ""
+    rate: float = 1.0  # débit relatif ([lent], [rapide]…)
+    emphasis: list[str] = field(default_factory=list)  # mots mis en valeur (*mot*), texte normalisé
 
 
 @dataclass
@@ -60,11 +62,14 @@ class RenderChapter:
     head_ms: int = 1000
     tail_ms: int = 3000
     warnings: list[str] = field(default_factory=list)
+    breaths: str = "off"  # off | light | natural
 
     @property
     def plan_hash(self) -> str:
         h = hashlib.sha1()
         h.update(f"{self.head_ms}|{self.tail_ms}|{RENDER_VERSION}".encode())
+        if self.breaths != "off":
+            h.update(f"breaths:{self.breaths}".encode())
         for s in self.segments:
             h.update(f"{s.key}|{s.pause_after_ms};".encode())
         return h.hexdigest()
@@ -85,7 +90,12 @@ def _voice_fingerprint(voice: VoiceProfile) -> list:
             refs.append([p.name, st.st_size, int(st.st_mtime)])
         except OSError:
             refs.append([p.name, 0, 0])
-    return [voice.engine, voice.engine_voice, refs, sorted((voice.params or {}).items())]
+    fp = [voice.engine, voice.engine_voice, refs, sorted((voice.params or {}).items())]
+    if voice.engine in ("fastclone", "rvc") and not voice.engine_voice:
+        from .engines.neural import clone_base_default
+
+        fp.append(clone_base_default())  # voix de base « automatique » : Microsoft ou Kokoro
+    return fp
 
 
 def segment_key(text: str, voice: VoiceProfile, language: str, speed: float, trim: bool, emotion: str = "") -> str:
@@ -131,6 +141,42 @@ class VoiceResolver:
         return narrator
 
 
+# Respirations : niveau par rapport à la voix (dB) et probabilité après une pause entre phrases / paragraphes
+BREATH_LEVELS = {"light": (-27.0, 0.3, 0.6), "natural": (-21.0, 0.5, 0.85)}
+BREATH_MIN_GAP_MS = 450
+
+
+def breath_before(seg: Segment, next_seg: Segment, mode: str) -> int:
+    """Durée (ms) de la respiration à placer avant ``next_seg``, ou 0."""
+    if mode not in BREATH_LEVELS or seg.pause_after_ms < BREATH_MIN_GAP_MS:
+        return 0
+    _lvl, p_sentence, p_paragraph = BREATH_LEVELS[mode]
+    chance = p_paragraph if next_seg.paragraph != seg.paragraph else p_sentence
+    roll = int(hashlib.sha1(f"breath|{seg.key}|{next_seg.key}".encode()).hexdigest()[:6], 16) / 0xFFFFFF
+    if roll >= chance:
+        return 0
+    length = 300 + int(roll / max(chance, 1e-6) * 200)  # 300 à 500 ms
+    return min(length, seg.pause_after_ms - 150)
+
+
+def match_words(words: list[tuple[float, float, str]], phrases: list[str]) -> list[tuple[float, float]]:
+    """Positions (début, fin) des mots à mettre en valeur dans la liste des mots prononcés."""
+    def norm(w: str) -> str:
+        return "".join(ch for ch in w.lower() if ch.isalnum())
+
+    spoken = [norm(w[2]) for w in words]
+    regions = []
+    for phrase in phrases:
+        target = [t for t in (norm(x) for x in phrase.split()) if t]
+        if not target:
+            continue
+        for i in range(len(spoken) - len(target) + 1):
+            if spoken[i:i + len(target)] == target:
+                regions.append((words[i][0], words[i + len(target) - 1][1]))
+                break
+    return regions
+
+
 # Pauses naturelles : durée selon la ponctuation finale (facteur appliqué à la pause réglée)
 _END_FACTORS = (("...", 1.6), ("…", 1.6), ("?", 1.2), ("!", 1.15), (";", 0.8), (":", 0.85), (",", 0.6))
 VOICE_CHANGE_MS = 150
@@ -163,12 +209,13 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
     opts = NormalizeOptions(language=lang, numbers=prod.normalize_numbers, abbreviations=prod.expand_abbreviations)
     resolver = resolver or VoiceResolver(project, library)
     rc = RenderChapter(id=chapter.id, title=chapter.title, kind=kind, head_ms=prod.chapter_head_ms,
-                       tail_ms=prod.chapter_tail_ms)
+                       tail_ms=prod.chapter_tail_ms, breaths=prod.breaths if prod.breaths in BREATH_LEVELS else "off")
     segs: list[Segment] = []
     paragraph = 0
 
-    def add_text(raw: str, voice: VoiceProfile, kind_: str, end_pause: int, emotion: str = ""):
+    def add_text(raw: str, voice: VoiceProfile, kind_: str, end_pause: int, emotion: str = "", rate: float = 1.0):
         nonlocal paragraph
+        emphasized = [normalize_for_speech(m.group(1), opts, project.lexicon) for m in EMPHASIS_RE.finditer(raw)]
         spoken = normalize_for_speech(raw, opts, project.lexicon)
         if not spoken.strip() or not any(ch.isalnum() for ch in spoken):
             if segs:
@@ -178,14 +225,17 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
         chunks = chunk_text(spoken, max_chars, min_chars)
         for i, c in enumerate(chunks):
             last = i == len(chunks) - 1
-            key = segment_key(c, voice, lang, prod.speed, prod.trim_silence, emotion)
+            emph = [w for w in emphasized if w and w.lower() in c.lower()]
+            tag = emotion + ("|*" + "|".join(emph) if emph else "")
+            key = segment_key(c, voice, lang, prod.speed * rate, prod.trim_silence, tag)
             pause = end_pause if last else prod.pause_sentence_ms
             if prod.natural_pauses and kind_ == "para":
                 pause = natural_pause(pause, c, f"{key}|{len(segs)}",
                                       last and end_pause == prod.pause_paragraph_ms and len(chunks) == 1)
             segs.append(Segment(
                 index=len(segs), text=c, display=raw if len(chunks) == 1 else c, voice_id=voice.id,
-                pause_after_ms=pause, kind=kind_, key=key, paragraph=paragraph, emotion=emotion,
+                pause_after_ms=pause, kind=kind_, key=key, paragraph=paragraph, emotion=emotion, rate=rate,
+                emphasis=emph,
             ))
         paragraph += 1
 
@@ -194,12 +244,13 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
         add_text(chapter.title.strip().rstrip(".") + ".", resolver.narrator(chapter), "title", prod.pause_heading_ms)
 
     # Morceaux d'un même paragraphe (récit / répliques) : regroupés tant que la voix ne change pas.
-    pending: list[tuple[str, VoiceProfile, str]] = []
+    pending: list[tuple[str, VoiceProfile, str, float]] = []
 
     def flush() -> None:
-        for i, (text, voice, emotion) in enumerate(pending):
+        for i, (text, voice, emotion, rate) in enumerate(pending):
             last = i == len(pending) - 1
-            add_text(text, voice, "para", prod.pause_paragraph_ms if last else prod.pause_sentence_ms, emotion)
+            add_text(text, voice, "para", prod.pause_paragraph_ms if last else prod.pause_sentence_ms, emotion,
+                     rate)
         pending.clear()
 
     for item in parse_script(chapter.text, prod.detect_dialogues, split=True,
@@ -215,10 +266,11 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
             add_text(item.text.rstrip(".") + ".", resolver.narrator(chapter), "heading", prod.pause_heading_ms)
         else:
             voice = resolver.resolve(item.voice_key, chapter)
-            if pending and pending[-1][1].id == voice.id and pending[-1][2] == item.emotion:
-                pending[-1] = (pending[-1][0] + " " + item.text, voice, item.emotion)
+            if (pending and pending[-1][1].id == voice.id and pending[-1][2] == item.emotion
+                    and pending[-1][3] == item.rate):
+                pending[-1] = (pending[-1][0] + " " + item.text, voice, item.emotion, item.rate)
             else:
-                pending.append((item.text, voice, item.emotion))
+                pending.append((item.text, voice, item.emotion, item.rate))
             if not item.joined:
                 flush()
     flush()
@@ -385,7 +437,7 @@ class Renderer:
             raise RenderError(f"Moteur inconnu : {voice.engine}")
         voice, emo_speed, emo_gain = apply_emotion(voice, seg.emotion)
         lang = self.project.metadata.language or voice.language or "fr"
-        speed = self.project.production.speed * emo_speed
+        speed = self.project.production.speed * emo_speed * (seg.rate or 1.0)
         base_seed = int(seg.key[:8], 16) if seed is None else seed
         best: tuple[float, np.ndarray, dict] | None = None
         attempts = 3 if voice.engine in RETRY_ENGINES else 1
@@ -410,6 +462,10 @@ class Renderer:
                     time.sleep(0.5)
                     continue
                 data, sr = audio.read_audio(written)
+                if seg.emphasis:
+                    regions = match_words(engines.read_words(written), seg.emphasis)
+                    if regions:
+                        data = audio.emphasize(data, sr, regions)
                 elapsed = time.time() - t0
                 qc: dict = {}
                 if check_asr:
@@ -486,7 +542,7 @@ class Renderer:
             head = audio.silence(rc.head_ms, SR)
             fh.write(head)
             pos += len(head)
-            for seg in rc.segments:
+            for i, seg in enumerate(rc.segments):
                 data, sr = audio.read_audio(cache_path(self.project, seg.key))
                 if sr != SR:
                     data = audio.resample(data, sr, SR)
@@ -494,6 +550,17 @@ class Renderer:
                 fh.write(data)
                 pos += len(data)
                 gap = audio.silence(seg.pause_after_ms, SR)
+                nxt = rc.segments[i + 1] if i + 1 < len(rc.segments) else None
+                length = breath_before(seg, nxt, rc.breaths) if nxt is not None else 0
+                if length > 0:
+                    # niveau calé sur la voix qui va parler, juste avant qu'elle reprenne
+                    ref = data[-SR:] if data.size else data
+                    voice_db = audio.lin_to_db(float(np.sqrt(np.mean(ref.astype(np.float64) ** 2)))) if ref.size else -20
+                    level = max(-60.0, min(voice_db, -14.0) + BREATH_LEVELS[rc.breaths][0])
+                    b = audio.breath(SR, length, level, seed=int(nxt.key[:8], 16))
+                    end = len(gap) - int(SR * 0.07)
+                    if end - len(b) > 0:
+                        gap[end - len(b):end] = b
                 fh.write(gap)
                 pos += len(gap)
             tail = audio.silence(max(rc.tail_ms, 500), SR)

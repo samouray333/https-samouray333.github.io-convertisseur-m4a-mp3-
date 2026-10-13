@@ -13,6 +13,8 @@ from ...core.textproc import EMOTION_LABELS
 from .. import tasks, theme
 from ..widgets import Card, ToggleSwitch, button, card_title, label
 
+RATE_CHOICES = [("", "Normal"), ("très lent", "Très lent"), ("lent", "Lent"), ("rapide", "Rapide"),
+                ("très rapide", "Très rapide")]
 PAUSE_CHOICES = [(0, "—"), (500, "0,5 s"), (1000, "1 s"), (1500, "1,5 s"), (2000, "2 s"), (2500, "2,5 s"),
                  (3000, "3 s")]
 
@@ -29,13 +31,14 @@ class AIAnnotateDialog(QDialog):
         self.result: ai.Annotation | None = None
         self._task = None
         self.setWindowTitle("Assistant IA")
-        self.resize(1020, 700)
+        self.resize(1240, 720)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 22, 24, 20)
         lay.setSpacing(12)
         lay.addWidget(card_title(f"Assistant IA — {chapter.title}",
-                                 "DeepSeek repère qui parle, le ton des passages, les moments où marquer une "
-                                 "pause et les noms difficiles à prononcer. Votre texte n'est jamais réécrit : vous validez chaque proposition.",
+                                 "DeepSeek repère qui parle, le ton et le débit des passages, les mots sur "
+                                 "lesquels appuyer, les moments où marquer une pause et les noms difficiles à "
+                                 "prononcer. Votre texte n'est jamais réécrit : vous validez chaque proposition.",
                                  "sparkles"))
 
         self.key_card = Card(obj="CardFlat", margins=(14, 12, 14, 12))
@@ -65,10 +68,18 @@ class AIAnnotateDialog(QDialog):
         self.pauses = ToggleSwitch("Proposer des pauses dramatiques (révélations, suspense, fins de scène)",
                                    bool(settings().get("ai_pauses", True)))
         self.pauses.toggled.connect(lambda on: settings().set("ai_pauses", on))
-        lay.addWidget(self.pauses)
+        self.prosody = ToggleSwitch("Proposer le débit (lent, rapide) et les mots sur lesquels appuyer",
+                                    bool(settings().get("ai_prosody", True)))
+        self.prosody.toggled.connect(lambda on: settings().set("ai_prosody", on))
+        opts = QHBoxLayout()
+        opts.addWidget(self.pauses)
+        opts.addWidget(self.prosody)
+        opts.addStretch(1)
+        lay.addLayout(opts)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["", "Paragraphe", "Personnage qui parle", "Émotion", "Pause après"])
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(["", "Paragraphe", "Personnage qui parle", "Émotion", "Débit",
+                                              "Mots mis en valeur", "Pause après"])
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
         self.table.setWordWrap(True)
@@ -78,9 +89,15 @@ class AIAnnotateDialog(QDialog):
         hh.setSectionResizeMode(2, QHeaderView.Interactive)
         hh.setSectionResizeMode(3, QHeaderView.Interactive)
         self.table.setColumnWidth(2, 190)
-        hh.setSectionResizeMode(4, QHeaderView.Interactive)
-        self.table.setColumnWidth(3, 150)
+        for c in (4, 5, 6):
+            hh.setSectionResizeMode(c, QHeaderView.Interactive)
+        self.table.setColumnWidth(2, 170)
+        self.table.setColumnWidth(3, 130)
         self.table.setColumnWidth(4, 110)
+        self.table.setColumnWidth(5, 150)
+        self.table.setColumnWidth(6, 100)
+        self.table.horizontalHeaderItem(5).setToolTip("Séparez les mots par des virgules ; ils seront marqués "
+                                                      "*ainsi* dans le texte")
         lay.addWidget(self.table, 3)
 
         self.names_title = label("Noms propres : prononciation proposée (ajoutée au lexique)", "Muted")
@@ -141,9 +158,11 @@ class AIAnnotateDialog(QDialog):
         text = self.chapter.text
 
         pauses = self.pauses.isChecked()
+        prosody = self.prosody.isChecked()
 
         def work(task):
-            return ai.annotate(text, client, known, progress=task.say, cancel=task.cancel_event, pauses=pauses)
+            return ai.annotate(text, client, known, progress=task.say, cancel=task.cancel_event, pauses=pauses,
+                               prosody=prosody)
 
         self._task = tasks.Task(work, pass_reporter=True, on_done=self._done, on_error=self._failed,
                                 on_message=self.status.setText).start()
@@ -185,13 +204,19 @@ class AIAnnotateDialog(QDialog):
                 combo.addItem(lbl, key)
             combo.setCurrentIndex(max(0, combo.findData(s.emotion)))
             self.table.setCellWidget(r, 3, combo)
+            rc = QComboBox()
+            for key, lbl in RATE_CHOICES:
+                rc.addItem(lbl, key)
+            rc.setCurrentIndex(max(0, rc.findData(s.rate or "")))
+            self.table.setCellWidget(r, 4, rc)
+            self.table.setItem(r, 5, QTableWidgetItem(", ".join(s.emphasis)))
             pc = QComboBox()
             for ms, lbl in PAUSE_CHOICES:
                 pc.addItem(lbl, ms)
             if s.pause_ms and pc.findData(s.pause_ms) < 0:
                 pc.addItem(pause_label(s.pause_ms), s.pause_ms)
             pc.setCurrentIndex(max(0, pc.findData(s.pause_ms)))
-            self.table.setCellWidget(r, 4, pc)
+            self.table.setCellWidget(r, 6, pc)
         self.table.resizeRowsToContents()
         self.names.setRowCount(len(result.names))
         for r, nm in enumerate(result.names):
@@ -212,7 +237,9 @@ class AIAnnotateDialog(QDialog):
             s.accepted = self.table.item(r, 0).checkState() == Qt.Checked
             s.speaker = (self.table.item(r, 2).text() or "").strip() or None
             s.emotion = self.table.cellWidget(r, 3).currentData() or ""
-            s.pause_ms = int(self.table.cellWidget(r, 4).currentData() or 0)
+            s.rate = self.table.cellWidget(r, 4).currentData() or ""
+            s.emphasis = [w.strip() for w in (self.table.item(r, 5).text() or "").split(",") if w.strip()]
+            s.pause_ms = int(self.table.cellWidget(r, 6).currentData() or 0)
         for r, nm in enumerate(self.result.names):
             nm.accepted = self.names.item(r, 0).checkState() == Qt.Checked
             nm.say = self.names.item(r, 2).text().strip() or nm.say

@@ -10,7 +10,8 @@ from pathlib import Path
 
 from ... import paths
 from ..models import VoiceProfile
-from .base import READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec, ServiceBlocked, TTSEngine
+from .base import (READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec, ServiceBlocked, TTSEngine,
+                   words_path)
 
 log = logging.getLogger(__name__)
 
@@ -213,8 +214,9 @@ class EdgeEngine(TTSEngine):
         tried = {_endpoint["current"]}
         for attempt in range(5):
             try:
-                comm = edge_tts.Communicate(text, voice_name, rate=rate, pitch=pitch)
-                asyncio.run(comm.save(str(target)))
+                comm = edge_tts.Communicate(text, voice_name, rate=rate, pitch=pitch, boundary="WordBoundary")
+                # position de chaque mot : sert à mettre en valeur les mots marqués *ainsi*
+                asyncio.run(comm.save(str(target), str(words_path(target))))
                 if target.exists() and target.stat().st_size > 0:
                     _remember_endpoint()
                     return target
