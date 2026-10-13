@@ -255,7 +255,7 @@ class ManuscriptPage(Page):
         status = QHBoxLayout()
         self.stats = label("", "Hint")
         status.addWidget(self.stats, 1)
-        self.help = label("Astuces : « # Titre », « [pause 2s] », « @Marie: réplique », « [joyeux] », "
+        self.help = label("Astuces : « # Titre », « [pause 2s] », « *** » (changement de scène), « @Marie: réplique », « [joyeux] », "
                           "« [voix:Paul] … [/voix] », « %% commentaire »", "Faint")
         status.addWidget(self.help)
         rl.addLayout(status)

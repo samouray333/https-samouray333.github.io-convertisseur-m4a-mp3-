@@ -85,6 +85,9 @@ EMOTION_RE = re.compile(r"^\[\s*(?:émotion\s*[:=]\s*)?(" + "|".join(sorted(EMOT
 EMOTION_END_RE = re.compile(r"^\[\s*/\s*(?:émotion|" + "|".join(EMOTION_ALIASES) + r")\s*\]\s*$", re.IGNORECASE)
 
 
+# Séparateur de scène seul sur sa ligne : « *** », « * * * », « ⁂ », « ~~~ », « # », « --- »
+SCENE_BREAK_RE = re.compile(r"^(?:(?:[*⁂~#=•·]\s*){1,9}|-{3,}|[—–]{2,})$")
+SCENE_BREAK_MS = 2000
 PAUSE_RE = re.compile(r"\[\s*pause\s*[:= ]?\s*(\d+(?:[.,]\d+)?)\s*(ms|s)?\s*\]", re.IGNORECASE)
 VOICE_SWITCH_RE = re.compile(r"^\[\s*(?:voix|voice)\s*[:=]\s*([^\]]+?)\s*\]\s*$", re.IGNORECASE)
 VOICE_END_RE = re.compile(r"^\[\s*/\s*(?:voix|voice)\s*\]\s*$", re.IGNORECASE)
@@ -248,6 +251,9 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
             if not para:  # balise seule : s'applique aux paragraphes suivants
                 current_emotion = emotion
                 continue
+        if SCENE_BREAK_RE.match(para):
+            items.append(ScriptItem("pause", "scene", pause_ms=SCENE_BREAK_MS))
+            continue
         full_pause = PAUSE_RE.fullmatch(para)
         if full_pause:
             items.append(ScriptItem("pause", pause_ms=_pause_to_ms(full_pause.group(1), full_pause.group(2))))

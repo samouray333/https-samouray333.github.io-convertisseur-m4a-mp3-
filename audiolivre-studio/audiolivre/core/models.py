@@ -92,6 +92,7 @@ class ProductionSettings:
     pause_sentence_ms: int = 350
     pause_paragraph_ms: int = 850
     pause_heading_ms: int = 1300
+    natural_pauses: bool = True  # pauses selon la ponctuation, légère variation, respiration entre voix
     chapter_head_ms: int = 1000
     chapter_tail_ms: int = 3000
     speed: float = 1.0

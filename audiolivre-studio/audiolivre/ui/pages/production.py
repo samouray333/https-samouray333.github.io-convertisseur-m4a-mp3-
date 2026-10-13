@@ -165,19 +165,22 @@ class ProductionPage(Page):
             g.addWidget(label(t, "Muted"), i, 0)
             g.addWidget(w, i, 1)
         st.add(g)
+        self.t_natural = ToggleSwitch("Pauses naturelles (selon la ponctuation, respiration entre les voix)")
+        self.t_natural.setToolTip("Pause plus longue après « … », « ? » ou « ! », plus courte après « ; », légère "
+                                  "variation pour éviter un rythme mécanique, 2 s aux changements de scène (***)")
         self.t_announce = ToggleSwitch("Annoncer le titre de chaque chapitre")
         self.t_numbers = ToggleSwitch("Lire nombres, dates et heures en toutes lettres")
         self.t_abbr = ToggleSwitch("Développer les abréviations (M., Dr, etc.)")
         self.t_trim = ToggleSwitch("Uniformiser les silences des voix")
         self.t_asr = ToggleSwitch("Relecture automatique par l'IA (Whisper)")
         self.t_asr.setToolTip("Réécoute les passages des voix neuronales et refait ceux où des mots manquent")
-        for t in (self.t_announce, self.t_numbers, self.t_abbr, self.t_trim, self.t_asr):
+        for t in (self.t_natural, self.t_announce, self.t_numbers, self.t_abbr, self.t_trim, self.t_asr):
             st.add(t)
         self.asr_hint = label("", "Hint", wrap=True)
         st.add(self.asr_hint)
         for w in (self.speed, self.p_sentence, self.p_para, self.p_head, self.p_start, self.p_end):
             w.valueChanged.connect(self._settings_changed)
-        for t in (self.t_announce, self.t_numbers, self.t_abbr, self.t_trim, self.t_asr):
+        for t in (self.t_natural, self.t_announce, self.t_numbers, self.t_abbr, self.t_trim, self.t_asr):
             t.toggled.connect(self._settings_changed)
         sl.addWidget(st)
         lg = Card(margins=(14, 12, 14, 12), spacing=6)
@@ -239,6 +242,7 @@ class ProductionPage(Page):
         self.p_head.setValue(p.pause_heading_ms)
         self.p_start.setValue(p.chapter_head_ms)
         self.p_end.setValue(p.chapter_tail_ms)
+        self.t_natural.setChecked(p.natural_pauses)
         self.t_announce.setChecked(p.announce_chapter_titles)
         self.t_numbers.setChecked(p.normalize_numbers)
         self.t_abbr.setChecked(p.expand_abbreviations)
@@ -265,6 +269,7 @@ class ProductionPage(Page):
         p.pause_heading_ms = self.p_head.value()
         p.chapter_head_ms = self.p_start.value()
         p.chapter_tail_ms = self.p_end.value()
+        p.natural_pauses = self.t_natural.isChecked()
         p.announce_chapter_titles = self.t_announce.isChecked()
         p.normalize_numbers = self.t_numbers.isChecked()
         p.expand_abbreviations = self.t_abbr.isChecked()

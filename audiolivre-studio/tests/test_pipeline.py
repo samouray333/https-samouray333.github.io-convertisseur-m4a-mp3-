@@ -220,6 +220,7 @@ def test_dialogue_voice_inside_paragraphs(tmp_path, tone_engine, library):
     pr.production.announce_chapter_titles = False
     pr.production.detect_dialogues = True
     pr.production.dialogue_voice_id = dlg.id
+    pr.production.natural_pauses = False
     segs = renderer.build_plan(pr, library)[0].segments
     assert [(s.display, s.voice_id) for s in segs] == [
         ("Marie se retourna et dit :", narr.id), ("Qui est là ?", dlg.id),
@@ -351,3 +352,27 @@ def test_blocked_service_stops_production(tmp_path, library):
     assert rep.blocked and rep.cancelled
     assert len(calls) <= 3  # arrêt immédiat au lieu de 12 passages × 4 essais
     assert any(m.startswith("Production interrompue") for m in logs)
+
+
+def test_natural_pauses(tmp_path, tone_engine, library):
+    narr = library.save(VoiceProfile(name="Narrateur", engine="tone"))
+    paul = library.save(VoiceProfile(name="Paul", engine="tone"))
+    text = ("Il hésita longuement devant la porte close...\n\nQuelqu'un était-il resté dans la maison ?\n\n"
+            "* * *\n\nLe lendemain matin, le soleil brillait sur toute la vallée endormie.\n\n@Paul: Bonjour.\n\n"
+            "Fin du chapitre, après une longue journée de marche dans les collines.")
+    pr = make_project(tmp_path, narr.id, text=text)
+    pr.cast["Paul"] = paul.id
+    pr.export.include_credits = False
+    pr.production.announce_chapter_titles = False
+    base = pr.production.pause_paragraph_ms
+    segs = renderer.build_plan(pr, library)[0].segments
+    assert [s.display for s in segs][2] == "Le lendemain matin, le soleil brillait sur toute la vallée endormie."
+    assert segs[0].pause_after_ms > base * 1.35  # « ... » : pause de suspense
+    assert segs[1].pause_after_ms >= 2000  # « * * * » : changement de scène, sans lire les étoiles
+    assert segs[2].pause_after_ms >= int(base * 0.88) + renderer.VOICE_CHANGE_MS  # respiration avant Paul
+    assert segs[3].pause_after_ms < base + renderer.VOICE_CHANGE_MS  # réplique courte
+    again = renderer.build_plan(pr, library)[0].segments
+    assert [s.pause_after_ms for s in again] == [s.pause_after_ms for s in segs]  # stable d'une fois à l'autre
+    pr.production.natural_pauses = False
+    flat = renderer.build_plan(pr, library)[0].segments
+    assert flat[0].pause_after_ms == base and flat[1].pause_after_ms == base + 2000

@@ -115,3 +115,21 @@ def test_secrets_roundtrip():
 
     assert unprotect(protect("sk-abc")) == "sk-abc"
     assert protect("") == "" and unprotect("") == ""
+
+
+def test_dramatic_pauses_are_written_into_the_text():
+    answer = json.dumps({"paragraphes": [{"n": 1, "pause": 1.5}, {"n": 5, "pause": "9"},
+                                         {"n": 3, "personnage": "Paul", "pause": 0}]})
+    result = ai.annotate(TEXT, FakeClient([answer]), ["Marie"])
+    got = {s.number: (s.speaker, s.pause_ms) for s in result.paragraphs}
+    assert got[1] == (None, 1500) and got[5] == (None, ai.MAX_PAUSE_MS) and got[3] == ("Paul", 0)
+    new = ai.apply_suggestions(TEXT, result.paragraphs)
+    assert "Marie entra dans la pièce. [pause 1.5s]" in new
+    assert "Siobhan les regardait en silence. [pause 4s]" in new
+    # nouvelle analyse : la pause existante est reconnue et conservée
+    _parts, paras = ai.split_paragraphs(new)
+    assert paras[0].pause_ms == 1500 and paras[0].flat == "Marie entra dans la pièce."
+    again = ai.annotate(new, FakeClient([json.dumps({"paragraphes": [{"n": 1, "emotion": "calme"}]})]), [],
+                        pauses=False)
+    assert ai.apply_suggestions(new, again.paragraphs).startswith("[calme] Marie entra dans la pièce. [pause 1.5s]")
+    assert "pause" not in ai.system_prompt(False).split("4.")[0] and '"pause"' in ai.system_prompt(True)

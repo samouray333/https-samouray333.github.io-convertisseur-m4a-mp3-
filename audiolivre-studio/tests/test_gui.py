@@ -100,14 +100,17 @@ def test_ai_assistant_dialog_applies_suggestions(app):
     win.ctx.set_project(Project(chapters=[ch]))
     dlg = AIAnnotateDialog(win.ctx, ch, win)
     dlg.show_result(ai.Annotation(
-        paragraphs=[ai.ParagraphSuggestion(2, "— Bonjour ! dit-elle.", "Marie", "joyeux"),
+        paragraphs=[ai.ParagraphSuggestion(1, "Marie entra.", None, "", pause_ms=1000),
+                    ai.ParagraphSuggestion(2, "— Bonjour ! dit-elle.", "Marie", "joyeux"),
                     ai.ParagraphSuggestion(3, "— Salut, répondit Paul.", "Paul", "")],
         names=[ai.NameSuggestion("Marie", "Mari")], characters={"Marie": "F", "Paul": "M"}))
     assert dlg.apply_btn.isEnabled()
-    dlg.table.item(1, 2).setText("Paulo")  # correction manuelle du nom
+    dlg.table.item(2, 2).setText("Paulo")  # correction manuelle du nom
+    pc = dlg.table.cellWidget(0, 4)
+    pc.setCurrentIndex(pc.findData(2000))  # pause allongée à la main
     dlg.names.item(0, 0).setCheckState(Qt.Unchecked)
     dlg._apply()
-    assert ch.text == "Marie entra.\n\n@Marie: [joyeux] — Bonjour ! dit-elle.\n\n@Paulo: — Salut, répondit Paul."
+    assert ch.text == "Marie entra. [pause 2s]\n\n@Marie: [joyeux] — Bonjour ! dit-elle.\n\n@Paulo: — Salut, répondit Paul."
     pr = win.ctx.project
     assert set(pr.cast) == {"Marie", "Paulo"} and all(pr.cast.values())
     assert win.ctx.library.get(pr.cast["Marie"]).engine == "edge"

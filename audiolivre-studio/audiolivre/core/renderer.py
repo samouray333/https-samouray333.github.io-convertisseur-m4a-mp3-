@@ -131,6 +131,24 @@ class VoiceResolver:
         return narrator
 
 
+# Pauses naturelles : durée selon la ponctuation finale (facteur appliqué à la pause réglée)
+_END_FACTORS = (("...", 1.6), ("…", 1.6), ("?", 1.2), ("!", 1.15), (";", 0.8), (":", 0.85), (",", 0.6))
+VOICE_CHANGE_MS = 150
+
+
+def natural_pause(base_ms: int, text: str, seed: str, paragraph_end: bool = False) -> int:
+    """Pause après un passage : allongée après « … », « ? », « ! », raccourcie après « ; », avec une variation
+    de ±12 % (toujours la même pour un même passage, pour que le cache audio reste valable)."""
+    if base_ms <= 0:
+        return base_ms
+    end = text.rstrip().rstrip("»\"”’)] ")
+    factor = next((f for mark, f in _END_FACTORS if end.endswith(mark)), 1.0)
+    if paragraph_end and len(text) < 60 and factor < 1.5:
+        factor *= 0.8  # réplique courte : l'échange garde du rythme
+    jitter = int(hashlib.sha1(seed.encode("utf-8")).hexdigest()[:4], 16) / 0xFFFF  # 0..1
+    return int(round(base_ms * factor * (0.88 + 0.24 * jitter)))
+
+
 def _engine_limits(voice: VoiceProfile) -> tuple[int, int]:
     eng = engines.get_engine(voice.engine)
     if eng is None:
@@ -160,11 +178,14 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
         chunks = chunk_text(spoken, max_chars, min_chars)
         for i, c in enumerate(chunks):
             last = i == len(chunks) - 1
+            key = segment_key(c, voice, lang, prod.speed, prod.trim_silence, emotion)
+            pause = end_pause if last else prod.pause_sentence_ms
+            if prod.natural_pauses and kind_ == "para":
+                pause = natural_pause(pause, c, f"{key}|{len(segs)}",
+                                      last and end_pause == prod.pause_paragraph_ms and len(chunks) == 1)
             segs.append(Segment(
                 index=len(segs), text=c, display=raw if len(chunks) == 1 else c, voice_id=voice.id,
-                pause_after_ms=end_pause if last else prod.pause_sentence_ms, kind=kind_,
-                key=segment_key(c, voice, lang, prod.speed, prod.trim_silence, emotion), paragraph=paragraph,
-                emotion=emotion,
+                pause_after_ms=pause, kind=kind_, key=key, paragraph=paragraph, emotion=emotion,
             ))
         paragraph += 1
 
@@ -201,6 +222,10 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
             if not item.joined:
                 flush()
     flush()
+    if prod.natural_pauses:
+        for a, b in zip(segs, segs[1:]):
+            if a.voice_id != b.voice_id:
+                a.pause_after_ms += VOICE_CHANGE_MS  # petite respiration quand un autre personnage prend la parole
     if segs:
         segs[-1].pause_after_ms = 0
     rc.segments = segs

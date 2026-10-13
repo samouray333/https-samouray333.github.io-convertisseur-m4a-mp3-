@@ -1,7 +1,8 @@
-"""Assistant IA (DeepSeek) : qui parle, émotions et prononciation des noms propres.
+"""Assistant IA (DeepSeek) : qui parle, émotions, pauses dramatiques et prononciation des noms propres.
 
 Le texte du livre n'est jamais réécrit par l'IA : elle renvoie des propositions par paragraphe numéroté,
-que l'utilisateur valide et que l'application applique sous forme de balises (« @Marie: », « [triste] »).
+que l'utilisateur valide et que l'application applique sous forme de balises (« @Marie: », « [triste] »,
+« [pause 1.5s] »).
 """
 
 from __future__ import annotations
@@ -170,6 +171,13 @@ def client_from_settings() -> DeepSeekClient:
 # Paragraphes du manuscrit
 # ---------------------------------------------------------------------------------------
 _SPEAKER_TAG_RE = re.compile(r"^@([^:\n]{1,40}):[ \t]*")
+_TRAILING_PAUSE_RE = re.compile(r"\s*" + PAUSE_RE.pattern + r"\s*$", re.IGNORECASE)
+MIN_PAUSE_MS = 300
+MAX_PAUSE_MS = 4000
+
+
+def pause_tag(ms: int) -> str:
+    return f"[pause {ms / 1000:g}s]"
 _SPLIT_RE = re.compile(r"(\n[ \t]*\n|\n(?=#)|\n(?=@)|\n(?=\[)|(?<=\])\n)")
 
 
@@ -182,6 +190,7 @@ class Paragraph:
     trail: str  # espaces de fin conservés
     speaker: str | None
     emotion: str
+    pause_ms: int = 0  # balise « [pause …] » en fin de paragraphe (retirée de ``body``)
 
     @property
     def flat(self) -> str:
@@ -224,7 +233,14 @@ def split_paragraphs(text: str) -> tuple[list[str], list[Paragraph]]:
             body = body[em.end():]
         if not any(ch.isalnum() for ch in body):
             continue
-        paras.append(Paragraph(len(paras) + 1, i, lead, body, trail, speaker, emotion))
+        pause_ms = 0
+        pm = _TRAILING_PAUSE_RE.search(body)
+        if pm and any(ch.isalnum() for ch in body[:pm.start()]):
+            value, unit = pm.group(1), pm.group(2)
+            v = float(value.replace(",", "."))
+            pause_ms = int(v if unit and unit.lower() == "ms" else v * 1000)
+            body = body[:pm.start()]
+        paras.append(Paragraph(len(paras) + 1, i, lead, body, trail, speaker, emotion, pause_ms))
     return parts, paras
 
 
@@ -240,6 +256,8 @@ class ParagraphSuggestion:
     old_speaker: str | None = None
     old_emotion: str = ""
     accepted: bool = True
+    pause_ms: int = 0  # pause après le paragraphe (0 = aucune)
+    old_pause_ms: int = 0
 
 
 @dataclass
@@ -264,15 +282,28 @@ de dialogue), indique le personnage qui parle. Déduis-le du texte (« dit Marie
 contexte). Utilise toujours le même nom pour un même personnage, de préférence son prénom.
 2. Pour les paragraphes dont le ton est nettement marqué, indique une émotion parmi : joyeux, triste, colère, \
 chuchoté, calme, peur, excité. Sois sobre : la plupart des paragraphes sont neutres.
-3. Relève les noms propres inventés ou étrangers dont la lecture française n'est pas évidente, avec une \
+3. {pauses}Relève les noms propres inventés ou étrangers dont la lecture française n'est pas évidente, avec une \
 orthographe simple qui se lit correctement en français (exemple : « Siobhan » → « Chivône »).
 
 N'invente jamais de texte et ne recopie pas les paragraphes. Réponds uniquement avec un objet JSON de cette forme :
-{"paragraphes": [{"n": 3, "personnage": "Marie", "emotion": "colère"}],
- "personnages": [{"nom": "Marie", "genre": "F"}],
- "noms": [{"mot": "Siobhan", "prononciation": "Chivône"}]}
-Dans « paragraphes », ne mets que ceux qui ont un personnage ou une émotion (null pour un champ vide). \
+{{"paragraphes": [{{"n": 3, "personnage": "Marie", "emotion": "colère"{pause_example}}}],
+ "personnages": [{{"nom": "Marie", "genre": "F"}}],
+ "noms": [{{"mot": "Siobhan", "prononciation": "Chivône"}}]}}
+Dans « paragraphes », ne mets que ceux qui ont {fields} (null pour un champ vide). \
 « genre » vaut F, M ou ?. Laisse les listes vides s'il n'y a rien."""
+
+PAUSE_INSTRUCTION = """Comme un comédien qui lit le livre, repère les moments forts où un silence \
+s'impose après le paragraphe : révélation, chute d'une scène, phrase choc, suspense avant un rebondissement, \
+moment d'émotion. Indique alors « pause » en secondes (de 0.5 à 3). Sois très sobre : une pause tous les 8 à 15 \
+paragraphes au plus, jamais au milieu d'un échange rapide de répliques.
+4. """
+
+
+def system_prompt(pauses: bool = True) -> str:
+    if pauses:
+        return SYSTEM_PROMPT.format(pauses=PAUSE_INSTRUCTION, pause_example=', "pause": 1.5',
+                                    fields="un personnage, une émotion ou une pause")
+    return SYSTEM_PROMPT.format(pauses="", pause_example="", fields="un personnage ou une émotion")
 
 
 def _clean_name(name) -> str | None:
@@ -291,6 +322,16 @@ def _clean_emotion(value) -> str:
     return EMOTION_ALIASES.get(value.strip().lower().strip("[]"), "")
 
 
+def _clean_pause(value) -> int:
+    try:
+        seconds = float(str(value).replace(",", ".").strip().rstrip("s"))
+    except (TypeError, ValueError):
+        return 0
+    if seconds <= 0:
+        return 0
+    return int(round(min(max(seconds * 1000, MIN_PAUSE_MS), MAX_PAUSE_MS) / 100) * 100)
+
+
 def _batches(paras: list[Paragraph]) -> list[list[Paragraph]]:
     out: list[list[Paragraph]] = []
     cur: list[Paragraph] = []
@@ -307,7 +348,7 @@ def _batches(paras: list[Paragraph]) -> list[list[Paragraph]]:
 
 
 def annotate(text: str, client: DeepSeekClient, known_characters: list[str] | None = None,
-             progress: ProgressCb | None = None, cancel=None) -> Annotation:
+             progress: ProgressCb | None = None, cancel=None, pauses: bool = True) -> Annotation:
     """Analyse un chapitre et renvoie les propositions (le texte n'est pas modifié)."""
     _parts, paras = split_paragraphs(text)
     result = Annotation()
@@ -315,7 +356,8 @@ def annotate(text: str, client: DeepSeekClient, known_characters: list[str] | No
         return result
     characters: dict[str, str] = {n: "?" for n in (known_characters or [])}
     names: dict[str, str] = {}
-    found: dict[int, tuple[str | None, str]] = {}
+    found: dict[int, tuple[str | None, str, int]] = {}
+    prompt = system_prompt(pauses)
     batches = _batches(paras)
     for bi, batch in enumerate(batches):
         if cancel is not None and cancel.is_set():
@@ -332,7 +374,7 @@ def annotate(text: str, client: DeepSeekClient, known_characters: list[str] | No
             lines += [f"[{p.number}] {p.flat}" for p in context]
         lines.append("\nParagraphes à annoter :")
         lines += [f"[{p.number}] {p.flat}" for p in batch]
-        data = client.chat_json(SYSTEM_PROMPT, "\n".join(lines))
+        data = client.chat_json(prompt, "\n".join(lines))
         numbers = {p.number for p in batch}
         for item in data.get("paragraphes") or data.get("paragraphs") or []:
             if not isinstance(item, dict):
@@ -345,8 +387,9 @@ def annotate(text: str, client: DeepSeekClient, known_characters: list[str] | No
                 continue
             speaker = _clean_name(item.get("personnage", item.get("speaker")))
             emotion = _clean_emotion(item.get("emotion"))
-            if speaker or emotion:
-                found[n] = (speaker, emotion)
+            pause = _clean_pause(item.get("pause")) if pauses else 0
+            if speaker or emotion or pause:
+                found[n] = (speaker, emotion, pause)
                 if speaker and speaker not in characters:
                     characters[speaker] = "?"
         for item in data.get("personnages") or data.get("characters") or []:
@@ -364,14 +407,16 @@ def annotate(text: str, client: DeepSeekClient, known_characters: list[str] | No
     for p in paras:
         if p.number not in found:
             continue
-        speaker, emotion = found[p.number]
+        speaker, emotion, pause = found[p.number]
         new_speaker = speaker or p.speaker
         new_emotion = emotion or p.emotion
-        if new_speaker == p.speaker and new_emotion == p.emotion:
+        new_pause = pause or p.pause_ms
+        if new_speaker == p.speaker and new_emotion == p.emotion and new_pause == p.pause_ms:
             continue
         excerpt = p.flat if len(p.flat) <= 160 else p.flat[:157] + "…"
         result.paragraphs.append(ParagraphSuggestion(p.number, excerpt, new_speaker, new_emotion,
-                                                     p.speaker, p.emotion))
+                                                     p.speaker, p.emotion, pause_ms=new_pause,
+                                                     old_pause_ms=p.pause_ms))
     used = {s.speaker for s in result.paragraphs if s.speaker}
     result.characters = {n: g for n, g in characters.items() if n in used}
     result.names = [NameSuggestion(w, s) for w, s in names.items()]
@@ -390,7 +435,9 @@ def apply_suggestions(text: str, suggestions: list[ParagraphSuggestion]) -> str:
         speaker = _clean_name(s.speaker) if s.speaker else None
         emotion = _clean_emotion(s.emotion) if s.emotion else ""
         prefix = (f"@{speaker}: " if speaker else "") + (f"[{emotion}] " if emotion else "")
-        parts[p.part] = p.lead + prefix + p.body + p.trail
+        pause = max(0, min(int(s.pause_ms or 0), MAX_PAUSE_MS))
+        suffix = f" {pause_tag(pause)}" if pause else ""
+        parts[p.part] = p.lead + prefix + p.body.rstrip() + suffix + p.trail
     return "".join(parts)
 
 

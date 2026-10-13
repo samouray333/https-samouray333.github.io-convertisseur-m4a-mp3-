@@ -36,6 +36,7 @@ DEFAULTS: dict[str, Any] = {
     "ai_key": "",  # clé DeepSeek chiffrée (voir core/secrets.py)
     "ai_model": "",  # vide : choisi automatiquement parmi les modèles du compte
     "ai_base_url": "https://api.deepseek.com",
+    "ai_pauses": True,  # l'assistant propose aussi des pauses dramatiques
 }
 
 
