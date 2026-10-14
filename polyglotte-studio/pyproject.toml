@@ -1,0 +1,16 @@
+[project]
+name = "polyglotte-studio"
+version = "1.0.0"
+description = "Apprenez les langues à l'écoute : leçons audio avec voix natives, exercices et révisions espacées."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gui: tests de l'interface graphique (Qt hors écran)",
+    "ffmpeg: tests nécessitant FFmpeg",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
