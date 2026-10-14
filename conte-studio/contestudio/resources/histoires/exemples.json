@@ -1,0 +1,71 @@
+{
+  "title": "Histoires d'exemple",
+  "subtitle": "Cinq contes pour découvrir Conte Studio",
+  "author": "Conte Studio",
+  "description": "Des histoires prêtes à écouter : un dragon qui a peur du noir, une ferme rigolote, un pirate distrait, une forêt qui chante et la Lune qui change de forme. Le héros de la forêt qui chante prend le prénom de votre enfant.",
+  "narrator": "fr-FR-DeniseNeural",
+  "characters": [
+    {"name": "Pompon", "role": "hero", "style": "enfant", "voice": "fr-FR-EloiseNeural", "bio": "Un tout petit dragon vert, gentil et un peu peureux."},
+    {"name": "Maman Dragon", "role": "parent", "style": "grand", "voice": "fr-FR-VivienneMultilingualNeural", "bio": "La maman de Pompon, douce et rassurante."},
+    {"name": "Lili", "role": "magic", "style": "fee", "voice": "fr-CA-SylvieNeural", "bio": "Une luciole qui brille dans la nuit."},
+    {"name": "Monsieur Patate", "role": "character", "style": "normal", "voice": "fr-FR-HenriNeural", "bio": "Le fermier, rigolo et tête en l'air."},
+    {"name": "Noisette", "role": "animal", "style": "petit", "voice": "fr-FR-EloiseNeural", "bio": "Une petite poule curieuse."},
+    {"name": "Capitaine Moustache", "role": "character", "style": "grand", "voice": "fr-FR-RemyMultilingualNeural", "bio": "Un pirate très distrait, qui perd toujours sa carte."},
+    {"name": "Coco", "role": "animal", "style": "petit", "voice": "fr-BE-CharlineNeural", "bio": "Le perroquet du capitaine, qui répète tout."},
+    {"name": "{prénom}", "role": "hero", "style": "enfant", "voice": "fr-FR-EloiseNeural", "bio": "L'enfant qui écoute : son prénom remplace « {prénom} »."},
+    {"name": "Grand Chêne", "role": "magic", "style": "geant", "voice": "fr-CA-AntoineNeural", "bio": "Le plus vieil arbre de la forêt, qui parle très lentement."},
+    {"name": "Mamie Jeanne", "role": "parent", "style": "ancien", "voice": "fr-FR-DeniseNeural", "bio": "Une grand-mère qui connaît les étoiles."}
+  ],
+  "stories": [
+    {
+      "title": "Le petit dragon qui avait peur du noir",
+      "age": "3-5",
+      "tone": "douce",
+      "bedtime": true,
+      "favorite": true,
+      "moral": "Dans le noir, les choses que l'on aime sont toujours là.",
+      "summary": "Pompon, le tout petit dragon, n'arrive pas à dormir : il a peur du noir. Cette nuit, une luciole va lui montrer que la nuit est pleine de jolies lumières.",
+      "text": "[ambiance: nuit]\n\nAu fond d'une grotte tout en haut de la montagne, vivait un tout petit dragon. Il s'appelait Pompon.\n\nPompon était vert comme une feuille, avec des ailes toutes douces et un petit ventre rond.\n\nLe jour, Pompon riait, sautait et jouait. Mais le soir, quand le soleil allait se coucher… Pompon avait peur.\n\n@Pompon: [chuchoté] Maman… il fait tout noir. Je n'aime pas le noir.\n\n@Maman Dragon: [calme] Je suis là, mon petit Pompon. Ferme les yeux. Tout va bien.\n\nMais Pompon ouvrait un œil. Puis l'autre œil. Et il regardait le noir.\n\n[son: hibou]\n\n@Pompon: [peur] Qu'est-ce que c'est ?\n\n@Maman Dragon: [calme] C'est le hibou. Il dit bonsoir à la lune.\n\nAlors, tout doucement, une petite lumière s'approcha de la grotte. Elle clignotait. Une fois. Deux fois. Trois fois.\n\n[son: cloche_magique]\n\n@Lili: [joyeux] Bonsoir, petit dragon ! Je m'appelle Lili. Je suis une luciole.\n\n@Pompon: Bonsoir, Lili. Tu brilles très fort !\n\n@Lili: Je brille pour toi. Tu veux voir un secret ? Viens au bord de la grotte.\n\nPompon fit trois petits pas. Il regarda dehors.\n\nEt là… le ciel était plein d'étoiles. Des petites, des grandes, des toutes brillantes.\n\n@Lili: Tu vois ? La nuit n'est pas toute noire. Elle est pleine de lumières.\n\n@Pompon: [joyeux] Oh ! C'est beau !\n\n@Lili: Et regarde : la lune veille sur toi. Elle reste là toute la nuit.\n\nPompon sourit. Il bâilla. Un tout petit bâillement de dragon.\n\n@Maman Dragon: [chuchoté] Viens, mon Pompon. On fait un gros câlin ?\n\nPompon se blottit contre sa maman. Lili se posa juste à côté, comme une petite veilleuse.\n\n@Pompon: [chuchoté] Bonne nuit, Lili. Bonne nuit, la lune. Bonne nuit, Maman.\n\n@Lili: [chuchoté] Bonne nuit, Pompon.\n\nEt le tout petit dragon s'endormit, bien au chaud, sous un ciel plein d'étoiles.\n\nBonne nuit à toi aussi."
+    },
+    {
+      "title": "La ferme de Monsieur Patate",
+      "age": "3-5",
+      "tone": "drole",
+      "bedtime": false,
+      "favorite": false,
+      "moral": "",
+      "summary": "Monsieur Patate a perdu son chapeau ! Tous les animaux de la ferme l'aident à le chercher… et chacun a son idée.",
+      "text": "[ambiance: foret]\n\nC'était le matin à la ferme de Monsieur Patate. Le soleil brillait.\n\n@Monsieur Patate: [excité] Oh là là ! Où est mon chapeau ? J'ai perdu mon chapeau !\n\nMonsieur Patate chercha sous la table. Pas de chapeau. Il chercha dans la cuisine. Pas de chapeau.\n\nAlors il sortit dans la cour.\n\n[son: vache]\n\n@Monsieur Patate: Bonjour, la vache ! Tu as vu mon chapeau ?\n\nLa vache mâchait son herbe. Elle répondit : « Meuh. » Ça voulait dire : « Non. »\n\n[son: mouton]\n\n@Monsieur Patate: Et toi, le mouton ? Tu as vu mon chapeau ?\n\nLe mouton secoua sa tête toute frisée. « Bêêê. » Ça voulait dire : « Pas du tout. »\n\n[son: canard]\n\nLe canard passa en se dandinant. « Coin, coin ! » Il n'avait pas vu le chapeau non plus.\n\n[son: chien]\n\nLe chien aboya. « Ouaf ! Ouaf ! » Il courut partout, partout, partout. Mais pas de chapeau.\n\n@Monsieur Patate: [triste] Personne n'a vu mon chapeau…\n\nC'est alors qu'une petite poule sortit du poulailler. Elle s'appelait Noisette.\n\n@Noisette: [joyeux] Cot, cot ! Moi, je sais où il est, ton chapeau !\n\n@Monsieur Patate: Ah bon ? Où ça, Noisette ?\n\n@Noisette: Viens voir !\n\nNoisette emmena Monsieur Patate dans le poulailler. Et là, dans un coin, il y avait le chapeau…\n\nEt dans le chapeau, il y avait… trois petits œufs tout ronds !\n\n@Noisette: [joyeux] C'est le plus joli nid de la ferme !\n\n[son: rire]\n\nMonsieur Patate éclata de rire.\n\n@Monsieur Patate: [joyeux] Alors garde-le, Noisette ! Je mettrai mon bonnet.\n\n[son: chat]\n\nEt le chat, qui dormait au soleil, ouvrit un œil et dit : « Miaou. » Ça voulait dire : « Quelle drôle de ferme ! »\n\nFin."
+    },
+    {
+      "title": "Capitaine Moustache et l'île aux coquillages",
+      "age": "6-8",
+      "tone": "drole",
+      "bedtime": false,
+      "favorite": false,
+      "moral": "Écouter les autres, même quand ils répètent tout, peut nous aider.",
+      "summary": "Le capitaine Moustache cherche un trésor, mais il perd toujours sa carte. Heureusement, son perroquet Coco a tout retenu… à sa façon.",
+      "text": "[ambiance: mer]\n\nSur la mer bleue, un petit bateau dansait sur les vagues. À son bord, il y avait le plus distrait de tous les pirates : le capitaine Moustache.\n\nSa moustache était si longue qu'il pouvait la nouer derrière sa tête. Et sur son épaule, il y avait Coco, son perroquet.\n\n@Capitaine Moustache: [excité] Aujourd'hui, Coco, nous allons trouver le trésor de l'île aux coquillages !\n\n@Coco: Trésor ! Trésor ! Coquillages !\n\n@Capitaine Moustache: Voyons la carte… La carte… Où est la carte ?\n\nLe capitaine chercha dans sa poche gauche. Puis dans sa poche droite. Puis dans son chapeau.\n\n@Capitaine Moustache: [triste] Mille sabords ! J'ai encore perdu la carte !\n\n@Coco: Perdu la carte ! Perdu la carte !\n\n@Capitaine Moustache: Oui, Coco, merci, j'avais compris.\n\n[son: oiseau]\n\nLe bateau arriva près d'une petite île toute ronde, couverte de coquillages blancs et roses.\n\n@Capitaine Moustache: Bon. Sans carte, comment trouver le trésor ?\n\n@Coco: Trois pas vers le palmier ! Trois pas vers le palmier !\n\nLe capitaine s'arrêta net.\n\n@Capitaine Moustache: Qu'est-ce que tu dis, Coco ?\n\n@Coco: Trois pas vers le palmier ! Sous le gros rocher ! Creuser, creuser !\n\nLe capitaine ouvrit de grands yeux. Coco avait entendu le capitaine lire la carte cent fois. Et il avait tout retenu !\n\nAlors le capitaine Moustache fit trois pas vers le palmier. Un, deux, trois.\n\n[son: pas]\n\nIl trouva un gros rocher. Il creusa, creusa, creusa dans le sable.\n\nEt tout au fond, il y avait un coffre.\n\n[son: porte]\n\nLe couvercle grinça. Et dans le coffre… il y avait des coquillages. Des centaines de coquillages qui brillaient comme des perles.\n\n@Capitaine Moustache: [joyeux] Le plus beau trésor de toutes les mers !\n\n@Coco: Merci Coco ! Merci Coco !\n\n[son: rire]\n\nLe capitaine Moustache éclata de rire.\n\n@Capitaine Moustache: [joyeux] Tu as raison, Coco. Merci, Coco ! Sans toi, je n'aurais rien trouvé.\n\nDepuis ce jour, le capitaine Moustache n'a plus jamais eu besoin de carte. Il a Coco. Et Coco, lui, n'oublie jamais rien.\n\n[ambiance: fin]\n\nFin."
+    },
+    {
+      "title": "{prénom} et la forêt qui chante",
+      "age": "6-8",
+      "tone": "aventure",
+      "bedtime": false,
+      "favorite": false,
+      "moral": "Quand on écoute vraiment, on découvre des merveilles.",
+      "summary": "Un matin, la forêt ne chante plus. {prénom} part demander de l'aide au Grand Chêne, le plus vieil arbre du monde.",
+      "text": "[ambiance: foret]\n\nChaque matin, {prénom} ouvrait sa fenêtre pour écouter la forêt. Les oiseaux chantaient, les feuilles chuchotaient, le ruisseau riait entre les pierres.\n\nMais ce matin-là, la forêt était silencieuse.\n\n[ambiance: vent]\n\n@{prénom}: [peur] C'est bizarre… On n'entend plus rien. Plus un seul oiseau.\n\n{prénom} mit ses bottes, prit son sac à dos et partit sur le chemin.\n\n[son: pas]\n\nAu bout du sentier se trouvait le plus vieil arbre du monde : le Grand Chêne. On disait qu'il savait tout.\n\n@{prénom}: Bonjour, Grand Chêne ! La forêt ne chante plus. Est-ce que vous savez pourquoi ?\n\nLe Grand Chêne ouvrit lentement deux yeux dans son écorce.\n\n@Grand Chêne: [lent] Bonjour… jeune… pousse. Les oiseaux ont perdu… leur chanson. Le vent l'a emportée… cette nuit… pendant la tempête.\n\n@{prénom}: Alors il faut la retrouver ! Où est-elle partie ?\n\n@Grand Chêne: [lent] Suis la plume bleue… Elle connaît le chemin.\n\nUne plume bleue tomba d'une branche. Elle tournoya, puis s'envola vers la rivière.\n\n[ambiance: riviere]\n\n{prénom} la suivit jusqu'au bord de l'eau. Là, accrochée à un buisson, il y avait une toute petite boule de lumière qui vibrait doucement.\n\n[son: cloche_magique]\n\n@{prénom}: [chuchoté] La voilà… C'est la chanson de la forêt !\n\n{prénom} prit la boule de lumière dans ses mains, très délicatement, comme un œuf. Elle était chaude et elle fredonnait.\n\nPuis {prénom} revint jusqu'au Grand Chêne, et leva les mains vers le ciel.\n\n@{prénom}: [joyeux] Oiseaux ! Voici votre chanson !\n\n[ambiance: foret]\n\nLa boule de lumière s'envola. Elle se partagea en mille petites étincelles. Et chaque étincelle se posa sur un oiseau.\n\n[son: oiseau]\n\nAussitôt, la forêt se remit à chanter. Plus fort et plus joyeuse que jamais.\n\n@Grand Chêne: [lent] Merci… {prénom}. Tu as su… écouter… le silence.\n\nCe soir-là, en ouvrant sa fenêtre, {prénom} entendit un merle chanter un air tout nouveau. Un air que personne n'avait jamais entendu.\n\nC'était une chanson qui disait merci.\n\n[ambiance: fin]\n\nFin."
+    },
+    {
+      "title": "Pourquoi la Lune change de forme ?",
+      "age": "6-8",
+      "tone": "educative",
+      "bedtime": true,
+      "favorite": false,
+      "moral": "",
+      "summary": "Un soir, Mamie Jeanne explique à {prénom} pourquoi la Lune est parfois ronde, parfois en croissant… avec une orange et une lampe de poche.",
+      "text": "[ambiance: nuit]\n\nC'était l'été, chez Mamie Jeanne. Sous une grande couverture, dans le jardin, {prénom} regardait le ciel.\n\n@{prénom}: Mamie, hier la Lune était toute ronde. Et ce soir, on dirait qu'il en manque un morceau. Qui l'a mangé ?\n\n@Mamie Jeanne: [joyeux] Personne ne l'a mangée, mon trésor ! Viens, je vais te montrer un secret.\n\nMamie Jeanne alla chercher une orange et une lampe de poche.\n\n@Mamie Jeanne: Imagine que la lampe, c'est le Soleil. L'orange, c'est la Lune. Et ta tête, c'est la Terre.\n\nElle alluma la lampe et la posa sur la table. Puis elle donna l'orange à {prénom}.\n\n@Mamie Jeanne: La Lune ne brille pas toute seule. Elle est éclairée par le Soleil, comme l'orange par la lampe. Tiens l'orange devant toi, bras tendu, et tourne doucement sur toi-même.\n\n{prénom} tourna, tout doucement.\n\n@{prénom}: [excité] Oh ! Quand l'orange est du côté de la lampe, je vois seulement sa partie dans l'ombre. Elle est presque toute noire !\n\n@Mamie Jeanne: C'est la nouvelle lune. On ne la voit presque pas. Continue de tourner.\n\n@{prénom}: Maintenant, je vois un petit bout éclairé… comme un croissant !\n\n@Mamie Jeanne: Exactement ! Et quand l'orange est de l'autre côté, loin de la lampe ?\n\n@{prénom}: [joyeux] Elle est toute éclairée ! C'est la pleine lune !\n\n@Mamie Jeanne: Bravo. La Lune tourne autour de la Terre. Il lui faut à peu près un mois pour faire un tour complet. Alors, selon l'endroit où elle se trouve, on voit une partie plus ou moins grande de son côté éclairé. La Lune ne change pas vraiment : c'est nous qui la voyons autrement.\n\n@{prénom}: [calme] Alors demain, il en manquera encore un petit morceau ?\n\n@Mamie Jeanne: Oui. Et dans deux semaines environ, elle sera toute fine. Puis elle grandira de nouveau, jusqu'à redevenir toute ronde.\n\n{prénom} bâilla et regarda la Lune, qui souriait comme une part de melon.\n\n@{prénom}: [chuchoté] Bonne nuit, la Lune. À demain.\n\n@Mamie Jeanne: [chuchoté] Bonne nuit, ma petite étoile.\n\nEt sous la couverture, dans le jardin plein d'étoiles, {prénom} s'endormit en comptant les cratères.\n\nBonne nuit."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+[project]
+name = "conte-studio"
+version = "1.0.0"
+description = "Contes et histoires audio pour enfants : personnages aux voix de synthèse ou clonées, bruitages, histoires du soir, livrets."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gui: tests de l'interface graphique (Qt hors écran)",
+    "ffmpeg: tests nécessitant FFmpeg",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

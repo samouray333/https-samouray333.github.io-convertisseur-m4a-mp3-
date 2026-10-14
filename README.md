@@ -18,5 +18,12 @@ Deux applications de la même famille, chacune avec son dossier, ses couleurs, s
   voix du professeur, pauses de réflexion, résumés et quiz audio de fin de leçon, export par module.
   Versions publiées avec les tags `lecon-v*`.
 
-Les trois applications partagent les moteurs IA, les modèles, les voix clonées et la clé DeepSeek
+## 🌙 Conte Studio
+
+- [`conte-studio/`](conte-studio/README.md) — **Conte Studio** (bleu nuit et jaune étoile) : contes et histoires audio pour
+  enfants écrits avec l'assistant DeepSeek selon l'âge, une voix par personnage (et la voix de papa ou maman pour le
+  narrateur), bruitages et ambiances générés, histoires du soir avec berceuse, couvertures, livret en gros caractères,
+  coin lecture pour l'enfant. Versions publiées avec les tags `conte-v*`.
+
+Les quatre applications partagent les moteurs IA, les modèles, les voix clonées et la clé DeepSeek
 (`%LOCALAPPDATA%\AudioLivreStudio`) : un moteur installé dans l'une est disponible dans les autres.
