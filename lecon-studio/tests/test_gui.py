@@ -275,6 +275,7 @@ def test_rate_emphasis_tools_and_correction(app, tmp_path):
     assert "*jamais*" not in ed.toPlainText()
 
     # Production : respirations et correction d'un seul passage
+    page._save_timer.stop()  # sinon l'enregistrement différé de l'éditeur réécrirait ch.text pendant le rendu
     ch.text = "Le soir tombait sur Siobhan.\n\nTout était calme."
     win.show_page("production")
     prod = win.pages["production"]
