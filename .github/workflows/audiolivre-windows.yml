@@ -165,7 +165,8 @@ jobs:
           path: audiolivre-studio/dist/AudioLivreStudio-Portable-*.zip
 
       - name: Publication (tag v*)
-        if: github.ref_type == 'tag'
+        # le dépôt publie aussi PodCast Studio (podcast-v*) et Leçon Studio (lecon-v*)
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         uses: softprops/action-gh-release@v2
         with:
           name: AudioLivre Studio ${{ steps.ver.outputs.version }}

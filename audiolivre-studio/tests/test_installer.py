@@ -69,3 +69,13 @@ def test_espeak_hidden_from_xtts(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", path)
     assert str(bad) not in installer.worker_env("xtts")["PATH"].split(os.pathsep)
     assert str(bad) in installer.worker_env("kokoro")["PATH"].split(os.pathsep)
+
+
+def test_update_ignores_other_apps_releases():
+    from audiolivre.core import updates
+
+    rel = updates.pick_release([{"tag_name": "podcast-v9.0.0"}, {"tag_name": "lecon-v8.0.0"},
+                                {"tag_name": "v1.4.0", "assets": [{"name": "AudioLivreStudio-Setup-1.4.0.exe",
+                                                                   "browser_download_url": "d"}]},
+                                {"tag_name": "v1.3.0"}])
+    assert rel["version"] == "1.4.0" and rel["download"] == "d"

@@ -1,0 +1,184 @@
+name: PodCast Studio — build Windows
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["podcast-v*"]
+    paths:
+      - "podcast-studio/**"
+      - ".github/workflows/podcast-studio-windows.yml"
+  pull_request:
+    paths:
+      - "podcast-studio/**"
+      - ".github/workflows/podcast-studio-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: podcast-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: podcast-studio
+
+jobs:
+  tests:
+    name: Tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: podcast-studio/requirements*.txt
+      - name: Dépendances système
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libportaudio2
+      - name: Dépendances Python
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check --select F,E9 --line-length 120 podcaststudio main.py scripts tests
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+  build-windows:
+    name: Installateur Windows
+    runs-on: windows-latest
+    needs: tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: podcast-studio/requirements*.txt
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path podcaststudio/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".Substring(9) }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Version : $v"
+
+      - name: Dépendances Python
+        run: pip install -r requirements-dev.txt
+
+      - name: Tests unitaires (Windows)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q -m "not gui"
+
+      - name: Outils (FFmpeg, uv)
+        shell: pwsh
+        run: |
+          $tools = "packaging/tools"
+          New-Item -ItemType Directory -Force -Path $tools | Out-Null
+          $urls = @(
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip",
+            "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build-shared.zip"
+          )
+          $ok = $false
+          foreach ($u in $urls) {
+            try {
+              Write-Host "Téléchargement de $u"
+              Invoke-WebRequest -Uri $u -OutFile ffmpeg.zip -UseBasicParsing
+              Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_x -Force
+              $bin = Get-ChildItem -Path ffmpeg_x -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+              Copy-Item "$($bin.DirectoryName)\*.exe" $tools
+              Copy-Item "$($bin.DirectoryName)\*.dll" $tools -ErrorAction SilentlyContinue
+              Remove-Item "$tools\ffplay.exe" -ErrorAction SilentlyContinue
+              $ok = $true
+              break
+            } catch { Write-Warning "Échec : $_" }
+          }
+          if (-not $ok) { throw "FFmpeg indisponible" }
+          python -c "import uv, shutil; shutil.copy(uv.find_uv_bin(), r'packaging/tools/uv.exe')"
+          Get-ChildItem $tools | Format-Table Name, Length
+          & "$tools/ffmpeg.exe" -hide_banner -encoders | Select-String "libmp3lame|aac |libopus|flac"
+
+      - name: Icône et images de l'installateur
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python packaging/make_assets.py
+
+      - name: PyInstaller
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
+        run: pyinstaller --noconfirm --clean packaging/podcaststudio.spec
+
+      - name: Autotest de l'exécutable
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "selftest.json"
+          $p = Start-Process -FilePath "dist/PodCastStudio/PodCastStudio.exe" -ArgumentList "--selftest", "`"$report`"" -Wait -PassThru
+          Get-Content $report -Raw
+          $r = Get-Content $report -Raw | ConvertFrom-Json
+          foreach ($c in $r.results) { Write-Host ("[{0}] {1} : {2}" -f ($(if ($c.ok) {"OK"} else {"ÉCHEC"})), $c.check, $c.detail) }
+          if ($p.ExitCode -ne 0 -or -not $r.ok) { throw "Autotest en échec (code $($p.ExitCode))" }
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          $root = (Resolve-Path .).Path
+          Write-Host "Racine : $root"
+          Get-ChildItem packaging\assets, podcaststudio\resources | Format-Table Name, Length
+          Test-Path dist\PodCastStudio\PodCastStudio.exe
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DAppRoot=$root" "$root\packaging\installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC a échoué" }
+          Get-ChildItem dist\*.exe | Format-Table Name, Length
+
+      - name: Version portable (zip)
+        shell: pwsh
+        run: |
+          New-Item -ItemType File -Force -Path dist/PodCastStudio/portable.txt -Value "Supprimez ce fichier pour stocker les données dans le profil utilisateur." | Out-Null
+          Compress-Archive -Path dist/PodCastStudio -DestinationPath "dist/PodCastStudio-Portable-${{ steps.ver.outputs.version }}.zip" -CompressionLevel Optimal
+
+      - name: Installateur (artefact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PodCastStudio-Setup-${{ steps.ver.outputs.version }}
+          path: podcast-studio/dist/PodCastStudio-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Version portable (artefact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PodCastStudio-Portable-${{ steps.ver.outputs.version }}
+          path: podcast-studio/dist/PodCastStudio-Portable-*.zip
+
+      - name: Publication (tag v*)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PodCast Studio ${{ steps.ver.outputs.version }}
+          files: |
+            podcast-studio/dist/PodCastStudio-Setup-*.exe
+            podcast-studio/dist/PodCastStudio-Portable-*.zip
+          body: |
+            **PodCast Studio ${{ steps.ver.outputs.version }}** — créez vos podcasts à plusieurs voix, du script au flux RSS.
+
+            ### Installation
+            - **Installateur** : téléchargez `PodCastStudio-Setup-${{ steps.ver.outputs.version }}.exe`, lancez-le et suivez l'assistant (aucun droit administrateur nécessaire).
+            - **Version portable** : décompressez `PodCastStudio-Portable-${{ steps.ver.outputs.version }}.zip` et lancez `PodCastStudio.exe`.
+            - Windows peut afficher « Windows a protégé votre ordinateur » (application non signée) : cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
+            - Déjà équipé d'AudioLivre Studio ? Les moteurs IA, leurs modèles, vos voix clonées et votre clé DeepSeek sont repris automatiquement : rien à réinstaller.
+
+            ### Points forts
+            - Animateurs, co-animateurs, invités et voix off, chacun avec sa voix (Microsoft, Kokoro, voix Windows, XTTS, Chatterbox, clonage rapide, RVC).
+            - Script en dialogue « @Alex: … », émotions, débit, pauses ; dialogue écrit par DeepSeek à partir de vos notes.
+            - Jingles d'intro et d'outro sur chaque épisode, fond musical baissé automatiquement sous les voix.
+            - Épisodes numérotés (saisons, bandes-annonces, bonus), notes d'épisode, mastering à -16 LUFS.
+            - Export MP3 avec étiquettes podcast et couverture, flux RSS prêt pour Apple Podcasts, Spotify, Deezer.
+            - Tout est gratuit et fonctionne sans carte graphique NVIDIA ; l'assistant DeepSeek (facultatif) coûte quelques centimes.
+
