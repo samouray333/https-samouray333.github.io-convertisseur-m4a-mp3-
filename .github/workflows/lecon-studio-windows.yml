@@ -1,0 +1,184 @@
+name: Leçon Studio — build Windows
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    tags: ["lecon-v*"]
+    paths:
+      - "lecon-studio/**"
+      - ".github/workflows/lecon-studio-windows.yml"
+  pull_request:
+    paths:
+      - "lecon-studio/**"
+      - ".github/workflows/lecon-studio-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lecon-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: lecon-studio
+
+jobs:
+  tests:
+    name: Tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: lecon-studio/requirements*.txt
+      - name: Dépendances système
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libportaudio2
+      - name: Dépendances Python
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check --select F,E9 --line-length 120 leconstudio main.py scripts tests
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+  build-windows:
+    name: Installateur Windows
+    runs-on: windows-latest
+    needs: tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: lecon-studio/requirements*.txt
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path leconstudio/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".Substring(7) }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Version : $v"
+
+      - name: Dépendances Python
+        run: pip install -r requirements-dev.txt
+
+      - name: Tests unitaires (Windows)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q -m "not gui"
+
+      - name: Outils (FFmpeg, uv)
+        shell: pwsh
+        run: |
+          $tools = "packaging/tools"
+          New-Item -ItemType Directory -Force -Path $tools | Out-Null
+          $urls = @(
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip",
+            "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build-shared.zip"
+          )
+          $ok = $false
+          foreach ($u in $urls) {
+            try {
+              Write-Host "Téléchargement de $u"
+              Invoke-WebRequest -Uri $u -OutFile ffmpeg.zip -UseBasicParsing
+              Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_x -Force
+              $bin = Get-ChildItem -Path ffmpeg_x -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+              Copy-Item "$($bin.DirectoryName)\*.exe" $tools
+              Copy-Item "$($bin.DirectoryName)\*.dll" $tools -ErrorAction SilentlyContinue
+              Remove-Item "$tools\ffplay.exe" -ErrorAction SilentlyContinue
+              $ok = $true
+              break
+            } catch { Write-Warning "Échec : $_" }
+          }
+          if (-not $ok) { throw "FFmpeg indisponible" }
+          python -c "import uv, shutil; shutil.copy(uv.find_uv_bin(), r'packaging/tools/uv.exe')"
+          Get-ChildItem $tools | Format-Table Name, Length
+          & "$tools/ffmpeg.exe" -hide_banner -encoders | Select-String "libmp3lame|aac |libopus|flac"
+
+      - name: Icône et images de l'installateur
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python packaging/make_assets.py
+
+      - name: PyInstaller
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
+        run: pyinstaller --noconfirm --clean packaging/leconstudio.spec
+
+      - name: Autotest de l'exécutable
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP "selftest.json"
+          $p = Start-Process -FilePath "dist/LeconStudio/LeconStudio.exe" -ArgumentList "--selftest", "`"$report`"" -Wait -PassThru
+          Get-Content $report -Raw
+          $r = Get-Content $report -Raw | ConvertFrom-Json
+          foreach ($c in $r.results) { Write-Host ("[{0}] {1} : {2}" -f ($(if ($c.ok) {"OK"} else {"ÉCHEC"})), $c.check, $c.detail) }
+          if ($p.ExitCode -ne 0 -or -not $r.ok) { throw "Autotest en échec (code $($p.ExitCode))" }
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          $root = (Resolve-Path .).Path
+          Write-Host "Racine : $root"
+          Get-ChildItem packaging\assets, leconstudio\resources | Format-Table Name, Length
+          Test-Path dist\LeconStudio\LeconStudio.exe
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" "/DAppRoot=$root" "$root\packaging\installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC a échoué" }
+          Get-ChildItem dist\*.exe | Format-Table Name, Length
+
+      - name: Version portable (zip)
+        shell: pwsh
+        run: |
+          New-Item -ItemType File -Force -Path dist/LeconStudio/portable.txt -Value "Supprimez ce fichier pour stocker les données dans le profil utilisateur." | Out-Null
+          Compress-Archive -Path dist/LeconStudio -DestinationPath "dist/LeconStudio-Portable-${{ steps.ver.outputs.version }}.zip" -CompressionLevel Optimal
+
+      - name: Installateur (artefact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: LeconStudio-Setup-${{ steps.ver.outputs.version }}
+          path: lecon-studio/dist/LeconStudio-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Version portable (artefact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: LeconStudio-Portable-${{ steps.ver.outputs.version }}
+          path: lecon-studio/dist/LeconStudio-Portable-*.zip
+
+      - name: Publication (tag v*)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Leçon Studio ${{ steps.ver.outputs.version }}
+          files: |
+            lecon-studio/dist/LeconStudio-Setup-*.exe
+            lecon-studio/dist/LeconStudio-Portable-*.zip
+          body: |
+            **Leçon Studio ${{ steps.ver.outputs.version }}** — transformez vos cours Word et PDF en cours audio, avec résumés et quiz.
+
+            ### Installation
+            - **Installateur** : téléchargez `LeconStudio-Setup-${{ steps.ver.outputs.version }}.exe`, lancez-le et suivez l'assistant (aucun droit administrateur nécessaire).
+            - **Version portable** : décompressez `LeconStudio-Portable-${{ steps.ver.outputs.version }}.zip` et lancez `LeconStudio.exe`.
+            - Windows peut afficher « Windows a protégé votre ordinateur » (application non signée) : cliquez sur « Informations complémentaires » puis « Exécuter quand même ».
+            - Déjà équipé d'AudioLivre Studio ? Les moteurs IA, leurs modèles, vos voix clonées et votre clé DeepSeek sont repris automatiquement : rien à réinstaller.
+
+            ### Points forts
+            - Import Word et PDF : les titres « Module », « Partie », « Unité » deviennent des modules, les sections des leçons ; regroupement en modules par l'assistant IA ou par nombre de leçons.
+            - Voix du professeur posée et claire (Microsoft, Kokoro, voix Windows, XTTS, Chatterbox, clonage rapide de votre voix, RVC).
+            - Pauses de réflexion « [réflexion] » après une question, proposées par DeepSeek si vous le souhaitez.
+            - Résumé et quiz audio en fin de leçon (choix multiples, vrai/faux, questions ouvertes), préparés avec DeepSeek et modifiables.
+            - Export par module : un dossier par module avec un MP3 par leçon, un MP3 ou un M4B par module, le cours complet, et un support écrit HTML avec les réponses.
+            - Tout est gratuit et fonctionne sans carte graphique NVIDIA ; l'assistant DeepSeek (facultatif) coûte quelques centimes.
+

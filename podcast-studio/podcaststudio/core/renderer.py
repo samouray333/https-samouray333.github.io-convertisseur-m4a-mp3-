@@ -244,7 +244,8 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
 
     announce = chapter.announce_title if chapter.announce_title is not None else prod.announce_chapter_titles
     if kind == "chapter" and announce and chapter.title.strip():
-        title = chapter.title.strip().rstrip(".") + "."
+        title = chapter.title.strip().rstrip(".")
+        title += "" if title.endswith(("?", "!", "…")) else "."
         number = project.episode_number(chapter)
         if prod.announce_episode_number and chapter.episode_type == "full" and number:
             title = f"Épisode {number}. {title}"

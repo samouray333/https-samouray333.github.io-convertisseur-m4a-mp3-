@@ -258,7 +258,7 @@ ENGINE_INFOS["fastclone"] = EngineInfo(
     description=(
         "Une voix Microsoft lit le texte avec une intonation très naturelle, puis un convertisseur gratuit "
         "lui donne le timbre de votre voix clonée. Sans carte graphique, environ 1 minute de calcul par minute "
-        "de livre, soit 3 fois plus vite que XTTS-v2 ; la ressemblance est un peu moins fidèle. Nécessite "
+        "d'audio, soit 3 fois plus vite que XTTS-v2 ; la ressemblance est un peu moins fidèle. Nécessite "
         "le moteur Chatterbox (licence MIT) et Internet, ou Kokoro comme voix de base pour travailler hors ligne."
     ),
     supports_cloning=True, requires_install=True, online=True, languages=CHATTERBOX_LANGUAGES,
