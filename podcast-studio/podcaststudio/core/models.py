@@ -70,6 +70,7 @@ class Chapter:
     description: str = ""  # notes d'épisode (flux RSS, étiquettes MP3)
     pub_date: str = ""  # AAAA-MM-JJ
     episode_type: str = "full"  # full | trailer | bonus
+    published: bool = False  # coché dans le calendrier une fois l'épisode mis en ligne
 
     @classmethod
     def from_dict(cls, d):
@@ -89,6 +90,7 @@ class Host:
     role: str = "host"  # host | cohost | guest | voiceover
     voice_id: str = ""
     bio: str = ""  # présentation (aide l'assistant IA à écrire le dialogue)
+    pan: float | None = None  # position stéréo -1 (gauche) … 1 (droite) ; None = automatique
     id: str = field(default_factory=lambda: new_id("h_"))
 
     @classmethod
@@ -148,6 +150,10 @@ class ProductionSettings:
     sample_rate: int = 44100
     asr_check: bool = True  # relecture automatique par Whisper (si installé)
     announce_episode_number: bool = True  # « Épisode 3. » avant le titre annoncé
+    stereo: bool = True  # chaque intervenant placé à gauche ou à droite, comme en studio
+    stereo_width: float = 0.35  # écart stéréo des intervenants (0 = centre, 1 = complètement sur le côté)
+    overlap_reactions: bool = True  # réactions courtes (« Ah oui ! ») lancées par-dessus la fin de la réplique
+    overlap_ms: int = 450  # durée du chevauchement
     asr_threshold: float = 0.3
 
     @classmethod
@@ -158,6 +164,7 @@ class ProductionSettings:
 EXPORT_FORMATS = {
     "mp3_chapters": "MP3 — un fichier par épisode, avec jingles, couverture et métadonnées",
     "rss": "Flux RSS du podcast (feed.xml) pour Apple Podcasts, Spotify, Deezer…",
+    "trailer": "Bande-annonce (≈ 30 s) : les meilleurs passages choisis par l'IA, sur le jingle",
     "mp3_single": "MP3 — compilation de tous les épisodes avec marqueurs",
     "wav": "WAV — masters 24 bits sans perte",
     "flac": "FLAC — sans perte compressé",
@@ -187,6 +194,9 @@ class ExportSettings:
     intro_music: str = ""  # jingle d'ouverture
     outro_music: str = ""  # jingle de fin
     jingles_each_episode: bool = True  # jingles au début et à la fin de chaque épisode
+    chapters_in_notes: bool = True  # chapitres horodatés ajoutés à la description (flux RSS, étiquettes)
+    trailer_seconds: int = 30  # durée de la bande-annonce
+    rss_only_due: bool = False  # flux : seulement les épisodes dont la date de publication est passée
     background_music: str = ""  # fond sonore sous la narration des chapitres
     background_level_db: float = -20.0  # niveau du fond sonore par rapport à la voix
 
@@ -265,6 +275,21 @@ class Project:
             if c.id == chapter.id:
                 return max(n, 1)
         return 0
+
+    def host_pan(self, name: str | None) -> float:
+        """Position stéréo d'un intervenant : la sienne, sinon alternée gauche / droite selon la liste."""
+        if not name:
+            return 0.0
+        host = self.host_by_name(name)
+        if host is None:
+            return 0.0
+        if host.pan is not None:
+            return max(-1.0, min(1.0, host.pan))
+        if len(self.hosts) == 1:
+            return 0.0
+        idx = self.hosts.index(host)
+        pattern = [-1.0, 1.0, -0.5, 0.5, -0.75, 0.75, 0.0]
+        return pattern[idx % len(pattern)] * self.production.stereo_width
 
     def host_by_name(self, name: str) -> Host | None:
         key = name.strip().lower()

@@ -180,6 +180,23 @@ class ExportPage(Page):
         fm.add(self.base_url)
         fm.add(label("Gratuit : GitHub Pages, Netlify ou votre site. Le flux sera « adresse/feed.xml », les MP3 dans "
                      "« adresse/episodes/ ».", "Hint", wrap=True))
+        self.t_chap_notes = ToggleSwitch("Chapitres horodatés dans les notes d'épisode (« 03:12 La rubrique »)")
+        self.t_due = ToggleSwitch("Flux : seulement les épisodes dont la date de publication est passée")
+        self.t_due.setToolTip("Les épisodes programmés plus tard (page Calendrier) apparaîtront à leur date, "
+                              "lors d'un prochain export")
+        for t in (self.t_chap_notes, self.t_due):
+            t.toggled.connect(self._export_changed)
+            fm.add(t)
+        tr = QHBoxLayout()
+        tr.addWidget(label("Durée de la bande-annonce", "Muted"))
+        self.trailer_sec = QDoubleSpinBox()
+        self.trailer_sec.setRange(15, 90)
+        self.trailer_sec.setDecimals(0)
+        self.trailer_sec.setSuffix(" s")
+        self.trailer_sec.valueChanged.connect(self._export_changed)
+        tr.addWidget(self.trailer_sec)
+        tr.addStretch(1)
+        fm.add(tr)
         row2.addWidget(fm, 1)
 
         ms = Card()
@@ -349,6 +366,9 @@ class ExportPage(Page):
         self.explicit.setChecked(m.explicit)
         self.base_url.setText(m.media_base_url)
         self.t_each.setChecked(e.jingles_each_episode)
+        self.t_chap_notes.setChecked(e.chapters_in_notes)
+        self.t_due.setChecked(e.rss_only_due)
+        self.trailer_sec.setValue(e.trailer_seconds)
         self.t_sample2.setChecked(e.make_sample)
         self.sample_min2.setValue(e.sample_minutes)
         self.lang.setCurrentIndex(max(0, self.lang.findData(m.language or "fr")))
@@ -452,6 +472,9 @@ class ExportPage(Page):
         e.file_pattern = self.pattern.text() or "{index:02d} - {title}"
         e.write_report = self.t_report.isChecked()
         e.jingles_each_episode = self.t_each.isChecked()
+        e.chapters_in_notes = self.t_chap_notes.isChecked()
+        e.rss_only_due = self.t_due.isChecked()
+        e.trailer_seconds = int(self.trailer_sec.value())
         out = self.out_dir.text().strip()
         e.output_dir = out if out and pr.path is not None and Path(out) != pr.path.parent / "Export" else ""
         prod.mastering_preset = self.preset.currentData()
@@ -531,7 +554,8 @@ class ExportPage(Page):
                                     id=f"{pr.id}-{rc.id}", number=pr.episode_number(ch) if ch else 0,
                                     season=ch.season if ch else 0, description=ch.description if ch else "",
                                     pub_date=ch.pub_date if ch else "",
-                                    episode_type=ch.episode_type if ch else "full"))
+                                    episode_type=ch.episode_type if ch else "full",
+                                    chapters=rc.chapter_marks(timings)))
         prod = pr.production
         mopts = MasteringOptions(preset=prod.mastering_preset, denoise=prod.denoise, deesser=prod.deesser,
                                  room_tone=prod.room_tone, room_tone_db=prod.room_tone_db,
@@ -547,8 +571,20 @@ class ExportPage(Page):
         self.prog.setValue(0)
 
         def work(task):
-            return export_audiobook(items, pr.metadata, pr.export, mopts, out,
-                                    progress=lambda m, f: task.report((m, f)), cancel=task.cancel_event)
+            formats = list(pr.export.formats)
+            res = None
+            if any(f != "trailer" for f in formats):
+                res = export_audiobook(items, pr.metadata, pr.export, mopts, out,
+                                       progress=lambda m, f: task.report((m, f)), cancel=task.cancel_event)
+            else:
+                from ...core.exporter import ExportResult
+
+                out.mkdir(parents=True, exist_ok=True)
+                res = ExportResult(output_dir=out)
+            if "trailer" in formats:
+                task.report(("Bande-annonce : choix des meilleurs passages…", 0.97))
+                res.files.append(self._make_trailer(pr, plan, out, mopts, task))
+            return res
 
         def progress(v):
             msg, frac = v
@@ -557,6 +593,32 @@ class ExportPage(Page):
 
         self._task = tasks.Task(work, pass_reporter=True, on_done=self._done, on_progress=progress,
                                 on_error=self._failed).start()
+
+    def _make_trailer(self, pr, plan, out, mopts, task):
+        """Bande-annonce : passages choisis par DeepSeek (ou, sans clé, les plus expressifs), sur le jingle."""
+        from ...core import ai, trailer
+        from ...core.exporter import safe_filename
+
+        seconds = pr.export.trailer_seconds or 30
+        passages = trailer.candidates(pr, plan)
+        chosen = []
+        try:
+            numbers = ai.pick_trailer([(p.number, p.episode, p.text, p.duration) for p in passages],
+                                      ai.client_from_settings(), seconds)
+            by_n = {p.number: p for p in passages}
+            chosen = [by_n[n] for n in numbers if n in by_n]
+        except Exception as exc:  # pas de clé, pas de réseau : choix automatique
+            task.report((f"Bande-annonce sans l'assistant IA ({exc})", 0.97))
+        if not chosen:
+            chosen = trailer.pick_fallback(passages, seconds)
+        music = pr.export.intro_music or pr.export.background_music
+        if not music:
+            from ...core import sounds
+
+            music = str(sounds.ensure_builtin("generique"))
+        target = out / f"{safe_filename(pr.metadata.title or 'Podcast')} - Bande-annonce.mp3"
+        trailer.build(chosen, target, music, pr.export.mp3_bitrate, mopts, task.cancel_event)
+        return target
 
     def _done(self, result) -> None:
         self._last_result = result

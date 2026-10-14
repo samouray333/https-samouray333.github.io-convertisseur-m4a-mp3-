@@ -23,6 +23,15 @@ prêt pour Apple Podcasts, Spotify ou Deezer.
 | 🎚️ **Mastering podcast** | Normalisation à **-16 LUFS** (Apple Podcasts, Spotify), de-esser, compression, réduction de bruit ; contrôle automatique des passages par Whisper. |
 | 📦 **Export** | Un **MP3 par épisode** (128 kb/s conseillé) avec couverture et étiquettes podcast (titre, numéro, saison, description, date), compilation MP3, WAV, FLAC, Opus, sous-titres SRT/LRC, vidéo YouTube, rapport qualité. |
 | 📡 **Flux RSS** | `feed.xml` au format RSS 2.0 + balises iTunes (catégorie, auteur, e-mail, explicite, durée, numéros) : déposez-le avec les MP3 à votre adresse de publication et soumettez-le aux plateformes. |
+| 🗣️ **Voix qui se chevauchent** | Les réactions courtes (« Ah oui ! », « Exactement ») partent juste avant la fin de la réplique précédente, comme dans une vraie conversation ; balise `[par-dessus]` pour le forcer sur n'importe quelle réplique. |
+| 🎧 **Stéréo de studio** | Chaque intervenant a sa place (gauche, droite, centre — automatique ou choisie dans la page Animateurs) ; mastering et MP3 en stéréo. |
+| 🔔 **Effets sonores** | `[son: applaudissements]`, `[virgule]` (jingle entre deux rubriques), ding, cloche, roulement de tambour, transition, suspense, notification, mini générique : bibliothèque générée par l'application (libre de droits), plus vos propres sons (dossier « Mes sons »). |
+| 🧩 **Modèles d'émission** | Conversation, interview, chronique, revue de presse, débat : intervenants et trame de l'épisode (rubriques, jingles, chapitres) préparés, pour un nouveau podcast ou un nouvel épisode. |
+| 🌐 **Plus d'IA** | Transformer un article à partir de son adresse web, réécrire une réplique (plus courte, plus drôle, plus naturelle…), proposer les chapitres, choisir les passages de la bande-annonce. |
+| 📑 **Chapitres** | `[chapitre: Titre]` (non lu) ou `# Rubrique` : chapitres ID3 dans les MP3 (Apple Podcasts, Overcast, Pocket Casts), fichier de chapitres Podcasting 2.0 dans le flux, chapitres horodatés dans les notes d'épisode. |
+| 🎬 **Bande-annonce** | ≈ 30 s des meilleurs passages des épisodes produits, enchaînés sur le jingle. |
+| 🎙️ **Votre vraie voix** | « Studio → Enregistrer cette réplique au micro » (ou importer un fichier) : la prise remplace la synthèse, au même niveau sonore — un vrai animateur avec un invité de synthèse. |
+| 📅 **Calendrier** | Planification de la saison (chaque semaine, toutes les deux semaines, chaque mois), vue d'ensemble, état de chaque épisode (à écrire, écrit, produit, publié) ; option pour ne publier dans le flux que les épisodes arrivés à leur date. |
 | ♻️ **Partagé avec AudioLivre Studio** | Moteurs IA, modèles, voix clonées et clé DeepSeek déjà installés dans AudioLivre Studio sont repris automatiquement : **rien à réinstaller**. |
 
 ---
@@ -46,6 +55,17 @@ Une **version portable** (`.zip`) est également produite. Tout fonctionne **san
 3. **Épisodes** : écrivez le script (`@Alex: …`) ou cliquez sur **Écrire avec l'IA** ; renseignez numéro, date et description.
 4. **Production** : **Tout produire**, réécoutez, refaites une prise si besoin.
 5. **Export & RSS** : nom du podcast, auteur, e-mail, catégorie, couverture carrée, jingles, **adresse de publication**, puis **Exporter les épisodes**.
+
+### Balises du script
+
+| Balise | Effet |
+|---|---|
+| `@Alex: Bonjour !` | Réplique d'Alex |
+| `@Sam: [par-dessus] Ah oui !` | Réplique lancée par-dessus la fin de la précédente |
+| `[son: applaudissements]`, `[virgule]` | Effet sonore, jingle de transition |
+| `[chapitre: Le sujet]` | Début d'un chapitre (non lu) |
+| `@Alex: [prise: alex-1.wav] …` | Réplique enregistrée au micro (dossier « prises » du projet) |
+| `[pause 2s]`, `[joyeux]`, `[lent]`, `*mot*` | Silence, ton, débit, mise en valeur |
 
 ### Publier gratuitement
 

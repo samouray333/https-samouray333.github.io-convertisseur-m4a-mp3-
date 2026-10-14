@@ -7,6 +7,9 @@ import re
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
 
 from ...core.models import HOST_ROLES, Host
+
+PAN_CHOICES = [(None, "Stéréo : auto"), (-1.0, "À gauche"), (-0.5, "Un peu à gauche"), (0.0, "Au centre"),
+               (0.5, "Un peu à droite"), (1.0, "À droite")]
 from .. import icons, theme
 from ..widgets import Avatar, Card, IconButton, button, card_title, label
 from .base import Page
@@ -73,6 +76,16 @@ class HostRow(QFrame):
         self.voice.setMinimumWidth(260)
         self.voice.currentIndexChanged.connect(self._changed)
         top.addWidget(self.voice)
+        self.pan = QComboBox()
+        self.pan.setToolTip("Place de la voix dans le son stéréo, comme autour d'une table de studio")
+        for value, text in PAN_CHOICES:
+            self.pan.addItem(text, value)
+        current = next((i for i, (v, _t) in enumerate(PAN_CHOICES)
+                        if (v is None and host.pan is None) or (v is not None and host.pan is not None
+                                                                 and abs(v - host.pan) < 0.01)), 0)
+        self.pan.setCurrentIndex(current)
+        self.pan.currentIndexChanged.connect(self._changed)
+        top.addWidget(self.pan)
         col.addLayout(top)
         self.bio = QLineEdit(host.bio)
         self.bio.setPlaceholderText("Présentation (facultatif) : métier, personnalité, ton… — aide l'assistant IA")
@@ -112,6 +125,7 @@ class HostRow(QFrame):
         self.host.role = self.role.currentData() or "host"
         self.host.voice_id = self.voice.currentData() or ""
         self.host.bio = self.bio.text().strip()
+        self.host.pan = self.pan.currentData()
         self.page.changed()
 
     def _renamed(self) -> None:
@@ -185,7 +199,8 @@ class HostsPage(Page):
 
         people = Card()
         people.add(card_title("Qui parle ?", "Donnez une voix différente à chacun pour que l'auditeur les "
-                              "reconnaisse. Voix Microsoft (en ligne), Kokoro (hors ligne) ou voix clonée.", "users"))
+                              "reconnaisse : Microsoft (en ligne), Kokoro (hors ligne), voix clonée — ou votre vraie "
+                              "voix, réplique par réplique (Épisodes → Studio → Enregistrer au micro).", "users"))
         self.rows_box = QVBoxLayout()
         self.rows_box.setSpacing(8)
         holder = QWidget()

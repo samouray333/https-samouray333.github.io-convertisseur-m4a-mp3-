@@ -32,6 +32,7 @@ NAV = [
     ("voices", "Voix && clonage", "mic"),
     ("production", "Production", "wave"),
     ("export", "Export && RSS", "rss"),
+    ("calendar", "Calendrier", "clock"),
 ]
 TOOLS = [
     ("engines", "Moteurs IA", "cpu"),
@@ -162,6 +163,7 @@ class MainWindow(QMainWindow):
         h.addLayout(right, 1)
         self.setCentralWidget(root)
 
+        from .pages.calendar import CalendarPage
         from .pages.engines import EnginesPage
         from .pages.export import ExportPage
         from .pages.home import HomePage
@@ -178,6 +180,7 @@ class MainWindow(QMainWindow):
             "voices": VoicesPage(self.ctx),
             "production": ProductionPage(self.ctx),
             "export": ExportPage(self.ctx),
+            "calendar": CalendarPage(self.ctx),
             "engines": EnginesPage(self.ctx),
             "settings": SettingsPage(self.ctx, self),
         }
@@ -364,11 +367,17 @@ class MainWindow(QMainWindow):
     def new_empty_project(self) -> None:
         if not self.confirm_discard():
             return
-        pr = new_podcast(self.ctx.library)
+        from .dialogs.templates import TemplateDialog
+
+        dlg = TemplateDialog(self)
+        if not dlg.exec():
+            return
+        pr = new_podcast(self.ctx.library, dlg.selected)
         self.ctx.set_project(pr)
         self.ctx.dirty = True
         self.show_page("hosts")
-        self.ctx.toast("Podcast créé avec deux animateurs : renommez-les et choisissez leurs voix.", "info", 6000)
+        self.ctx.toast(f"Podcast « {dlg.selected_name} » créé : renommez les intervenants et choisissez leurs voix, "
+                       "puis complétez le script de l'épisode.", "info", 7000)
 
     def import_document_dialog(self) -> None:
         start = str(settings().get("last_import_dir") or Path.home())
@@ -524,27 +533,39 @@ class MainWindow(QMainWindow):
         Toast._reposition()
 
 
-def new_podcast(library) -> Project:
-    """Podcast de départ : deux animateurs aux voix différentes et un premier épisode d'exemple."""
-    from ..core.models import Host
+def pick_voices(library, count: int) -> list[str]:
+    """Voix différentes pour chaque intervenant (françaises d'abord, femmes et hommes en alternance)."""
+    voices = [v for v in library.all() if v.language == "fr"] or library.all()
+    by_gender = {"F": [v for v in voices if v.gender == "F"], "M": [v for v in voices if v.gender == "M"]}
+    used: set[str] = set()
+    out = []
+    for i in range(count):
+        wanted = "F" if i % 2 == 0 else "M"
+        pool = [v for v in by_gender[wanted] + voices if v.id not in used]
+        v = pool[0] if pool else (voices[i % len(voices)] if voices else None)
+        out.append(v.id if v else "")
+        if v is not None:
+            used.add(v.id)
+    return out
 
+
+def new_podcast(library, template_key: str = "conversation") -> Project:
+    """Podcast de départ selon un modèle d'émission : intervenants aux voix différentes et premier épisode."""
+    from ..core.models import Host
+    from ..core.templates import template
+
+    tpl = template(template_key)
     pr = Project()
     pr.metadata.title = "Mon podcast"
-    voices = [v for v in library.all() if v.language == "fr"] or library.all()
-    women = [v for v in voices if v.gender == "F"]
-    men = [v for v in voices if v.gender == "M"]
-    first = (women or voices or [None])[0]
-    second = next((v for v in men + voices if first is None or v.id != first.id), None)
-    pr.hosts = [Host("Alex", "host", first.id if first else ""), Host("Sam", "cohost", second.id if second else "")]
-    if first is not None:
-        pr.narrator_voice_id = first.id
-    pr.chapters = [Chapter(title="Bienvenue", text=(
-        "@Alex: [joyeux] Bonjour à toutes et à tous, et bienvenue dans ce tout premier épisode !\n\n"
-        "@Sam: Ravi d'être là. Aujourd'hui, on vous explique de quoi va parler ce podcast.\n\n"
-        "@Alex: Écrivez ici votre script, une réplique par paragraphe, en commençant par le nom de la personne "
-        "qui parle.\n\n"
-        "@Sam: Ou bien laissez l'assistant IA écrire le dialogue à partir de vos notes.\n\n"
-        "@Alex: À très vite !"))]
+    ids = pick_voices(library, len(tpl.hosts))
+    pr.hosts = [Host(name, role, vid, bio) for (name, role, bio), vid in zip(tpl.hosts, ids)]
+    if ids and ids[0]:
+        pr.narrator_voice_id = ids[0]
+    pr.chapters = [Chapter(title=tpl.episode_title, text=tpl.script)]
+    from ..config import settings as _settings
+
+    _settings().set("podcast_style", tpl.style)
+    _settings().set("podcast_minutes", tpl.minutes)
     return pr
 
 

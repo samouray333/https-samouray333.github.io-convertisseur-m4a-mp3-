@@ -37,6 +37,14 @@ class ScriptHighlighter(QSyntaxHighlighter):
         self.rules = [
             (QRegularExpression(r"^#{1,6}\s.*$"), fmt(p.accent, bold=True)),
             (QRegularExpression(r"\[\s*(pause|PAUSE)[^\]]*\]"), fmt(p.info, bold=True, bg=theme.rgba(p.info, 0.12))),
+            (QRegularExpression(r"\[\s*(son|bruitage|effet|virgule|jingle)\b[^\]]*\]",
+                                QRegularExpression.CaseInsensitiveOption),
+             fmt(p.accent, bold=True, bg=theme.rgba(p.accent, 0.16))),
+            (QRegularExpression(r"\[\s*chapitre\s*[:=][^\]]*\]", QRegularExpression.CaseInsensitiveOption),
+             fmt(p.success, bold=True, bg=theme.rgba(p.success, 0.14))),
+            (QRegularExpression(r"\[\s*(prise|par[- ]dessus|chevauche\w*)[^\]]*\]",
+                                QRegularExpression.CaseInsensitiveOption),
+             fmt(p.accent2, bold=True, bg=theme.rgba(p.accent2, 0.16))),
             (QRegularExpression(r"^@[^:\n]{1,40}:"), fmt(p.accent2, bold=True)),
             (QRegularExpression(r"^\[\s*/?\s*(voix|voice)[^\]]*\]"), fmt(p.accent2, bold=True,
                                                                      bg=theme.rgba(p.accent2, 0.12))),
@@ -285,6 +293,30 @@ class ManuscriptPage(Page):
         stress = button("Insister", "type", tooltip="Met en valeur le mot sélectionné (*mot*) : lu un peu plus fort, "
                         "précédé d'un court temps (voix Microsoft, clonage rapide et RVC)")
         stress.clicked.connect(self.emphasize_selection)
+        self.sound_btn = button("Son", "music", tooltip="Effet sonore ou jingle de transition (« [son: …] », "
+                                "« [virgule] »)")
+        self.sound_menu = QMenu(self)
+        self.sound_menu.aboutToShow.connect(self._fill_sounds)
+        self.sound_btn.setMenu(self.sound_menu)
+        studio = button("Studio", "podcast", tooltip="Réaction par-dessus, chapitres, prise au micro, réécriture par "
+                        "l'IA…")
+        sm = QMenu(self)
+        sm.addAction(icons.icon("users", theme.CURRENT.text, 16), "Réaction par-dessus la réplique précédente",
+                     self.tag_overlap)
+        sm.addAction(icons.icon("mic", theme.CURRENT.text, 16), "Enregistrer cette réplique au micro…",
+                     self.record_take)
+        sm.addSeparator()
+        sm.addAction(icons.icon("list", theme.CURRENT.text, 16), "Insérer un chapitre ici…", self.insert_chapter)
+        sm.addAction(icons.icon("sparkles", theme.CURRENT.text, 16), "Chapitres proposés par l'IA",
+                     self.ai_chapters)
+        sm.addSeparator()
+        rw = sm.addMenu(icons.icon("sparkles", theme.CURRENT.text, 16), "Réécrire la réplique avec l'IA")
+        for key, text in (("courte", "Plus courte"), ("drole", "Plus drôle"), ("naturelle", "Plus naturelle"),
+                          ("simple", "Plus simple"), ("enthousiaste", "Plus enthousiaste")):
+            rw.addAction(text, lambda k=key: self.rewrite_line(k))
+        sm.addAction(icons.icon("type", theme.CURRENT.text, 16), "Insister sur le mot sélectionné (*mot*)",
+                     self.emphasize_selection)
+        studio.setMenu(sm)
         self.role_btn = button("Réplique", "users", tooltip="Attribue le paragraphe à un intervenant (@Nom:)")
         self.role_menu = QMenu(self)
         self.role_menu.aboutToShow.connect(self._fill_roles)
@@ -299,7 +331,16 @@ class ManuscriptPage(Page):
         listen.clicked.connect(self.listen_selection)
         find = IconButton("search", "Rechercher / remplacer (Ctrl+F)", 36, 18)
         find.clicked.connect(self.toggle_find)
-        for w in (clean, pause, heading, self.role_btn, self.emo_btn, self.rate_btn, stress, ia, preview):
+        heading.hide()  # « # Rubrique » s'écrit directement ; place gagnée pour les outils du podcast
+        for b, tip in ((clean, "Nettoyer le texte importé"), (pause, "Insérer une pause [pause 1s]"),
+                       (preview, "Aperçu de lecture")):
+            b.setText("")  # icône seule (info-bulle) : de la place pour Son, Studio…
+            b.setFixedWidth(44)
+            b.setToolTip(tip + " — " + b.toolTip() if b.toolTip() and tip not in b.toolTip() else tip)
+        stress.hide()  # dans le menu Studio
+        ia.setText("IA")
+        ia.setToolTip("Assistant IA : " + ia.toolTip())
+        for w in (clean, pause, self.sound_btn, self.role_btn, self.emo_btn, self.rate_btn, studio, ia, preview):
             bar.addWidget(w)
         bar.addStretch(1)
         bar.addWidget(find)
@@ -323,8 +364,8 @@ class ManuscriptPage(Page):
         status = QHBoxLayout()
         self.stats = label("", "Hint")
         status.addWidget(self.stats, 1)
-        self.help = label("Astuces : « @Alex: réplique », « [pause 2s] », « [joyeux] », « [lent] », « *mot* », "
-                          "« # Rubrique », « *** » (transition), « %% note non lue »", "Faint")
+        self.help = label("Astuces : « @Alex: réplique », « [par-dessus] », « [son: applaudissements] », « [virgule] », "
+                          "« [chapitre: Titre] », « [pause 2s] », « [joyeux] », « %% note »", "Faint")
         status.addWidget(self.help)
         rl.addLayout(status)
         self.split.addWidget(right)
@@ -580,6 +621,8 @@ class ManuscriptPage(Page):
     def _list_menu(self, pos) -> None:
         m = QMenu(self)
         m.addAction(icons.icon("plus", theme.CURRENT.text, 16), "Ajouter un épisode", self.add_chapter)
+        m.addAction(icons.icon("podcast", theme.CURRENT.text, 16), "Nouvel épisode depuis un modèle…",
+                    self.add_from_template)
         m.addAction(icons.icon("layers", theme.CURRENT.text, 16), "Fusionner avec le suivant", self.merge_next)
         m.addAction(icons.icon("scissors", theme.CURRENT.text, 16), "Découper aux intertitres (#)",
                     self.split_on_headings)
@@ -871,3 +914,192 @@ class ManuscriptPage(Page):
 
         self.ctx.toast("DeepSeek rédige les notes de l'épisode…", "info", 2500)
         self._notes_task = tasks.run(work, on_done=done, on_error=fail)
+
+    # -- podcast : sons, réactions, chapitres, prises, réécriture -------------------------
+    def _project_dir(self):
+        pr = self.ctx.project
+        return pr.path.parent if pr.path is not None else None
+
+    def _fill_sounds(self) -> None:
+        from ...core import sounds
+
+        m = self.sound_menu
+        m.clear()
+        m.addAction(icons.icon("music", theme.CURRENT.accent, 16), "Virgule (jingle de transition)",
+                    lambda: self._insert_block("[virgule]"))
+        m.addSeparator()
+        listen = QMenu("Écouter", m)
+        for name, text in sounds.available(self._project_dir()):
+            if name == "virgule":
+                continue
+            m.addAction(icons.icon("music", theme.CURRENT.muted, 16), text,
+                        lambda n=name: self._insert_block(f"[son: {n}]"))
+        for name, text in sounds.available(self._project_dir()):
+            listen.addAction(text, lambda n=name: self._play_sound(n))
+        m.addSeparator()
+        m.addMenu(listen).setIcon(icons.icon("headphones", theme.CURRENT.text, 16))
+        m.addAction(icons.icon("folder", theme.CURRENT.text, 16), "Ajouter mes propres sons…", self._open_my_sounds)
+
+    def _play_sound(self, name: str) -> None:
+        from ...core import sounds
+
+        path = sounds.resolve(name, self._project_dir())
+        if path is not None:
+            self.ctx.play(path, f"Son — {name}")
+
+    def _open_my_sounds(self) -> None:
+        from ...core import sounds
+        from ..main_window import open_path
+
+        open_path(sounds.user_dir())
+        self.ctx.toast("Déposez vos fichiers audio (MP3, WAV…) dans ce dossier, puis écrivez « [son: nom du fichier] ». "
+                       "Utilisez uniquement des sons libres de droits.", "info", 8000)
+
+    def _insert_block(self, tag: str) -> None:
+        """Insère une balise sur sa propre ligne, après le paragraphe du curseur."""
+        cur = self.editor.textCursor()
+        cur.movePosition(QTextCursor.EndOfBlock)
+        cur.insertText("\n\n" + tag + "\n")
+        self.editor.setTextCursor(cur)
+        self.editor.setFocus()
+
+    def _block_prefix(self, line: str) -> int:
+        """Longueur des balises de tête (« @Nom: », émotions…) d'une réplique."""
+        m = re.match(r"^(?:@[^:\n]{1,40}:\s*)?(?:\[[^\]\n]*\]\s*)*", line)
+        return m.end() if m else 0
+
+    def tag_overlap(self) -> None:
+        cur = self.editor.textCursor()
+        cur.movePosition(QTextCursor.StartOfBlock)
+        line = cur.block().text()
+        if re.search(r"\[\s*par[- ]dessus\s*\]", line, re.I):
+            self.ctx.toast("Cette réplique est déjà lancée par-dessus la précédente.", "info")
+            return
+        m = re.match(r"^@[^:\n]{1,40}:\s*", line)
+        cur.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, m.end() if m else 0)
+        cur.insertText("[par-dessus] ")
+        self.editor.setFocus()
+        self.ctx.toast("La réplique commencera juste avant la fin de la précédente (réglage dans Production).", "info")
+
+    def insert_chapter(self) -> None:
+        name, ok = QInputDialog.getText(self, "Chapitre", "Titre du chapitre (affiché dans les applications "
+                                        "d'écoute) :")
+        if ok and name.strip():
+            cur = self.editor.textCursor()
+            cur.movePosition(QTextCursor.StartOfBlock)
+            cur.insertText(f"[chapitre: {name.strip()}]\n\n")
+            self.editor.setFocus()
+
+    def _current_line(self) -> tuple[str, str, str]:
+        """(nom de l'intervenant, balises de tête, texte) de la réplique sous le curseur."""
+        line = self.editor.textCursor().block().text()
+        n = self._block_prefix(line)
+        m = re.match(r"^@([^:\n]{1,40}):", line)
+        return (m.group(1).strip() if m else ""), line[:n], line[n:]
+
+    def rewrite_line(self, style: str) -> None:
+        if self._current is None:
+            return
+        speaker, prefix, body = self._current_line()
+        if len(body.split()) < 2:
+            self.ctx.toast("Placez le curseur dans une réplique à réécrire.", "warning")
+            return
+        from ...core import ai
+        from .. import tasks
+
+        block = self.editor.textCursor().block()
+        doc = self.editor.document()
+        context = "\n".join(doc.findBlockByNumber(i).text() for i in range(max(0, block.blockNumber() - 4),
+                                                                         min(doc.blockCount(), block.blockNumber() + 5)))
+
+        def work():
+            return ai.rewrite_line(body, style, ai.client_from_settings(), speaker, context)
+
+        def done(new):
+            if block.text() != prefix + body:
+                self.ctx.toast("La réplique a changé entre-temps : réécriture abandonnée.", "warning")
+                return
+            cur = QTextCursor(block)
+            cur.movePosition(QTextCursor.StartOfBlock)
+            cur.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+            cur.insertText(prefix + new)
+            self.ctx.toast("Réplique réécrite (Ctrl+Z pour revenir à l'ancienne).", "success")
+
+        self.ctx.toast("DeepSeek réécrit la réplique…", "info", 2000)
+        self._rw_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 7000))
+
+    def ai_chapters(self) -> None:
+        ch = self._current
+        if ch is None:
+            return
+        self._commit_text()
+        from ...core import ai
+        from .. import tasks
+
+        def work():
+            return ai.propose_chapters(ch.text, ai.client_from_settings())
+
+        def done(chapters):
+            listing = "\n".join(f"• {t}" for _n, t in chapters)
+            if QMessageBox.question(self, "Chapitres proposés", f"Chapitres proposés pour « {ch.title} » :\n\n"
+                                    f"{listing}\n\nLes insérer dans le script (repères « [chapitre: …] », non lus) ?") \
+                    != QMessageBox.Yes or self._current is not ch:
+                return
+            ch.text = ai.apply_chapters(ch.text, chapters)
+            self._loading = True
+            self.editor.setPlainText(ch.text)
+            self._loading = False
+            self.ctx.mark_dirty()
+            self.ctx.toast("Chapitres ajoutés : ils apparaîtront dans les MP3 et les notes d'épisode.", "success")
+
+        self.ctx.toast("DeepSeek découpe l'épisode en chapitres…", "info", 2500)
+        self._chap_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 7000))
+
+    def record_take(self) -> None:
+        if self._current is None:
+            return
+        speaker, prefix, body = self._current_line()
+        block = self.editor.textCursor().block()
+        from ...core import renderer
+        from ..dialogs.take import TakeDialog
+
+        dlg = TakeDialog(self.ctx, speaker, re.sub(r"\[[^\]\n]*\]", "", body).strip(),
+                         renderer.takes_dir(self.ctx.project), self)
+        if not dlg.exec() or dlg.saved_name is None:
+            return
+        new_prefix = re.sub(r"\[\s*prise\s*[:=][^\]\n]*\]\s*", "", prefix)
+        m = re.match(r"^@[^:\n]{1,40}:\s*", new_prefix)
+        head = m.group(0) if m else ""
+        tag = f"[prise: {dlg.saved_name}] "
+        text = head + tag + new_prefix[len(head):] + body
+        cur = QTextCursor(block)
+        cur.movePosition(QTextCursor.StartOfBlock)
+        cur.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        cur.insertText(text)
+        self.ctx.toast("Prise enregistrée : votre voix remplacera la synthèse pour cette réplique.", "success")
+
+    def add_from_template(self) -> None:
+        from ...core.models import Host
+        from ...core.templates import template
+        from ..dialogs.templates import TemplateDialog
+        from ..main_window import pick_voices
+
+        dlg = TemplateDialog(self, "Nouvel épisode", for_episode=True)
+        if not dlg.exec():
+            return
+        self._commit_text()
+        tpl = template(dlg.selected)
+        pr = self.ctx.project
+        missing = [(n, r, b) for n, r, b in tpl.hosts if pr.host_by_name(n) is None]
+        if missing:  # les intervenants du modèle absents du podcast sont ajoutés (voix encore libres)
+            taken = {h.voice_id for h in pr.hosts}
+            free = [v for v in pick_voices(self.ctx.library, len(pr.hosts) + len(missing) + 4) if v not in taken]
+            for i, (n, r, b) in enumerate(missing):
+                pr.hosts.append(Host(n, r, free[i] if i < len(free) else "", b))
+        row = self._row() + 1 if self._row() >= 0 else len(pr.chapters)
+        pr.chapters.insert(row, Chapter(title=tpl.episode_title, text=tpl.script))
+        self.ctx.mark_dirty()
+        self._reload_list(row)
+        self.ctx.toast(f"Épisode « {tpl.name} » ajouté" + (f" avec {len(missing)} intervenant(s) de plus"
+                                                              if missing else "") + " : complétez la trame.",
+                       "success", 6000)

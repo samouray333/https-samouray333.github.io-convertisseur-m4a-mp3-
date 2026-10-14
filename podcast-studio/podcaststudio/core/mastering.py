@@ -80,6 +80,7 @@ def master_file(
     dst.parent.mkdir(parents=True, exist_ok=True)
     duration = audio.duration_of(src) or None
     sr = opts.sample_rate
+    ac = str(audio.channels_of(src))  # la stéréo des podcasts est conservée
 
     def prog(base: float, span: float):
         if progress is None:
@@ -92,10 +93,10 @@ def master_file(
         stage2 = td / "stage2.wav"
 
         if opts.preset == "none":
-            ffmpeg.run_ffmpeg(["-i", str(src), "-ac", "1", "-ar", str(sr), "-c:a", "pcm_f32le", str(stage2)],
+            ffmpeg.run_ffmpeg(["-i", str(src), "-ac", ac, "-ar", str(sr), "-c:a", "pcm_f32le", str(stage2)],
                               duration, prog(0, 0.8), cancel)
         else:
-            ffmpeg.run_ffmpeg(["-i", str(src), "-ac", "1", "-ar", str(sr), "-af", ",".join(_pre_filters(opts)),
+            ffmpeg.run_ffmpeg(["-i", str(src), "-ac", ac, "-ar", str(sr), "-af", ",".join(_pre_filters(opts)),
                                "-c:a", "pcm_f32le", str(stage1)], duration, prog(0, 0.4), cancel)
             if opts.preset == "streaming":
                 m = _loudnorm_measure(stage1, -16.0, -1.5, 11.0)
@@ -124,14 +125,15 @@ def _finalize(src: Path, dst: Path, opts: MasteringOptions) -> None:
     sr = info.samplerate
     ceiling = audio.db_to_lin(PRESET_TARGETS.get(opts.preset, (0, -3.6))[1]) if opts.preset in PRESET_TARGETS else 1.0
     pos = 0
-    with sf.SoundFile(str(dst), "w", samplerate=sr, channels=1, subtype="PCM_24") as out:
+    channels = min(2, info.channels)
+    with sf.SoundFile(str(dst), "w", samplerate=sr, channels=channels, subtype="PCM_24") as out:
         for block in sf.blocks(str(src), blocksize=sr * 10, dtype="float32", always_2d=True):
-            mono = block.mean(axis=1) if block.shape[1] > 1 else block[:, 0]
+            block = block[:, :channels].copy()
             if opts.room_tone and opts.preset != "none":
-                mono = mono + audio.room_tone_loop(len(mono), opts.room_tone_db, sr)[: len(mono)]
-            np.clip(mono, -ceiling, ceiling, out=mono)
-            out.write(mono)
-            pos += len(mono)
+                block += audio.room_tone_loop(len(block), opts.room_tone_db, sr)[: len(block)].reshape(-1, 1)
+            np.clip(block, -ceiling, ceiling, out=block)
+            out.write(block if channels > 1 else block[:, 0])
+            pos += len(block)
 
 
 def copy_or_master(src: Path, dst: Path, opts: MasteringOptions, **kw) -> audio.AudioStats:

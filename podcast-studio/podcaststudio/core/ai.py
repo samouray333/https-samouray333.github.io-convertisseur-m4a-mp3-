@@ -19,7 +19,7 @@ from typing import Callable
 
 from .. import __version__
 from .models import LexiconEntry, VoiceProfile
-from .textproc import (EMOTION_ALIASES, EMOTION_END_RE, EMPHASIS_RE, NARRATOR_NAMES, PAUSE_RE,
+from .textproc import (EMOTION_ALIASES, EMOTION_END_RE, EMPHASIS_RE, MARK_RE, NARRATOR_NAMES, PAUSE_RE, SOUND_RE,
                        RATE_ALIASES, RATE_END_RE, VOICE_END_RE, VOICE_SWITCH_RE, parse_prefixes, rate_name)
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
@@ -221,6 +221,7 @@ def split_paragraphs(text: str) -> tuple[list[str], list[Paragraph]]:
             in_voice = False
             continue
         if (in_voice or s.startswith(("#", "%%")) or PAUSE_RE.fullmatch(s) or EMOTION_END_RE.match(s)
+                or SOUND_RE.fullmatch(s) or MARK_RE.fullmatch(s)
                 or RATE_END_RE.match(s) or not parse_prefixes(s)[0]):
             continue
         lead = raw[:len(raw) - len(raw.lstrip())]
@@ -632,3 +633,86 @@ def episode_notes(title: str, script: str, client: DeepSeekClient) -> tuple[str,
         "inventer d'information\"}. Langue : celle du script.",
         f"Titre actuel : {title}\n\nScript :\n{clean[:15000]}", max_tokens=1200, temperature=0.6)
     return str(data.get("title") or title).strip(), str(data.get("description") or "").strip()
+
+
+def pick_trailer(passages: list[tuple[int, str, str, float]], client: DeepSeekClient, seconds: float = 30) -> list[int]:
+    """Numéros des passages qui font la meilleure bande-annonce. ``passages`` : [(n, épisode, texte, durée)]."""
+    if not passages:
+        return []
+    listing = "\n".join(f"[{n}] ({ep}, {d:.0f} s) {text}" for n, ep, text, d in passages)[:24000]
+    system = f"""Tu montes la bande-annonce d'un podcast. Choisis des passages qui, enchaînés dans l'ordre que tu
+donnes, durent environ {seconds:.0f} secondes au total, donnent envie d'écouter (accroche, moment drôle ou
+surprenant, question intrigante) et se comprennent sans contexte. Évite les salutations et les passages qui
+dévoilent une conclusion. Réponds en JSON : {{"passages": [numéros dans l'ordre de montage]}}."""
+    data = client.chat_json(system, listing, max_tokens=600, temperature=0.5)
+    valid = {n: d for n, _e, _t, d in passages}
+    out: list[int] = []
+    total = 0.0
+    for n in data.get("passages") or []:
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            continue
+        if n in valid and n not in out and total + valid[n] <= seconds + 6:
+            out.append(n)
+            total += valid[n]
+    if not out:
+        raise AIError("DeepSeek n'a pas choisi de passages. Réessayez.")
+    return out
+
+
+def rewrite_line(text: str, style: str, client: DeepSeekClient, speaker: str = "", context: str = "") -> str:
+    """Nouvelle version d'une réplique : plus courte, plus drôle, plus naturelle, plus simple, plus enthousiaste."""
+    styles = {"courte": "plus courte (deux fois moins de mots), sans perdre l'idée",
+              "drole": "plus drôle, avec une pointe d'humour bienveillant",
+              "naturelle": "plus naturelle à l'oral, comme dans une vraie conversation",
+              "simple": "plus simple, avec des mots du quotidien",
+              "enthousiaste": "plus enthousiaste et énergique"}
+    who = f" prononcée par {speaker}" if speaker else ""
+    system = (f"Tu réécris une réplique de podcast{who}, {styles.get(style, style)}. Garde la même langue et le même "
+              "sens, n'ajoute pas de faits. Pas de guillemets ni de didascalies. "
+              'Réponds en JSON : {"replique": "..."}')
+    user = (f"Contexte (répliques autour) :\n{context[:3000]}\n\n" if context else "") + f"Réplique : {text}"
+    data = client.chat_json(system, user, max_tokens=800, temperature=0.8)
+    new = " ".join(str(data.get("replique") or data.get("text") or "").split()).strip('«»" ')
+    if not new:
+        raise AIError("DeepSeek n'a pas proposé de nouvelle version. Réessayez.")
+    return new
+
+
+def propose_chapters(script: str, client: DeepSeekClient, max_chapters: int = 8) -> list[tuple[int, str]]:
+    """Chapitres de l'épisode : [(paragraphe où il commence, titre court)]."""
+    _parts, paras = split_paragraphs(script)
+    if len(paras) < 3:
+        raise AIError("L'épisode est trop court pour être découpé en chapitres.")
+    numbered = "\n".join(f"[{p.number}] {(p.speaker + ' : ') if p.speaker else ''}{p.flat}" for p in paras)[:24000]
+    system = f"""Découpe cet épisode de podcast en 3 à {max_chapters} chapitres qui suivent les changements de sujet.
+Le premier chapitre commence au paragraphe 1. Titres courts (2 à 6 mots), sans numéro.
+Réponds en JSON : {{"chapitres": [{{"debut": numéro, "titre": "..."}}]}}."""
+    data = client.chat_json(system, numbered, max_tokens=1200, temperature=0.3)
+    valid = {p.number for p in paras}
+    out: list[tuple[int, str]] = []
+    for c in data.get("chapitres") or data.get("chapters") or []:
+        if not isinstance(c, dict):
+            continue
+        try:
+            n = int(c.get("debut") or c.get("start"))
+        except (TypeError, ValueError):
+            continue
+        title = " ".join(str(c.get("titre") or c.get("title") or "").split())[:60]
+        if n in valid and title and all(n != m for m, _ in out):
+            out.append((n, title))
+    if not out:
+        raise AIError("DeepSeek n'a pas proposé de chapitres. Réessayez.")
+    return sorted(out)
+
+
+def apply_chapters(script: str, chapters: list[tuple[int, str]]) -> str:
+    """Insère « [chapitre: Titre] » avant les paragraphes choisis (les anciens repères sont retirés)."""
+    script = re.sub(r"(?m)^[ \t]*\[\s*chapitre\s*[:=][^\]\n]*\][ \t]*\n?(?:[ \t]*\n)?", "", script)
+    parts, paras = split_paragraphs(script)
+    wanted = dict(chapters)
+    for p in paras:
+        if p.number in wanted:
+            parts[p.part] = p.lead + f"[chapitre: {wanted[p.number]}]\n\n" + parts[p.part][len(p.lead):]
+    return "".join(parts)

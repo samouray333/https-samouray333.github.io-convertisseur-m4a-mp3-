@@ -373,3 +373,58 @@ def test_hosts_page_rename_and_dialogue(app):
         lib.delete(v.id)
     win.ctx.dirty = False
     win.close()
+
+
+def test_calendar_templates_and_studio_tools(app, monkeypatch):
+    from PySide6.QtCore import QDate
+
+    from podcaststudio.core.models import VoiceProfile
+    from podcaststudio.ui.dialogs.templates import TemplateDialog
+    from podcaststudio.ui.main_window import MainWindow, new_podcast
+
+    win = MainWindow()
+    lib = win.ctx.library
+    vs = [lib.save(VoiceProfile(name=f"V{i}", engine="edge", gender="FM"[i % 2])) for i in range(3)]
+    pr = new_podcast(lib, "debat")
+    assert [h.name for h in pr.hosts] == ["Nora", "Paul", "Zoé"]
+    assert len({h.voice_id for h in pr.hosts}) == 3
+    win.ctx.set_project(pr)
+    dlg = TemplateDialog(win, for_episode=True)
+    dlg._choose("interview")
+    assert dlg.selected_name == "Interview"
+    ep = win.pages["manuscript"]
+    win.show_page("manuscript")
+    ep.list.setCurrentRow(0)
+    monkeypatch.setattr(TemplateDialog, "exec", lambda self: (self._choose("interview"), True)[1])
+    ep.add_from_template()
+    assert len(pr.chapters) == 2 and pr.host_by_name("Camille") is not None
+    ep.list.setCurrentRow(0)
+    cur = ep.editor.textCursor()
+    cur.movePosition(cur.MoveOperation.Start)
+    while cur.block().isValid() and not cur.block().text().startswith("@Paul:"):
+        cur.movePosition(cur.MoveOperation.NextBlock)
+    ep.editor.setTextCursor(cur)
+    ep.tag_overlap()
+    assert "@Paul: [par-dessus]" in ep.editor.toPlainText()
+    ep._insert_block("[son: ding]")
+    assert "\n[son: ding]\n" in ep.editor.toPlainText()
+    ep._fill_sounds()
+    assert ep.sound_menu.actions()
+
+    cal = win.pages["calendar"]
+    win.show_page("calendar")
+    cal.start.setDate(QDate(2026, 11, 2))
+    cal.plan()
+    assert [c.pub_date for c in pr.chapters] == ["2026-11-02", "2026-11-09"]
+    assert cal.table.rowCount() == 2 and cal.table.item(0, 3).text() in ("Écrit", "À écrire")
+    hosts = win.pages["hosts"]
+    win.show_page("hosts")
+    hosts.rows[1].pan.setCurrentIndex(hosts.rows[1].pan.findData(1.0))
+    assert pr.hosts[1].pan == 1.0 and pr.host_pan("Paul") == 1.0
+    for key in win.pages:
+        win.show_page(key)
+        app.processEvents()
+    for v in vs:
+        lib.delete(v.id)
+    win.ctx.dirty = False
+    win.close()

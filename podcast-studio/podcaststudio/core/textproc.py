@@ -67,6 +67,9 @@ class ScriptItem:
     emotion: str = ""
     joined: bool = False  # la suite du même paragraphe suit (changement de voix au milieu d'un paragraphe)
     rate: float = 1.0  # débit relatif ([lent], [rapide]…)
+    overlap: bool = False  # « [par-dessus] » : la réplique commence avant la fin de la précédente
+    take: str = ""  # « [prise: fichier] » : passage enregistré au micro, lu à la place de la synthèse
+    source: str = ""  # nom du son (kind == "sound") ou titre du chapitre (kind == "marker")
 
 
 # Émotions : balise -> nom canonique
@@ -128,6 +131,28 @@ PAUSE_RE = re.compile(r"\[\s*pause\s*[:= ]?\s*(\d+(?:[.,]\d+)?)\s*(ms|s)?\s*\]",
 VOICE_SWITCH_RE = re.compile(r"^\[\s*(?:voix|voice)\s*[:=]\s*([^\]]+?)\s*\]\s*$", re.IGNORECASE)
 VOICE_END_RE = re.compile(r"^\[\s*/\s*(?:voix|voice)\s*\]\s*$", re.IGNORECASE)
 CHARACTER_LINE_RE = re.compile(r"^@([^:\n]{1,40}):\s*(.+)$", re.S)
+# Podcast : effets sonores, jingle de transition, chapitres, prises au micro, réactions par-dessus
+SOUND_RE = re.compile(r"\[\s*(?:son|bruitage|sound|effet)\s*[:= ]\s*([^\]\n]+?)\s*\]|\[\s*(virgule|jingle)\s*\]",
+                      re.IGNORECASE)
+MARK_RE = re.compile(r"\[\s*chapitre\s*[:=]\s*([^\]\n]+?)\s*\]", re.IGNORECASE)
+TAKE_RE = re.compile(r"^\[\s*prise\s*[:=]\s*([^\]\n]+?)\s*\]\s*", re.IGNORECASE)
+OVERLAP_RE = re.compile(r"^\[\s*(?:par[- ]dessus|chevauche(?:ment)?|en même temps)\s*\]\s*", re.IGNORECASE)
+INLINE_RE = re.compile(PAUSE_RE.pattern + "|" + SOUND_RE.pattern + "|" + MARK_RE.pattern, re.IGNORECASE)
+
+
+def strip_podcast_prefixes(text: str) -> tuple[str, bool, str]:
+    """Retire « [par-dessus] » et « [prise: …] » en tête : (texte, chevauchement, fichier de la prise)."""
+    overlap, take = False, ""
+    while True:
+        m = OVERLAP_RE.match(text)
+        if m:
+            overlap, text = True, text[m.end():]
+            continue
+        m = TAKE_RE.match(text)
+        if m:
+            take, text = m.group(1).strip(), text[m.end():]
+            continue
+        return text, overlap, take
 # Réplique : tiret cadratin, demi-cadratin ou simple (« - Bonjour » comme « -Bonjour », mais pas « -5 »),
 # ou guillemets (» : suite d'une réplique commencée au paragraphe précédent).
 DIALOGUE_START_RE = re.compile(r"^\s*(?:[—–―]|-\s|-(?=[^\W\d_]|[«“\"])|«|»|“|\")")
@@ -283,7 +308,20 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
         if EMOTION_END_RE.match(para):
             current_emotion = ""
             continue
+        sm = SOUND_RE.fullmatch(para)
+        if sm:
+            items.append(ScriptItem("sound", source=(sm.group(1) or sm.group(2)).strip()))
+            continue
+        mm = MARK_RE.fullmatch(para)
+        if mm:
+            items.append(ScriptItem("marker", source=mm.group(1).strip()))
+            continue
+        para, overlap, take = strip_podcast_prefixes(para)
         para, emotion, rate, seen_e, seen_r = parse_prefixes(para, current_emotion, current_rate)
+        para, overlap2, take2 = strip_podcast_prefixes(para)
+        overlap, take = overlap or overlap2, take or take2
+        if not para and take:
+            para = "…"  # prise sans texte écrit : rien à afficher, l'enregistrement est lu
         if not para:  # balise seule : s'applique aux paragraphes suivants
             if seen_e:
                 current_emotion = emotion
@@ -308,16 +346,27 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
             mode = "character"
             name = cm.group(1).strip()
             voice = None if name.lower() in NARRATOR_NAMES else name
-            para, emotion, rate, _e, _r = parse_prefixes(cm.group(2).strip(), emotion, rate)
+            body, ov, tk = strip_podcast_prefixes(cm.group(2).strip())
+            body, emotion, rate, _e, _r = parse_prefixes(body, emotion, rate)
+            body, ov2, tk2 = strip_podcast_prefixes(body)
+            para, overlap, take = body or ("…" if (tk or tk2 or take) else ""), overlap or ov or ov2, take or tk or tk2
         elif voice is None and detect_dialogues:
             mode = "detect"
             if DIALOGUE_START_RE.match(para):
                 voice = "__dialogue__"
         speaker = voice if mode == "character" else "__dialogue__"
 
+        first_chunk = [True]
+
         def add_para(chunk: str) -> None:
+            ov = overlap and first_chunk[0]
+            first_chunk[0] = False
+            if take:  # la prise remplace tout le paragraphe : pas de découpage
+                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion, rate=rate, overlap=ov,
+                                        take=take))
+                return
             if not split or not mode or (mode == "character" and (voice is None or not incises)):
-                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion, rate=rate))
+                items.append(ScriptItem("para", chunk, voice_key=voice, emotion=emotion, rate=rate, overlap=ov))
                 return
             parts = split_dialogue(chunk, incises, speech=mode == "character")
             if not parts:
@@ -326,15 +375,23 @@ def parse_script(text: str, detect_dialogues: bool = False, split: bool = False,
             for i, (t, sp) in enumerate(parts):
                 items.append(ScriptItem("para", t, voice_key=speaker if sp else None,
                                         emotion=emotion if sp or not any_speech else "",
-                                        joined=i < len(parts) - 1, rate=rate))
+                                        joined=i < len(parts) - 1, rate=rate, overlap=ov and i == 0))
 
-        # pauses en ligne : on coupe le paragraphe
+        if take:  # prise au micro : le texte n'est qu'un repère, les balises en ligne sont ignorées
+            add_para(INLINE_RE.sub("", para).strip() or "…")
+            continue
+        # pauses, sons et chapitres en ligne : on coupe le paragraphe
         pos = 0
-        for pm in PAUSE_RE.finditer(para):
+        for pm in INLINE_RE.finditer(para):
             chunk = para[pos:pm.start()].strip()
             if chunk:
                 add_para(chunk)
-            items.append(ScriptItem("pause", pause_ms=_pause_to_ms(pm.group(1), pm.group(2))))
+            if pm.group(1):
+                items.append(ScriptItem("pause", pause_ms=_pause_to_ms(pm.group(1), pm.group(2))))
+            elif pm.group(3) or pm.group(4):
+                items.append(ScriptItem("sound", source=(pm.group(3) or pm.group(4)).strip()))
+            else:
+                items.append(ScriptItem("marker", source=pm.group(5).strip()))
             pos = pm.end()
         rest = para[pos:].strip()
         if rest:

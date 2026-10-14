@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 import tempfile
 import threading
 import time
@@ -51,6 +52,11 @@ class Segment:
     emotion: str = ""
     rate: float = 1.0  # débit relatif ([lent], [rapide]…)
     emphasis: list[str] = field(default_factory=list)  # mots mis en valeur (*mot*), texte normalisé
+    pan: float = 0.0  # position stéréo -1 … 1
+    overlap_ms: int = 0  # commence avant la fin du passage précédent (réaction « par-dessus »)
+    source: str = ""  # fichier lu à la place de la synthèse : effet sonore (kind « sound ») ou prise au micro
+    mark: str = ""  # chapitre qui commence avec ce passage
+    host: bool = False  # réplique d'un animateur ou invité de la page Animateurs
 
 
 @dataclass
@@ -63,16 +69,26 @@ class RenderChapter:
     tail_ms: int = 3000
     warnings: list[str] = field(default_factory=list)
     breaths: str = "off"  # off | light | natural
+    stereo: bool = False
 
     @property
     def plan_hash(self) -> str:
         h = hashlib.sha1()
-        h.update(f"{self.head_ms}|{self.tail_ms}|{RENDER_VERSION}".encode())
+        h.update(f"{self.head_ms}|{self.tail_ms}|{RENDER_VERSION}|stereo:{self.stereo}".encode())
         if self.breaths != "off":
             h.update(f"breaths:{self.breaths}".encode())
         for s in self.segments:
-            h.update(f"{s.key}|{s.pause_after_ms};".encode())
+            h.update(f"{s.key}|{s.pause_after_ms}|{s.overlap_ms}|{s.pan:.3f}|{s.mark};".encode())
         return h.hexdigest()
+
+    def chapter_marks(self, timings: list[tuple[float, float]]) -> list[tuple[float, str]]:
+        """Chapitres (début en secondes dans le rendu, titre) d'après les repères et intertitres."""
+        marks = [(timings[i][0], s.mark) for i, s in enumerate(self.segments) if s.mark and i < len(timings)]
+        if marks and marks[0][0] > 1.5:
+            marks.insert(0, (0.0, "Introduction"))
+        elif marks:
+            marks[0] = (0.0, marks[0][1])
+        return marks
 
     @property
     def char_count(self) -> int:
@@ -198,6 +214,36 @@ def natural_pause(base_ms: int, text: str, seed: str, paragraph_end: bool = Fals
     return int(round(base_ms * factor * (0.88 + 0.24 * jitter)))
 
 
+def takes_dir(project: Project) -> Path:
+    """Dossier des prises enregistrées au micro (dans le dossier du projet)."""
+    d = (project.path.parent / "prises") if project.path is not None else project_io.project_data_dir(project) / "prises"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def resolve_take(project: Project, name: str) -> Path | None:
+    p = Path(name)
+    for cand in ([p] if p.is_absolute() else []) + [takes_dir(project) / name]:
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _file_key(kind: str, path: Path | None, *extra) -> str:
+    stamp = [str(path), path.stat().st_size, int(path.stat().st_mtime)] if path and path.exists() else [str(path)]
+    payload = json.dumps([RENDER_VERSION, kind, stamp, *extra], ensure_ascii=False, default=str)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+REACTION_MAX_WORDS = 4
+
+
+def is_reaction(text: str) -> bool:
+    """Réplique très courte (« Ah oui ! », « Exactement. », « Hmm hmm ») qui peut chevaucher la précédente."""
+    words = re.findall(r"[\w'’-]+", text)
+    return 0 < len(words) <= REACTION_MAX_WORDS and len(text) <= 32
+
+
 def _engine_limits(voice: VoiceProfile) -> tuple[int, int]:
     eng = engines.get_engine(voice.engine)
     if eng is None:
@@ -212,11 +258,19 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
     opts = NormalizeOptions(language=lang, numbers=prod.normalize_numbers, abbreviations=prod.expand_abbreviations)
     resolver = resolver or VoiceResolver(project, library)
     rc = RenderChapter(id=chapter.id, title=chapter.title, kind=kind, head_ms=prod.chapter_head_ms,
-                       tail_ms=prod.chapter_tail_ms, breaths=prod.breaths if prod.breaths in BREATH_LEVELS else "off")
+                       tail_ms=prod.chapter_tail_ms, breaths=prod.breaths if prod.breaths in BREATH_LEVELS else "off",
+                       stereo=prod.stereo)
     segs: list[Segment] = []
     paragraph = 0
+    pending_mark = [""]
+    project_dir = project.path.parent if project.path is not None else None
 
-    def add_text(raw: str, voice: VoiceProfile, kind_: str, end_pause: int, emotion: str = "", rate: float = 1.0):
+    def attach_mark() -> str:
+        mark, pending_mark[0] = pending_mark[0], ""
+        return mark
+
+    def add_text(raw: str, voice: VoiceProfile, kind_: str, end_pause: int, emotion: str = "", rate: float = 1.0,
+                 pan: float = 0.0, overlap: bool = False, mark: str = "", host: bool = False):
         nonlocal paragraph
         emphasized = [normalize_for_speech(m.group(1), opts, project.lexicon) for m in EMPHASIS_RE.finditer(raw)]
         spoken = normalize_for_speech(raw, opts, project.lexicon)
@@ -238,9 +292,27 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
             segs.append(Segment(
                 index=len(segs), text=c, display=raw if len(chunks) == 1 else c, voice_id=voice.id,
                 pause_after_ms=pause, kind=kind_, key=key, paragraph=paragraph, emotion=emotion, rate=rate,
-                emphasis=emph,
+                emphasis=emph, pan=pan, overlap_ms=prod.overlap_ms if overlap and i == 0 else 0,
+                mark=(mark or attach_mark()) if i == 0 else "", host=host,
             ))
         paragraph += 1
+
+    def add_file(kind_: str, path: Path | None, label: str, voice: VoiceProfile, pan: float, end_pause: int,
+                 overlap: bool = False, name: str = ""):
+        nonlocal paragraph
+        if path is None:
+            msg = (f"Son « {name} » introuvable (sons intégrés ou dossier « Mes sons ») : il est ignoré."
+                   if kind_ == "sound" else f"Prise « {name} » introuvable dans le dossier « prises » : la voix "
+                   "de synthèse lit le texte à la place.")
+            if msg not in resolver.warnings:
+                resolver.warnings.append(msg)
+            return False
+        key = _file_key(kind_, path, prod.trim_silence)
+        segs.append(Segment(index=len(segs), text="", display=label, voice_id=voice.id, pause_after_ms=end_pause,
+                            kind=kind_, key=key, paragraph=paragraph, pan=pan, source=str(path),
+                            overlap_ms=prod.overlap_ms if overlap else 0, mark=attach_mark()))
+        paragraph += 1
+        return True
 
     announce = chapter.announce_title if chapter.announce_title is not None else prod.announce_chapter_titles
     if kind == "chapter" and announce and chapter.title.strip():
@@ -252,13 +324,13 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
         add_text(title, resolver.narrator(chapter), "title", prod.pause_heading_ms)
 
     # Morceaux d'un même paragraphe (récit / répliques) : regroupés tant que la voix ne change pas.
-    pending: list[tuple[str, VoiceProfile, str, float]] = []
+    pending: list[tuple[str, VoiceProfile, str, float, float, bool, bool]] = []
 
     def flush() -> None:
-        for i, (text, voice, emotion, rate) in enumerate(pending):
+        for i, (text, voice, emotion, rate, pan, overlap, host) in enumerate(pending):
             last = i == len(pending) - 1
             add_text(text, voice, "para", prod.pause_paragraph_ms if last else prod.pause_sentence_ms, emotion,
-                     rate)
+                     rate, pan, overlap, host=host)
         pending.clear()
 
     for item in parse_script(chapter.text, prod.detect_dialogues, split=True,
@@ -271,14 +343,31 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
             else:
                 rc.head_ms += item.pause_ms
         elif item.kind == "heading":
-            add_text(item.text.rstrip(".") + ".", resolver.narrator(chapter), "heading", prod.pause_heading_ms)
+            add_text(item.text.rstrip(".") + ".", resolver.narrator(chapter), "heading", prod.pause_heading_ms,
+                     mark=item.text.strip())
+        elif item.kind == "marker":
+            pending_mark[0] = item.source
+        elif item.kind == "sound":
+            from . import sounds
+
+            add_file("sound", sounds.resolve(item.source, project_dir), f"[son : {item.source}]",
+                     resolver.narrator(chapter), 0.0, 350, name=item.source)
         else:
             voice = resolver.resolve(item.voice_key, chapter)
+            pan = project.host_pan(item.voice_key) if prod.stereo else 0.0
+            if item.take:
+                flush()
+                shown = item.text if item.text != "…" else f"[prise : {item.take}]"
+                if add_file("take", resolve_take(project, item.take), shown, voice, pan, prod.pause_paragraph_ms,
+                            item.overlap, item.take) or item.text == "…":
+                    continue
             if (pending and pending[-1][1].id == voice.id and pending[-1][2] == item.emotion
-                    and pending[-1][3] == item.rate):
-                pending[-1] = (pending[-1][0] + " " + item.text, voice, item.emotion, item.rate)
+                    and pending[-1][3] == item.rate and not item.overlap):
+                pending[-1] = (pending[-1][0] + " " + item.text, voice, item.emotion, item.rate, pending[-1][4],
+                               pending[-1][5], pending[-1][6])
             else:
-                pending.append((item.text, voice, item.emotion, item.rate))
+                is_host = bool(item.voice_key) and project.host_by_name(item.voice_key) is not None
+                pending.append((item.text, voice, item.emotion, item.rate, pan, item.overlap, is_host))
             if not item.joined:
                 flush()
     flush()
@@ -286,6 +375,16 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
         for a, b in zip(segs, segs[1:]):
             if a.voice_id != b.voice_id:
                 a.pause_after_ms += VOICE_CHANGE_MS  # petite respiration quand un autre personnage prend la parole
+    # Réactions par-dessus : balise « [par-dessus] », ou réplique très courte d'une autre personne
+    for a, b in zip(segs, segs[1:]):
+        speech = a.kind in ("para", "take") and b.kind in ("para", "take")
+        auto = (prod.overlap_reactions and b.kind == "para" and b.host and a.voice_id != b.voice_id
+                and not b.mark and is_reaction(b.display))
+        if speech and (b.overlap_ms or auto) and a.voice_id != b.voice_id:
+            b.overlap_ms = b.overlap_ms or prod.overlap_ms
+            a.pause_after_ms = 0
+        elif b.overlap_ms and not speech:
+            b.overlap_ms = 0
     if segs:
         segs[-1].pause_after_ms = 0
     rc.segments = segs
@@ -398,6 +497,9 @@ def expected_duration(text: str, speed: float = 1.0) -> float:
     return len(text) / 14.5 / max(0.3, speed)
 
 
+TAKE_RMS_DB = -20.0  # niveau moyen d'une prise au micro, aligné sur celui des voix de synthèse
+SOUND_PEAK_DB = -4.0  # crête des effets sonores
+
 # Moteurs qui passent par le service en ligne de Microsoft (directement ou comme voix de base)
 ONLINE_ENGINES = {"edge", "fastclone", "rvc"}
 
@@ -439,6 +541,8 @@ class Renderer:
         target = cache_path(self.project, seg.key)
         if target.exists() and not force:
             return target
+        if seg.source:
+            return self._prepare_file(seg, target)
         voice = self._voice(seg.voice_id)
         engine = engines.get_engine(voice.engine)
         if engine is None:
@@ -530,6 +634,34 @@ class Renderer:
             qc_file.unlink()
         return target
 
+    def _prepare_file(self, seg: Segment, target: Path) -> Path:
+        """Effet sonore ou prise au micro : mis au format du rendu (et, pour une prise, au niveau des voix)."""
+        src = Path(seg.source)
+        if not src.is_file():
+            raise RenderError(f"Fichier introuvable : {src}")
+        data, sr = audio.read_audio(src)
+        data = audio.remove_dc(audio.resample(data, sr, SR))
+        if seg.kind == "take":
+            if self.project.production.trim_silence:
+                trimmed = audio.trim_silence(data, SR, -45.0, pad_ms=60)
+                if trimmed.size > SR * 0.1:
+                    data = trimmed
+            rms = audio.lin_to_db(float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))) if data.size else -120
+            if rms > -70:  # même niveau moyen que les voix de synthèse (≈ -20 dB RMS)
+                gain = max(-20.0, min(24.0, TAKE_RMS_DB - rms))
+                data = data * audio.db_to_lin(gain)
+            peak = float(np.max(np.abs(data))) if data.size else 0.0
+            if peak > 0.98:
+                data = data * (0.98 / peak)
+            data = audio.apply_fades(data.astype(np.float32), SR, 8, 30)
+        else:
+            peak = float(np.max(np.abs(data))) if data.size else 0.0
+            if peak > 0:
+                data = data * (audio.db_to_lin(SOUND_PEAK_DB) / peak)
+            data = audio.apply_fades(data.astype(np.float32), SR, 3, 40)
+        audio.write_audio(target, data.astype(np.float32), SR, subtype="PCM_24")
+        return target
+
     def regenerate_segment(self, seg: Segment) -> Path:
         """Nouvelle prise d'un passage (graine aléatoire), remplace celle du cache."""
         return self.synth_segment(seg, seed=random.randint(1, 2 ** 31 - 1), force=True)
@@ -542,21 +674,43 @@ class Renderer:
 
     # -- assemblage --------------------------------------------------------------------
     def assemble(self, rc: RenderChapter) -> Path:
+        """Assemble les passages : silences, respirations, réactions par-dessus, placement stéréo."""
         out = chapter_output(self.project, rc.id)
         tmp = out.with_suffix(".tmp.flac")
         timings: list[tuple[float, float]] = []
-        pos = 0
-        with sf.SoundFile(str(tmp), "w", samplerate=SR, channels=1, subtype="PCM_24", format="FLAC") as fh:
-            head = audio.silence(rc.head_ms, SR)
-            fh.write(head)
-            pos += len(head)
+        channels = 2 if rc.stereo else 1
+        pos = 0  # échantillons déjà écrits dans le fichier
+        # Le dernier passage reste en mémoire (« held ») tant que le suivant peut venir le chevaucher.
+        held = np.zeros((0, channels), dtype=np.float32)
+
+        def place(mono: np.ndarray, pan: float) -> np.ndarray:
+            if channels == 1:
+                return mono.reshape(-1, 1).astype(np.float32)
+            angle = (max(-1.0, min(1.0, pan)) + 1) * np.pi / 4  # panoramique à puissance constante
+            return np.stack([mono * np.cos(angle), mono * np.sin(angle)], axis=1).astype(np.float32) * np.sqrt(2)
+
+        with sf.SoundFile(str(tmp), "w", samplerate=SR, channels=channels, subtype="PCM_24", format="FLAC") as fh:
+            held = place(audio.silence(rc.head_ms, SR), 0.0)
             for i, seg in enumerate(rc.segments):
                 data, sr = audio.read_audio(cache_path(self.project, seg.key))
                 if sr != SR:
                     data = audio.resample(data, sr, SR)
-                timings.append((pos / SR, (pos + len(data)) / SR))
-                fh.write(data)
-                pos += len(data)
+                block = place(data, seg.pan)
+                ov = 0
+                if seg.overlap_ms and i > 0:
+                    # au plus 40 % de la réplique précédente, et jamais plus long que la réaction elle-même
+                    prev_len = int((timings[-1][1] - timings[-1][0]) * SR)
+                    ov = min(int(seg.overlap_ms * SR / 1000), int(prev_len * 0.4), len(held), max(0, len(block) - 1))
+                if ov:
+                    held[len(held) - ov:] += block[:ov] * audio.db_to_lin(-1.5)
+                    start = pos + len(held) - ov
+                    block = block[ov:]
+                else:
+                    start = pos + len(held)
+                np.clip(held, -0.999, 0.999, out=held)  # deux voix superposées : jamais d'écrêtage numérique
+                fh.write(held)
+                pos += len(held)
+                timings.append((start / SR, (start + ov + len(block)) / SR))
                 gap = audio.silence(seg.pause_after_ms, SR)
                 nxt = rc.segments[i + 1] if i + 1 < len(rc.segments) else None
                 length = breath_before(seg, nxt, rc.breaths) if nxt is not None else 0
@@ -569,11 +723,13 @@ class Renderer:
                     end = len(gap) - int(SR * 0.07)
                     if end - len(b) > 0:
                         gap[end - len(b):end] = b
-                fh.write(gap)
-                pos += len(gap)
-            tail = audio.silence(max(rc.tail_ms, 500), SR)
-            fh.write(tail)
-            pos += len(tail)
+                pan_next = nxt.pan if nxt is not None else 0.0
+                held = np.concatenate([block, place(gap, pan_next)]) if len(gap) else block
+            tail = place(audio.silence(max(rc.tail_ms, 500), SR), 0.0)
+            held = np.concatenate([held, tail])
+            np.clip(held, -0.999, 0.999, out=held)
+            fh.write(held)
+            pos += len(held)
         tmp.replace(out)
         chapter_manifest(self.project, rc.id).write_text(json.dumps({
             "plan_hash": rc.plan_hash, "title": rc.title, "kind": rc.kind, "duration": pos / SR,

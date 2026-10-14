@@ -37,6 +37,7 @@ class ExportItem:
     description: str = ""
     pub_date: str = ""
     episode_type: str = "full"
+    chapters: list[tuple[float, str]] = field(default_factory=list)  # (début en secondes, titre)
 
 
 @dataclass
@@ -140,6 +141,49 @@ def tag_mp3(path: Path, meta: BookMetadata, title: str, track: int | None, total
         tags.delall("APIC")
         tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover.read_bytes()))
     tags.save(str(path), v2_version=3)
+
+
+def clock(seconds: float) -> str:
+    s = int(round(seconds))
+    return f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60:02d}:{s % 60:02d}"
+
+
+def episode_notes(it: ExportItem, with_chapters: bool) -> str:
+    """Description de l'épisode, suivie des chapitres horodatés (« 03:12 La rubrique »)."""
+    notes = it.description.strip()
+    if with_chapters and len(it.chapters) >= 2:
+        lines = "\n".join(f"{clock(t)} {title}" for t, title in it.chapters)
+        notes = (notes + "\n\n" if notes else "") + "Chapitres :\n" + lines
+    return notes
+
+
+def write_mp3_chapters(path: Path, chapters: list[tuple[float, str]], duration: float) -> None:
+    """Chapitres ID3 (CHAP + CTOC), affichés par Apple Podcasts, Overcast, Pocket Casts…"""
+    from mutagen import id3
+
+    if len(chapters) < 2:
+        return
+    tags = id3.ID3(str(path))
+    tags.delall("CHAP")
+    tags.delall("CTOC")
+    ids = []
+    for i, (start, title) in enumerate(chapters):
+        end = chapters[i + 1][0] if i + 1 < len(chapters) else duration
+        cid = f"chp{i}"
+        ids.append(cid)
+        tags.add(id3.CHAP(element_id=cid, start_time=int(start * 1000), end_time=int(max(start, end) * 1000),
+                          sub_frames=[id3.TIT2(encoding=3, text=title)]))
+    tags.add(id3.CTOC(element_id="toc", flags=id3.CTOCFlags.TOP_LEVEL | id3.CTOCFlags.ORDERED, child_element_ids=ids,
+                      sub_frames=[id3.TIT2(encoding=3, text="Chapitres")]))
+    tags.save(str(path), v2_version=3)
+
+
+def chapters_json(chapters: list[tuple[float, str]]) -> str:
+    """Chapitres au format Podcasting 2.0 (balise <podcast:chapters> du flux)."""
+    import json
+
+    return json.dumps({"version": "1.2.0", "chapters": [{"startTime": round(t, 2), "title": title}
+                                                         for t, title in chapters]}, ensure_ascii=False, indent=1)
 
 
 def tag_episode_mp3(path: Path, meta: BookMetadata, it: ExportItem, cover: Path | None) -> None:
@@ -307,12 +351,18 @@ def export_audiobook(
                 offsets[i] = 0.0
             if offsets[i] and it.cues:
                 it = dataclasses.replace(it, cues=[(a + offsets[i], b + offsets[i], t) for a, b, t in it.cues])
+            if it.chapters and offsets[i]:  # le jingle d'intro devient le premier chapitre
+                it = dataclasses.replace(it, chapters=[(0.0, "Générique")]
+                                         + [(t + offsets[i], title) for t, title in it.chapters])
+            if settings.chapters_in_notes:
+                it = dataclasses.replace(it, description=episode_notes(it, True))
             dst = td / f"{i:03d}.wav"
             stats = master_file(src, dst, mastering, cancel=cancel)
             result.stats.append((it.title, stats))
             mastered.append((it, dst, stats.duration))
             advance(f"Mastering : {it.title}")
         result.duration = sum(d for _, _, d in mastered)
+        ac = str(max(audio.channels_of(p) for _, p, _ in mastered))  # « 2 » pour un podcast en stéréo
 
         n = len(mastered)
         base_name = safe_filename(meta.title or "Podcast")
@@ -341,7 +391,7 @@ def export_audiobook(
                 report("Encodage du livre audio M4B…", step / total_steps)
                 ffmpeg.run_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(concat), "-i", str(metafile),
                                    "-map", "0:a", "-map_metadata", "1", "-map_chapters", "1",
-                                   "-c:a", "aac", "-b:a", settings.m4b_bitrate, "-ac", "1", "-ar", "44100",
+                                   "-c:a", "aac", "-b:a", settings.m4b_bitrate, "-ac", ac, "-ar", "44100",
                                    "-movflags", "+faststart", "-f", "mp4", str(target)],
                                   result.duration, lambda f: report("Encodage M4B…", (step + f * max(1, n // 3)) / total_steps),
                                   cancel)
@@ -356,9 +406,12 @@ def export_audiobook(
                     report(f"MP3 : {it.title}", step / total_steps)
                     target = folder / f"{track_name(idx, it)}.mp3"
                     ffmpeg.run_ffmpeg(["-i", str(src), "-c:a", "libmp3lame", "-b:a", settings.mp3_bitrate,
-                                       "-ar", "44100", "-ac", "1", "-id3v2_version", "3", str(target)],
+                                       "-ar", "44100", "-ac", ac, "-id3v2_version", "3", str(target)],
                                       cancel=cancel)
                     tag_episode_mp3(target, meta, it, cover)
+                    if len(it.chapters) >= 2:
+                        write_mp3_chapters(target, it.chapters, d)
+                        target.with_suffix(".chapters.json").write_text(chapters_json(it.chapters), encoding="utf-8")
                     result.files.append(target)
                     result.episodes.append((it, target, d))
                     playlist.append((target.name, d, it.title))
@@ -370,7 +423,7 @@ def export_audiobook(
                 report("Encodage du MP3 unique…", step / total_steps)
                 ffmpeg.run_ffmpeg(["-f", "concat", "-safe", "0", "-i", str(concat), "-i", str(metafile),
                                    "-map", "0:a", "-map_metadata", "1", "-map_chapters", "1",
-                                   "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "1",
+                                   "-c:a", "libmp3lame", "-b:a", settings.mp3_bitrate, "-ar", "44100", "-ac", ac,
                                    "-id3v2_version", "3", str(target)], result.duration, None, cancel)
                 tag_mp3(target, meta, meta.title or "Podcast", None, None, cover)
                 result.files.append(target)
@@ -437,7 +490,7 @@ def export_audiobook(
                 target = out / f"{base_name} - Extrait.mp3"
                 fade_start = max(0.0, length - 3.0)
                 ffmpeg.run_ffmpeg(["-i", str(src), "-t", f"{length:.2f}", "-af", f"afade=t=out:st={fade_start:.2f}:d=3",
-                                   "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "1",
+                                   "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", ac,
                                    "-id3v2_version", "3", str(target)], cancel=cancel)
                 tag_mp3(target, meta, f"{meta.title} (extrait)", None, None, cover)
                 result.files.append(target)
@@ -445,7 +498,7 @@ def export_audiobook(
         if "rss" in formats and result.episodes:
             from .rss import write_feed
 
-            result.feed = write_feed(meta, result.episodes, out / "feed.xml", cover)
+            result.feed = write_feed(meta, result.episodes, out / "feed.xml", cover, settings.rss_only_due)
             result.files.append(result.feed)
             if not meta.media_base_url:
                 result.warnings.append("Adresse de publication non renseignée : le flux RSS utilise des liens "
@@ -510,8 +563,9 @@ def audio_duration(seconds: float) -> str:
 # ---------------------------------------------------------------------------------------
 # Musique
 # ---------------------------------------------------------------------------------------
-def _music_chain(gain_db: float, length: float | None = None, fade_in: float = 0.5, fade_out: float = 3.0) -> str:
-    parts = ["aresample=44100", "aformat=sample_fmts=fltp:channel_layouts=mono"]
+def _music_chain(gain_db: float, length: float | None = None, fade_in: float = 0.5, fade_out: float = 3.0,
+                 layout: str = "mono") -> str:
+    parts = ["aresample=44100", f"aformat=sample_fmts=fltp:channel_layouts={layout}"]
     if length:
         parts.append(f"atrim=0:{length:.3f}")
     parts.append(f"volume={gain_db:.2f}dB")
@@ -548,7 +602,8 @@ def add_music(src: Path, dst: Path, settings: ExportSettings, kind: str, first: 
     current = src
     offset = 0.0
     step = 0
-    voice_fmt = "aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono"
+    layout = "stereo" if audio.channels_of(src) == 2 else "mono"
+    voice_fmt = f"aresample=44100,aformat=sample_fmts=fltp:channel_layouts={layout}"
 
     def next_path() -> Path:
         nonlocal step
@@ -559,7 +614,7 @@ def add_music(src: Path, dst: Path, settings: ExportSettings, kind: str, first: 
         dur = audio.duration_of(current)
         gain = voice_db + settings.background_level_db - _level_db(bg)
         out = next_path()
-        graph = (f"[1:a]{_music_chain(gain, dur, 2.0, 3.0)}[m];[0:a]{voice_fmt},asplit=2[v1][v2];"
+        graph = (f"[1:a]{_music_chain(gain, dur, 2.0, 3.0, layout)}[m];[0:a]{voice_fmt},asplit=2[v1][v2];"
                  f"[m][v2]sidechaincompress=threshold=0.04:ratio=5:attack=40:release=600[duck];"
                  f"[v1][duck]amix=inputs=2:duration=first:normalize=0[out]")
         ffmpeg.run_ffmpeg(["-i", str(current), "-stream_loop", "-1", "-i", str(bg), "-filter_complex", graph,
@@ -569,7 +624,7 @@ def add_music(src: Path, dst: Path, settings: ExportSettings, kind: str, first: 
         length = min(audio.duration_of(intro) or 20.0, 25.0)
         gain = voice_db - 3.0 - _level_db(intro)
         out = next_path()
-        graph = (f"[1:a]{_music_chain(gain, length, 0.3, min(3.0, length / 3))},apad=pad_dur=0.8[i];"
+        graph = (f"[1:a]{_music_chain(gain, length, 0.3, min(3.0, length / 3), layout)},apad=pad_dur=0.8[i];"
                  f"[0:a]{voice_fmt}[v];[i][v]concat=n=2:v=0:a=1[out]")
         ffmpeg.run_ffmpeg(["-i", str(current), "-i", str(intro), "-filter_complex", graph, "-map", "[out]",
                            "-c:a", "pcm_f32le", str(out)], None, None, cancel)
@@ -579,7 +634,7 @@ def add_music(src: Path, dst: Path, settings: ExportSettings, kind: str, first: 
         length = min(audio.duration_of(outro) or 30.0, 40.0)
         gain = voice_db - 3.0 - _level_db(outro)
         out = next_path()
-        graph = (f"[0:a]{voice_fmt},apad=pad_dur=0.6[v];[1:a]{_music_chain(gain, length, 1.0, min(4.0, length / 3))}[o];"
+        graph = (f"[0:a]{voice_fmt},apad=pad_dur=0.6[v];[1:a]{_music_chain(gain, length, 1.0, min(4.0, length / 3), layout)}[o];"
                  f"[v][o]concat=n=2:v=0:a=1[out]")
         ffmpeg.run_ffmpeg(["-i", str(current), "-i", str(outro), "-filter_complex", graph, "-map", "[out]",
                            "-c:a", "pcm_f32le", str(out)], None, None, cancel)

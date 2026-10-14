@@ -168,10 +168,12 @@ class ProductionPage(Page):
         self.breaths.addItem("Naturelles", "natural")
         self.breaths.setToolTip("Légère respiration dans certains silences entre les phrases, comme une vraie "
                                 "voix humaine")
+        self.p_overlap = self._ms_spin(100, 1500)
+        self.p_overlap.setToolTip("Durée du chevauchement (balise « [par-dessus] » ou réaction automatique)")
         rows = [("Vitesse de lecture", self.speed), ("Pause entre phrases", self.p_sentence),
                 ("Pause entre paragraphes", self.p_para), ("Pause après un titre", self.p_head),
                 ("Silence en début d'épisode", self.p_start), ("Silence en fin d'épisode", self.p_end),
-                ("Respirations", self.breaths)]
+                ("Respirations", self.breaths), ("Chevauchement des réactions", self.p_overlap)]
         for i, (t, w) in enumerate(rows):
             g.addWidget(label(t, "Muted"), i, 0)
             g.addWidget(w, i, 1)
@@ -181,21 +183,23 @@ class ProductionPage(Page):
                                   "variation pour éviter un rythme mécanique, 2 s aux changements de scène (***)")
         self.t_announce = ToggleSwitch("Annoncer le titre de chaque épisode")
         self.t_announce_num = ToggleSwitch("… précédé de son numéro (« Épisode 3. »)")
+        self.t_stereo = ToggleSwitch("Stéréo : chaque intervenant à sa place (gauche, droite), comme en studio")
+        self.t_overlap = ToggleSwitch("Réactions courtes (« Ah oui ! ») lancées par-dessus la fin de la réplique")
         self.t_numbers = ToggleSwitch("Lire nombres, dates et heures en toutes lettres")
         self.t_abbr = ToggleSwitch("Développer les abréviations (M., Dr, etc.)")
         self.t_trim = ToggleSwitch("Uniformiser les silences des voix")
         self.t_asr = ToggleSwitch("Relecture automatique par l'IA (Whisper)")
         self.t_asr.setToolTip("Réécoute les passages des voix neuronales et refait ceux où des mots manquent")
-        for t in (self.t_natural, self.t_announce, self.t_announce_num, self.t_numbers, self.t_abbr, self.t_trim,
-                  self.t_asr):
+        for t in (self.t_stereo, self.t_overlap, self.t_natural, self.t_announce, self.t_announce_num, self.t_numbers,
+                  self.t_abbr, self.t_trim, self.t_asr):
             st.add(t)
         self.asr_hint = label("", "Hint", wrap=True)
         st.add(self.asr_hint)
-        for w in (self.speed, self.p_sentence, self.p_para, self.p_head, self.p_start, self.p_end):
+        for w in (self.speed, self.p_sentence, self.p_para, self.p_head, self.p_start, self.p_end, self.p_overlap):
             w.valueChanged.connect(self._settings_changed)
         self.breaths.currentIndexChanged.connect(self._settings_changed)
-        for t in (self.t_natural, self.t_announce, self.t_announce_num, self.t_numbers, self.t_abbr, self.t_trim,
-                  self.t_asr):
+        for t in (self.t_stereo, self.t_overlap, self.t_natural, self.t_announce, self.t_announce_num, self.t_numbers,
+                  self.t_abbr, self.t_trim, self.t_asr):
             t.toggled.connect(self._settings_changed)
         sl.addWidget(st)
         lg = Card(margins=(14, 12, 14, 12), spacing=6)
@@ -261,6 +265,9 @@ class ProductionPage(Page):
         self.breaths.setCurrentIndex(max(0, self.breaths.findData(p.breaths)))
         self.t_announce.setChecked(p.announce_chapter_titles)
         self.t_announce_num.setChecked(p.announce_episode_number)
+        self.t_stereo.setChecked(p.stereo)
+        self.t_overlap.setChecked(p.overlap_reactions)
+        self.p_overlap.setValue(p.overlap_ms)
         self.t_numbers.setChecked(p.normalize_numbers)
         self.t_abbr.setChecked(p.expand_abbreviations)
         self.t_trim.setChecked(p.trim_silence)
@@ -290,6 +297,9 @@ class ProductionPage(Page):
         p.breaths = self.breaths.currentData() or "off"
         p.announce_chapter_titles = self.t_announce.isChecked()
         p.announce_episode_number = self.t_announce_num.isChecked()
+        p.stereo = self.t_stereo.isChecked()
+        p.overlap_reactions = self.t_overlap.isChecked()
+        p.overlap_ms = self.p_overlap.value()
         p.normalize_numbers = self.t_numbers.isChecked()
         p.expand_abbreviations = self.t_abbr.isChecked()
         p.trim_silence = self.t_trim.isChecked()

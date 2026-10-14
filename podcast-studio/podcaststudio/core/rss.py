@@ -68,7 +68,7 @@ def _el(tag: str, text: str, indent: int = 4) -> str:
 
 
 def build_feed(meta: BookMetadata, episodes: list, out_dir: Path, cover: Path | None = None,
-               now: datetime | None = None) -> str:
+               now: datetime | None = None, only_due: bool = False) -> str:
     """Texte XML du flux. ``episodes`` : [(ExportItem, fichier MP3, durée en secondes)] dans l'ordre d'écoute."""
     now = now or datetime.now(timezone.utc)
     base = meta.media_base_url.strip()
@@ -77,7 +77,8 @@ def build_feed(meta: BookMetadata, episodes: list, out_dir: Path, cover: Path | 
     lang = (meta.language or "fr").split("-")[0]
     lines = ['<?xml version="1.0" encoding="UTF-8"?>',
              f'<rss version="2.0" xmlns:itunes="{ITUNES_NS}" xmlns:atom="http://www.w3.org/2005/Atom" '
-             'xmlns:content="http://purl.org/rss/1.0/modules/content/">',
+             'xmlns:content="http://purl.org/rss/1.0/modules/content/" '
+             'xmlns:podcast="https://podcastindex.org/namespace/1.0">',
              "  <channel>",
              _el("title", title),
              _el("description", summary),
@@ -112,6 +113,9 @@ def build_feed(meta: BookMetadata, episodes: list, out_dir: Path, cover: Path | 
 
     # Le plus récent en premier, comme dans tous les flux de podcast. Sans date, les épisodes sont espacés
     # d'une semaine en remontant depuis aujourd'hui, dans l'ordre de la liste.
+    if only_due:  # épisodes programmés plus tard : absents du flux jusqu'à leur date
+        today = now.strftime("%Y-%m-%d")
+        episodes = [e for e in episodes if not e[0].pub_date or e[0].pub_date[:10] <= today]
     count = len(episodes)
     for pos, (it, mp3, duration) in reversed(list(enumerate(episodes))):
         fallback = now - timedelta(days=7 * (count - 1 - pos))
@@ -127,6 +131,11 @@ def build_feed(meta: BookMetadata, episodes: list, out_dir: Path, cover: Path | 
         lines.append(f"      <content:encoded><![CDATA[{_cdata(desc)}]]></content:encoded>")
         lines.append(_el("itunes:summary", desc, 6))
         lines.append(f'      <enclosure url="{escape(media_url(base, rel))}" length="{size}" type="audio/mpeg"/>')
+        chap = mp3.with_suffix(".chapters.json")
+        if chap.exists():
+            crel = f"{chap.parent.name}/{chap.name}" if chap.parent != out_dir else chap.name
+            lines.append(f'      <podcast:chapters url="{escape(media_url(base, crel))}" '
+                         'type="application/json+chapters"/>')
         lines.append(f'      <guid isPermaLink="false">{escape(it.id or mp3.stem)}</guid>')
         lines.append(_el("pubDate", rfc822(it.pub_date, fallback), 6))
         lines.append(_el("itunes:duration", hms(duration), 6))
@@ -147,8 +156,9 @@ def _cdata(text: str) -> str:
     return body.replace("]]>", "]]&gt;")
 
 
-def write_feed(meta: BookMetadata, episodes: list, target: Path, cover: Path | None = None) -> Path:
-    target.write_text(build_feed(meta, episodes, target.parent, cover), encoding="utf-8")
+def write_feed(meta: BookMetadata, episodes: list, target: Path, cover: Path | None = None,
+               only_due: bool = False) -> Path:
+    target.write_text(build_feed(meta, episodes, target.parent, cover, only_due=only_due), encoding="utf-8")
     return target
 
 

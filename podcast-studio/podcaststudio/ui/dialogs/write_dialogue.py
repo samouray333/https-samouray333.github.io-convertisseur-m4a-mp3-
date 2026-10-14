@@ -60,6 +60,15 @@ class WriteDialogueDialog(QDialog):
         row = QHBoxLayout()
         row.setSpacing(14)
         left = QVBoxLayout()
+        ur = QHBoxLayout()
+        self.url = QLineEdit()
+        self.url.setPlaceholderText("Adresse d'un article ou d'une page web (facultatif) : https://…")
+        self.url.returnPressed.connect(self.fetch_url)
+        self.fetch_btn = button("Récupérer l'article", "globe")
+        self.fetch_btn.clicked.connect(self.fetch_url)
+        ur.addWidget(self.url, 1)
+        ur.addWidget(self.fetch_btn)
+        left.addLayout(ur)
         left.addWidget(label("Sujet, plan ou notes de l'épisode", "Muted"))
         self.notes = QPlainTextEdit()
         self.notes.setPlaceholderText("Exemple : les bienfaits de la marche à pied. 1) pourquoi c'est bon pour le "
@@ -140,6 +149,28 @@ class WriteDialogueDialog(QDialog):
         self.key.clear()
         self.key_card.hide()
         self.ctx.toast("Clé DeepSeek enregistrée.", "success")
+
+    def fetch_url(self) -> None:
+        url = self.url.text().strip()
+        if not url:
+            return
+        from ...core import web
+
+        self.fetch_btn.setEnabled(False)
+        self.status.setText("Récupération de la page…")
+
+        def done(res):
+            self.fetch_btn.setEnabled(True)
+            title, text = res
+            self.notes.setPlainText(f"Transforme cet article en épisode (cite la source : {url}).\n\n"
+                                    f"# {title}\n\n{text}")
+            self.status.setText(f"Article récupéré ({len(text.split())} mots). Cliquez sur « Écrire le dialogue ».")
+
+        def fail(msg, _tb):
+            self.fetch_btn.setEnabled(True)
+            self.status.setText(msg)
+
+        self._fetch_task = tasks.run(web.fetch_article, url, on_done=done, on_error=fail)
 
     def _participants(self) -> list[tuple[str, str, str]]:
         chosen = []

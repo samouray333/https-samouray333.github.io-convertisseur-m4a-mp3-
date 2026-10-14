@@ -47,6 +47,14 @@ def read_audio(path: str | Path, target_sr: int | None = None) -> tuple[np.ndarr
     return mono, sr
 
 
+def channels_of(path: str | Path) -> int:
+    """Nombre de canaux d'un fichier (1 si illisible) : 2 pour un podcast en stéréo."""
+    try:
+        return max(1, min(2, sf.info(str(path)).channels))
+    except Exception:
+        return 1
+
+
 def write_audio(path: str | Path, data: np.ndarray, sr: int, subtype: str | None = None) -> Path:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -260,7 +268,7 @@ class AudioStats:
     def acx_checks(self) -> dict[str, tuple[bool, str]]:
         """Critères techniques d'un podcast (≈ -16 LUFS, recommandations Apple Podcasts et Spotify)."""
         return {
-            "rms": (-21.0 <= self.rms_db <= -13.0, f"RMS {self.rms_db:.1f} dB (attendu : -21 à -13 dB)"),
+            "rms": (-23.0 <= self.rms_db <= -13.0, f"RMS {self.rms_db:.1f} dB (attendu : -23 à -13 dB)"),
             "peak": (self.peak_db <= -1.0, f"Crête {self.peak_db:.1f} dB (maximum : -1 dB)"),
             "noise": (self.noise_floor_db <= -50.0, f"Bruit de fond {self.noise_floor_db:.1f} dB (maximum : -50 dB)"),
             "length": (self.duration <= 4 * 3600, f"Durée {self.duration / 60:.1f} min (maximum conseillé : 4 h)"),
