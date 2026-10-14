@@ -166,6 +166,18 @@ def run_selftest(report_path: Path) -> int:
         assert "Louis quatorze" in out, out
         return out
 
+    @check("balises de langue et voix natives")
+    def _():
+        from .core import languages
+        from .core.textproc import parse_script
+
+        items = [i for i in parse_script("Le mot [es-MX]gato[/es] veut dire chat.\n\n[ja] ありがとう", split=True)
+                 if i.kind == "para"]
+        assert [i.lang for i in items] == ["", "es-MX", "", "ja"], items
+        assert len(languages.LANGUAGES) >= 75 and languages.pick_voice("ja").startswith("native:edge:ja-JP")
+        n = sum(len(v) for v in languages.EDGE_CATALOG.values())
+        return f"{len(languages.LANGUAGES)} langues, {len(languages.EDGE_CATALOG)} accents, {n} voix"
+
     project_holder: dict = {}
 
     @check("production et assemblage")

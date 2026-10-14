@@ -18,5 +18,13 @@ Deux applications de la même famille, chacune avec son dossier, ses couleurs, s
   voix du professeur, pauses de réflexion, résumés et quiz audio de fin de leçon, export par module.
   Versions publiées avec les tags `lecon-v*`.
 
-Les trois applications partagent les moteurs IA, les modèles, les voix clonées et la clé DeepSeek
+## 🌍 Polyglotte Studio
+
+[`polyglotte-studio/`](polyglotte-studio/README.md) — **Polyglotte Studio** (bleu et or) : apprendre les langues à
+l'écoute, ~80 langues et leurs accents avec des voix natives gratuites, balises de langue `[es]…[/es]` dans le script,
+leçons écrites par DeepSeek par niveau (A1 à C2) et par thème, exercices « écoutez puis répétez », traduction
+différée et dictée, révisions espacées (J+1 à J+30), export MP3, flashcards, support écrit et Anki.
+Versions publiées avec les tags `polyglotte-v*`.
+
+Les quatre applications partagent les moteurs IA, les modèles, les voix clonées et la clé DeepSeek
 (`%LOCALAPPDATA%\AudioLivreStudio`) : un moteur installé dans l'une est disponible dans les autres.
