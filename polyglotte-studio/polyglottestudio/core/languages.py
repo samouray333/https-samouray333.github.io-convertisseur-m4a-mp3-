@@ -565,3 +565,41 @@ def describe(code: str | None) -> dict:
 
 def catalog_json() -> str:
     return json.dumps([describe(lang.code) for lang in _LANGS], ensure_ascii=False)
+
+
+# Bonjour dans chaque langue (aperçu des voix natives)
+HELLO = {
+    "en": "Hello! Nice to meet you.", "es": "¡Hola! Encantado de conocerte.", "pt": "Olá! Muito prazer.",
+    "de": "Hallo! Schön, dich kennenzulernen.", "it": "Ciao! Piacere di conoscerti.", "fr": "Bonjour ! Enchanté.",
+    "nl": "Hallo! Leuk je te ontmoeten.", "sv": "Hej! Trevligt att träffas.", "nb": "Hei! Hyggelig å møte deg.",
+    "da": "Hej! Rart at møde dig.", "fi": "Hei! Hauska tavata.", "is": "Halló! Gaman að kynnast þér.",
+    "pl": "Cześć! Miło cię poznać.", "cs": "Ahoj! Rád tě poznávám.", "sk": "Ahoj! Teší ma.",
+    "hu": "Szia! Örülök, hogy megismerhetlek.", "ro": "Bună! Încântat de cunoștință.", "bg": "Здравей! Приятно ми е.",
+    "el": "Γεια σου! Χαίρω πολύ.", "hr": "Bok! Drago mi je.", "sr": "Здраво! Драго ми је.", "bs": "Zdravo! Drago mi je.",
+    "sl": "Živjo! Me veseli.", "mk": "Здраво! Мило ми е.", "sq": "Përshëndetje! Gëzohem që u njohëm.",
+    "uk": "Привіт! Радий познайомитися.", "ru": "Привет! Приятно познакомиться.", "et": "Tere! Meeldiv tutvuda.",
+    "lv": "Sveiki! Prieks iepazīties.", "lt": "Labas! Malonu susipažinti.", "ca": "Hola! Encantat de conèixer-te.",
+    "eu": "Kaixo! Pozten naiz zu ezagutzeaz.", "gl": "Ola! Encantado de coñecerte.", "cy": "Helo! Braf cwrdd â chi.",
+    "ga": "Dia duit! Is deas bualadh leat.", "mt": "Bonġu! Għandi pjaċir.", "tr": "Merhaba! Tanıştığıma memnun oldum.",
+    "az": "Salam! Tanış olmağıma şadam.", "kk": "Сәлем! Танысқаныма қуаныштымын.", "uz": "Salom! Tanishganimdan xursandman.",
+    "mn": "Сайн байна уу! Танилцсандаа баяртай байна.", "ka": "გამარჯობა! სასიამოვნოა.", "hy": "Բարեւ։ Ուրախ եմ ծանոթանալ։",
+    "ar": "مرحبا! تشرفت بمعرفتك.", "he": "שלום! נעים מאוד.", "fa": "سلام! از آشنایی با شما خوشوقتم.",
+    "ps": "سلام! ستاسو په لیدو خوښ شوم.", "ur": "السلام علیکم! آپ سے مل کر خوشی ہوئی۔", "hi": "नमस्ते! आपसे मिलकर खुशी हुई।",
+    "bn": "নমস্কার! আপনার সাথে দেখা হয়ে ভালো লাগলো।", "ta": "வணக்கம்! உங்களை சந்தித்ததில் மகிழ்ச்சி.",
+    "te": "నమస్కారం! మిమ్మల్ని కలవడం ఆనందంగా ఉంది.", "mr": "नमस्कार! तुम्हाला भेटून आनंद झाला.",
+    "gu": "નમસ્તે! તમને મળીને આનંદ થયો.", "pa": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਤੁਹਾਨੂੰ ਮਿਲ ਕੇ ਖੁਸ਼ੀ ਹੋਈ।",
+    "kn": "ನಮಸ್ಕಾರ! ನಿಮ್ಮನ್ನು ಭೇಟಿಯಾಗಿ ಸಂತೋಷವಾಯಿತು.", "ml": "നമസ്കാരം! കണ്ടതിൽ സന്തോഷം.",
+    "si": "ආයුබෝවන්! ඔබව හමුවීම සතුටක්.", "ne": "नमस्ते! तपाईंलाई भेटेर खुसी लाग्यो।", "th": "สวัสดีครับ ยินดีที่ได้รู้จัก",
+    "lo": "ສະບາຍດີ! ຍິນດີທີ່ໄດ້ຮູ້ຈັກ.", "km": "សួស្តី! រីករាយដែលបានស្គាល់។", "my": "မင်္ဂလာပါ။ တွေ့ရတာ ဝမ်းသာပါတယ်။",
+    "vi": "Xin chào! Rất vui được gặp bạn.", "id": "Halo! Senang bertemu denganmu.", "ms": "Helo! Selamat berkenalan.",
+    "fil": "Kumusta! Ikinagagalak kitang makilala.", "jv": "Sugeng enjing! Seneng ketemu sampeyan.",
+    "su": "Wilujeng enjing! Bungah tepang sareng anjeun.", "zh": "你好！很高兴认识你。", "yue": "你好！好高興識到你。",
+    "ja": "こんにちは！はじめまして。", "ko": "안녕하세요! 만나서 반갑습니다.", "sw": "Habari! Nafurahi kukutana nawe.",
+    "am": "ሰላም! ስለተዋወቅን ደስ ብሎኛል።", "so": "Salaan! Waan ku faraxsanahay inaan ku barto.",
+    "zu": "Sawubona! Ngiyajabula ukukwazi.", "af": "Hallo! Aangename kennis.",
+}
+
+
+def sample_sentence(code: str | None) -> str:
+    lang = get(code)
+    return HELLO.get(lang.code, "") if lang else ""

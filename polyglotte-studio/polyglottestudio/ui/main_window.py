@@ -17,7 +17,8 @@ from ..config import settings
 from ..core import importers, project_io
 from ..core.engines import shutdown_all
 from ..core.models import Chapter, Project
-from ..core.textproc import clean_imported_text, format_duration
+from ..core import languages
+from ..core.textproc import clean_imported_text
 from . import icons, tasks, theme
 from .context import AppContext
 from .player import PlayerBar
@@ -27,12 +28,14 @@ log = logging.getLogger(__name__)
 
 NAV = [
     ("home", "Accueil", "home"),
-    ("manuscript", "Épisodes", "list"),
-    ("hosts", "Animateurs", "users"),
-    ("voices", "Voix && clonage", "mic"),
+    ("manuscript", "Leçons", "book"),
+    ("languages", "Langues && voix", "globe"),
+    ("hosts", "Intervenants", "users"),
     ("production", "Production", "wave"),
-    ("export", "Export && RSS", "rss"),
-    ("calendar", "Calendrier", "clock"),
+    ("export", "Export", "download"),
+    ("reviews", "Révisions", "clock"),
+    ("glossary", "Glossaire", "dictionary"),
+    ("voices", "Voix && clonage", "mic"),
 ]
 TOOLS = [
     ("engines", "Moteurs IA", "cpu"),
@@ -77,7 +80,7 @@ class Sidebar(QFrame):
         col = QVBoxLayout()
         col.setSpacing(0)
         col.addWidget(label("Polyglotte", "BrandTitle"))
-        col.addWidget(label("Studio de podcasts", "BrandSub"))
+        col.addWidget(label("Les langues à l'écoute", "BrandSub"))
         brand.addLayout(col, 1)
         self.menu_btn = IconButton("more", "Menu fichier", 32, 18)
         brand.addWidget(self.menu_btn)
@@ -163,24 +166,28 @@ class MainWindow(QMainWindow):
         h.addLayout(right, 1)
         self.setCentralWidget(root)
 
-        from .pages.calendar import CalendarPage
         from .pages.engines import EnginesPage
         from .pages.export import ExportPage
+        from .pages.glossary import GlossaryPage
         from .pages.home import HomePage
         from .pages.hosts import HostsPage
+        from .pages.languages import LanguagesPage
         from .pages.manuscript import ManuscriptPage
         from .pages.production import ProductionPage
+        from .pages.reviews import ReviewsPage
         from .pages.settings import SettingsPage
         from .pages.voices import VoicesPage
 
         self.pages = {
             "home": HomePage(self.ctx, self),
             "manuscript": ManuscriptPage(self.ctx),
+            "languages": LanguagesPage(self.ctx),
             "hosts": HostsPage(self.ctx),
             "voices": VoicesPage(self.ctx),
             "production": ProductionPage(self.ctx),
             "export": ExportPage(self.ctx),
-            "calendar": CalendarPage(self.ctx),
+            "reviews": ReviewsPage(self.ctx),
+            "glossary": GlossaryPage(self.ctx),
             "engines": EnginesPage(self.ctx),
             "settings": SettingsPage(self.ctx, self),
         }
@@ -247,8 +254,8 @@ class MainWindow(QMainWindow):
     def _build_menu(self) -> None:
         m = QMenu(self)
         actions = [
-            ("Nouveau podcast depuis un document…", "file-plus", "Ctrl+I", self.import_document_dialog),
-            ("Nouveau podcast", "plus", "Ctrl+N", self.new_empty_project),
+            ("Nouveau cours de langue…", "plus", "Ctrl+N", self.new_empty_project),
+            ("Nouveau cours depuis un document…", "file-plus", "Ctrl+I", self.import_document_dialog),
             ("Ouvrir un projet…", "folder", "Ctrl+O", self.open_project_dialog),
             None,
             ("Enregistrer", "save", "Ctrl+S", self.save_project),
@@ -302,7 +309,7 @@ class MainWindow(QMainWindow):
         play.setShortcutContext(Qt.ApplicationShortcut)
         play.triggered.connect(self.ctx.player.toggle)
         self.addAction(play)
-        for i, (key, _t, _i) in enumerate(NAV + TOOLS, 1):
+        for i, (key, _t, _i) in enumerate((NAV + TOOLS)[:9], 1):
             a = QAction(self)
             a.setShortcut(QKeySequence(f"Ctrl+{i}"))
             a.setShortcutContext(Qt.ApplicationShortcut)
@@ -340,13 +347,13 @@ class MainWindow(QMainWindow):
             self.sidebar.proj_title.setText(pr.display_title)
             mins = pr.estimated_minutes()
             self.sidebar.proj_info.setText(
-                f"{len(pr.included_chapters())} épisodes · {pr.word_count():,} mots · ≈ {format_duration(mins * 60)}"
-                .replace(",", " ")
+                f"{len(pr.included_chapters())} leçons · {len(pr.all_vocab())} mots et phrases · "
+                f"{languages.language_name(pr.metadata.target_language)}"
                 + (" · non enregistré" if self.ctx.dirty else "")
             )
         else:
             self.sidebar.proj_title.setText("Aucun projet")
-            self.sidebar.proj_info.setText("Importez un document Word ou PDF pour commencer.")
+            self.sidebar.proj_info.setText("Créez un cours de langue pour commencer.")
         self.sidebar.save_btn.setEnabled(has)
 
     # -- projets -----------------------------------------------------------------------
@@ -367,21 +374,55 @@ class MainWindow(QMainWindow):
     def new_empty_project(self) -> None:
         if not self.confirm_discard():
             return
-        from .dialogs.templates import TemplateDialog
+        from .dialogs.new_course import NewCourseDialog
 
-        dlg = TemplateDialog(self)
+        dlg = NewCourseDialog(self)
         if not dlg.exec():
             return
-        pr = new_podcast(self.ctx.library, dlg.selected)
+        pr = dlg.build_project()
+        setup_course(pr, self.ctx.library)
         self.ctx.set_project(pr)
         self.ctx.dirty = True
-        self.show_page("hosts")
-        self.ctx.toast(f"Podcast « {dlg.selected_name} » créé : renommez les intervenants et choisissez leurs voix, "
-                       "puis complétez le script de l'épisode.", "info", 7000)
+        if dlg.ai_plan.isChecked():
+            self._ai_course_plan(pr, dlg.modules.value(), dlg.lessons.value())
+        else:
+            self.show_page("manuscript")
+            self.ctx.toast("Cours créé : cliquez sur « Créer avec l'IA » pour écrire la première leçon, ou écrivez "
+                           "vous-même le vocabulaire et le texte.", "info", 7000)
+
+    def _ai_course_plan(self, pr: Project, modules: int, lessons: int) -> None:
+        from ..core import ai, course, lang_ai
+
+        m = pr.metadata
+
+        def work():
+            return lang_ai.course_plan(ai.client_from_settings(), m.target_language, course.explain_code(pr), m.level,
+                                       modules, lessons)
+
+        def done(plan):
+            if self.ctx.project is not pr:
+                return
+            added = lang_ai.apply_plan(pr, plan)
+            self.ctx.mark_dirty()
+            self.ctx.project_changed.emit()
+            self.show_page("manuscript")
+            self.ctx.toast(f"Plan proposé : {len(plan)} modules, {len(added)} leçons. Ouvrez une leçon et cliquez sur "
+                           "« Créer avec l'IA » pour l'écrire.", "success", 8000)
+
+        def fail(msg, _tb):
+            if self.ctx.project is pr and not pr.chapters:
+                pr.chapters = [Chapter(title="Nouvelle leçon", module="Module 1")]
+                self.ctx.project_changed.emit()
+            self.show_page("manuscript")
+            QMessageBox.warning(self, "Plan du cours", f"Le plan n'a pas pu être proposé : {msg}\n\nVous pouvez "
+                                "écrire les leçons une par une avec « Créer avec l'IA ».")
+
+        self.ctx.toast("DeepSeek prépare le plan du cours…", "info", 4000)
+        self._plan_task = tasks.run(work, on_done=done, on_error=fail)
 
     def import_document_dialog(self) -> None:
         start = str(settings().get("last_import_dir") or Path.home())
-        path, _ = QFileDialog.getOpenFileName(self, "Choisir un document à transformer en podcast", start,
+        path, _ = QFileDialog.getOpenFileName(self, "Choisir un document à transformer en cours", start,
                                               importers.FILE_FILTER)
         if path:
             self.import_document(path)
@@ -409,12 +450,15 @@ class MainWindow(QMainWindow):
         dlg = ImportPreviewDialog(doc, Path(source).name, self)
         if not dlg.exec():
             return
+        from ..core import course
+
         pr = Project(metadata=doc.metadata, source_file=source)
         for ch in doc.chapters:
             ch.text = clean_imported_text(ch.text)
-        pr.chapters = doc.chapters
+        pr.chapters = course.infer_modules(doc.chapters)
+        setup_course(pr, self.ctx.library)
         base = settings().projects_dir()
-        name = re.sub(r'[<>:"/\\|?*]', "", pr.metadata.title or Path(source).stem).strip()[:60] or "Livre"
+        name = re.sub(r'[<>:"/\\|?*]', "", pr.metadata.title or Path(source).stem).strip()[:60] or "Cours"
         folder = base / name
         n = 2
         while folder.exists() and any(folder.glob("*.plgproj")):
@@ -433,7 +477,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Enregistrement impossible", str(exc))
         self.ctx.set_project(pr)
         words = pr.word_count()
-        self.ctx.toast(f"Projet créé : {len(pr.chapters)} épisodes, {words:,} mots détectés.".replace(",", " "),
+        self.ctx.toast(f"Projet créé : {len(pr.chapters)} leçons, {words:,} mots détectés. Balisez les passages "
+                       "dans la langue apprise ([en]…[/en]).".replace(",", " "),
                        "success", 5000)
         self.show_page("manuscript")
 
@@ -533,40 +578,21 @@ class MainWindow(QMainWindow):
         Toast._reposition()
 
 
-def pick_voices(library, count: int) -> list[str]:
-    """Voix différentes pour chaque intervenant (françaises d'abord, femmes et hommes en alternance)."""
-    voices = [v for v in library.all() if v.language == "fr"] or library.all()
-    by_gender = {"F": [v for v in voices if v.gender == "F"], "M": [v for v in voices if v.gender == "M"]}
-    used: set[str] = set()
-    out = []
-    for i in range(count):
-        wanted = "F" if i % 2 == 0 else "M"
-        pool = [v for v in by_gender[wanted] + voices if v.id not in used]
-        v = pool[0] if pool else (voices[i % len(voices)] if voices else None)
-        out.append(v.id if v else "")
-        if v is not None:
-            used.add(v.id)
-    return out
+def setup_course(pr: Project, library) -> None:
+    """Voix d'explication du nouveau cours : une voix française de la bibliothèque, sinon une voix native de la
+    langue d'explication."""
+    from ..core import course, languages
 
-
-def new_podcast(library, template_key: str = "conversation") -> Project:
-    """Podcast de départ selon un modèle d'émission : intervenants aux voix différentes et premier épisode."""
-    from ..core.models import Host
-    from ..core.templates import template
-
-    tpl = template(template_key)
-    pr = Project()
-    pr.metadata.title = "Mon podcast"
-    ids = pick_voices(library, len(tpl.hosts))
-    pr.hosts = [Host(name, role, vid, bio) for (name, role, bio), vid in zip(tpl.hosts, ids)]
-    if ids and ids[0]:
-        pr.narrator_voice_id = ids[0]
-    pr.chapters = [Chapter(title=tpl.episode_title, text=tpl.script)]
-    from ..config import settings as _settings
-
-    _settings().set("podcast_style", tpl.style)
-    _settings().set("podcast_minutes", tpl.minutes)
-    return pr
+    explain = course.explain_code(pr)
+    if not pr.metadata.language:
+        pr.metadata.language = "fr"
+    own = [v for v in library.all() if v.language == explain and not languages.is_native_id(v.id)]
+    if own:
+        pr.narrator_voice_id = own[0].id
+    else:
+        pick = languages.pick_voice(explain)
+        if pick:
+            pr.narrator_voice_id = pick
 
 
 def open_path(path: Path) -> None:

@@ -64,15 +64,14 @@ class AppContext(QObject):
         self.player.play_file(path, title, start, end)
 
     def preview_voice(self, voice: VoiceProfile, text: str | None = None, on_done=None,
-                      project: Project | None = None) -> tasks.Task:
-        from ..core import renderer
+                      project: Project | None = None, language: str | None = None) -> tasks.Task:
+        from ..core import languages, renderer
 
         sample = text or settings().get("preview_sentence")
-        language = None
-        if voice.language == "en" and not text:
-            language = "en"
-            sample = ("Hello, and welcome to a brand new episode of our podcast. Once upon a time, in a small village "
-                      "by the sea, an extraordinary story began.")
+        if not text and voice.language not in ("", "fr", "multi"):
+            # voix native : une courte phrase dans sa langue
+            language = language or voice.language
+            sample = languages.sample_sentence(language) or sample
 
         def done(path):
             self.play(path, f"Aperçu — {voice.name}")

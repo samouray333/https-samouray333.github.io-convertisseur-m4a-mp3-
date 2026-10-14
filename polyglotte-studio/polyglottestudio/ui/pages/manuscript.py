@@ -1,4 +1,5 @@
-"""Page Épisodes : épisodes et éditeur de texte avec balises de mise en scène."""
+"""Page Leçons : modules et leçons, éditeur du script (balises de langue et de mise en scène), vocabulaire,
+exercices, résumé et quiz."""
 
 from __future__ import annotations
 
@@ -6,12 +7,12 @@ import re
 
 from PySide6.QtCore import QRegularExpression, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QTextDocument
-from PySide6.QtCore import QDate
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QFrame, QHBoxLayout, QInputDialog, QLineEdit,
-                               QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QSpinBox, QSplitter,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout, QInputDialog, QLineEdit,
+                               QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QSplitter,
+                               QTabWidget, QVBoxLayout, QWidget)
 
-from ...core.models import Chapter
+from ...core import course, languages, srs
+from ...core.models import LEVELS, Chapter
 from ...core.textproc import (EMOTION_ALIASES, EMOTION_LABELS, EMPHASIS_RE, RATE_ALIASES, clean_imported_text, find_characters,
                               format_duration)
 from .. import icons, theme
@@ -35,7 +36,12 @@ class ScriptHighlighter(QSyntaxHighlighter):
             return f
 
         self.rules = [
+            # balises de langue : [en], [es-MX], [/es], [/]
+            (QRegularExpression(r"\[\s*/?\s*(?:[a-zA-Z]{2,3}(?:[-_][A-Za-z0-9]{2,9}){0,2})?\s*\]"),
+             fmt(p.accent2, bold=True, bg=theme.rgba(p.accent2, 0.18))),
             (QRegularExpression(r"^#{1,6}\s.*$"), fmt(p.accent, bold=True)),
+            (QRegularExpression(r"\[\s*r[ée]flexion[^\]]*\]", QRegularExpression.CaseInsensitiveOption),
+             fmt(p.success, bold=True, bg=theme.rgba(p.success, 0.16))),
             (QRegularExpression(r"\[\s*(pause|PAUSE)[^\]]*\]"), fmt(p.info, bold=True, bg=theme.rgba(p.info, 0.12))),
             (QRegularExpression(r"\[\s*(son|bruitage|effet|virgule|jingle)\b[^\]]*\]",
                                 QRegularExpression.CaseInsensitiveOption),
@@ -138,20 +144,20 @@ class ManuscriptPage(Page):
     name = "manuscript"
 
     def __init__(self, ctx):
-        super().__init__(ctx, "Épisodes", "Écrivez le script de chaque épisode : une réplique par paragraphe, "
-                         "précédée du nom de la personne qui parle (« @Alex: »).")
+        super().__init__(ctx, "Leçons", "Vocabulaire, phrases utiles, dialogue, histoire, grammaire et exercices : "
+                         "les passages dans la langue apprise s'écrivent entre balises, « [es]¿Qué tal?[/es] ».")
         self._loading = False
         self._current: Chapter | None = None
 
         self.voice_combo_narr = QComboBox()
         self.voice_combo_narr.setMinimumWidth(240)
-        self.voice_combo_narr.setToolTip("Voix principale du podcast")
+        self.voice_combo_narr.setToolTip("Voix d'explication : lit les consignes, traductions et explications")
         self.voice_combo_narr.currentIndexChanged.connect(self._narrator_changed)
-        self.header.add_action(label("Voix principale :", "Muted"))
+        self.header.add_action(label("Voix d'explication :", "Muted"))
         self.header.add_action(self.voice_combo_narr)
-        write = button("Écrire avec l'IA", "sparkles", tooltip="DeepSeek écrit le dialogue de l'épisode à partir "
-                       "de vos notes, avec les animateurs et invités du podcast")
-        write.clicked.connect(self.write_dialogue)
+        write = button("Créer avec l'IA", "sparkles", tooltip="DeepSeek écrit la leçon selon la langue, le niveau et "
+                       "le thème : vocabulaire, phrases, dialogue, histoire, grammaire, questions et quiz")
+        write.clicked.connect(self.ai_lesson)
         self.header.add_action(write)
         lex = button("Lexique", "dictionary", tooltip="Dictionnaire de prononciation du projet")
         lex.clicked.connect(self._open_lexicon)
@@ -162,9 +168,10 @@ class ManuscriptPage(Page):
 
         import_btn = button("Importer un document", "file-plus", "primary")
         import_btn.clicked.connect(lambda: self.ctx.window.import_document_dialog())
-        self.empty = EmptyState("podcast", "Aucun épisode",
-                                "Créez un nouveau podcast depuis l'accueil, ou importez un document Word, PDF ou "
-                                "texte : chaque partie deviendra un épisode.", import_btn)
+        self.empty = EmptyState("globe", "Aucune leçon",
+                                "Créez un nouveau cours depuis l'accueil (l'assistant IA peut proposer tout le plan), "
+                                "ou importez un document Word, PDF ou texte : chaque partie deviendra une leçon.",
+                                import_btn)
         self.body.addWidget(self.empty, 1)
 
         self.split = QSplitter(Qt.Horizontal)
@@ -176,7 +183,7 @@ class ManuscriptPage(Page):
         left.setMinimumWidth(270)
         left.setMaximumWidth(420)
         tl = QHBoxLayout()
-        tl.addWidget(label("Épisodes", "SectionTitle"), 1)
+        tl.addWidget(label("Leçons", "SectionTitle"), 1)
         self.count_lbl = label("", "Faint")
         tl.addWidget(self.count_lbl)
         left.add(tl)
@@ -191,11 +198,11 @@ class ManuscriptPage(Page):
         left.add(self.list)
         tb = QHBoxLayout()
         tb.setSpacing(2)
-        for ic, tip, fn in [("plus", "Ajouter un épisode", self.add_chapter),
-                            ("trash", "Supprimer l'épisode", self.delete_chapter),
+        for ic, tip, fn in [("plus", "Ajouter une leçon", self.add_chapter),
+                            ("trash", "Supprimer la leçon", self.delete_chapter),
                             ("up", "Monter", lambda: self.move(-1)), ("down", "Descendre", lambda: self.move(1)),
                             ("layers", "Fusionner avec le suivant", self.merge_next),
-                            ("scissors", "Couper l'épisode au curseur", self.split_at_cursor)]:
+                            ("scissors", "Couper la leçon au curseur", self.split_at_cursor)]:
             b = IconButton(ic, tip, 32, 16)
             b.clicked.connect(fn)
             tb.addWidget(b)
@@ -210,62 +217,77 @@ class ManuscriptPage(Page):
         rl.setSpacing(10)
         top = QHBoxLayout()
         self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Titre de l'épisode")
+        self.title_edit.setPlaceholderText("Titre de la leçon")
         self.title_edit.setStyleSheet("font-size: 15pt; font-weight: 700; padding: 8px 12px;")
         self.title_edit.textEdited.connect(self._title_changed)
         top.addWidget(self.title_edit, 1)
         self.chapter_voice = QComboBox()
         self.chapter_voice.setMinimumWidth(220)
-        self.chapter_voice.setToolTip("Voix utilisée pour cet épisode")
+        self.chapter_voice.setToolTip("Voix d'explication de cette leçon")
         self.chapter_voice.currentIndexChanged.connect(self._chapter_voice_changed)
         top.addWidget(self.chapter_voice)
         rl.addLayout(top)
 
-        # ---- informations de l'épisode (étiquettes MP3 et flux RSS)
-        info = QFrame()
-        info.setObjectName("CardFlat")
-        il = QVBoxLayout(info)
-        il.setContentsMargins(12, 8, 12, 8)
-        il.setSpacing(6)
-        ir = QHBoxLayout()
-        ir.setSpacing(8)
-        self.ep_number = QSpinBox()
-        self.ep_number.setRange(0, 9999)
-        self.ep_number.setSpecialValueText("auto")
-        self.ep_number.setPrefix("n° ")
-        self.ep_number.setToolTip("Numéro de l'épisode (auto : selon sa place dans la liste)")
-        self.ep_season = QSpinBox()
-        self.ep_season.setRange(0, 99)
-        self.ep_season.setSpecialValueText("—")
-        self.ep_season.setPrefix("saison ")
-        self.ep_type = QComboBox()
-        for key, text in (("full", "Épisode"), ("trailer", "Bande-annonce"), ("bonus", "Bonus")):
-            self.ep_type.addItem(text, key)
-        self.ep_date = QDateEdit()
-        self.ep_date.setCalendarPopup(True)
-        self.ep_date.setDisplayFormat("dd/MM/yyyy")
-        self.ep_date.setSpecialValueText("date : non fixée")
-        self.ep_date.setMinimumDate(QDate(2000, 1, 1))
-        self.ep_date.setToolTip("Date de publication (flux RSS)")
-        self.ep_date_clear = IconButton("x", "Retirer la date", 28, 14)
-        self.ep_date_clear.clicked.connect(lambda: self.ep_date.setDate(self.ep_date.minimumDate()))
-        notes_btn = button("Notes d'épisode IA", "sparkles", tooltip="DeepSeek propose un titre et une description "
-                           "à partir du script")
-        notes_btn.clicked.connect(self.ai_episode_notes)
-        for w in (label("Épisode", "Muted"), self.ep_number, self.ep_season, self.ep_type, self.ep_date,
-                  self.ep_date_clear):
-            ir.addWidget(w)
-        ir.addStretch(1)
-        ir.addWidget(notes_btn)
-        il.addLayout(ir)
-        self.ep_desc = QPlainTextEdit()
-        self.ep_desc.setPlaceholderText("Description de l'épisode (notes affichées dans les applications de podcast)")
-        self.ep_desc.setMaximumHeight(64)
-        il.addWidget(self.ep_desc)
-        for sig in (self.ep_number.valueChanged, self.ep_season.valueChanged, self.ep_type.currentIndexChanged,
-                    self.ep_date.dateChanged, self.ep_desc.textChanged):
-            sig.connect(self._episode_info_changed)
-        rl.addWidget(info)
+        # ---- module, langue, niveau, thème
+        mr = QHBoxLayout()
+        mr.setSpacing(8)
+        mr.addWidget(label("Module", "Muted"))
+        self.module_combo = QComboBox()
+        self.module_combo.setEditable(True)
+        self.module_combo.setMinimumWidth(240)
+        self.module_combo.setToolTip("Module de la leçon : choisissez-en un ou tapez un nouveau titre")
+        self.module_combo.lineEdit().setPlaceholderText("Hors module — ex. « Module 1 : Premiers pas »")
+        self.module_combo.lineEdit().editingFinished.connect(self._module_changed)
+        self.module_combo.activated.connect(lambda _i: self._module_changed())
+        mr.addWidget(self.module_combo, 1)
+        group = button("Modules", "layers", tooltip="Regrouper les leçons en modules (IA ou par nombre)")
+        gm = QMenu(self)
+        gm.addAction(icons.icon("sparkles", theme.CURRENT.text, 16), "Proposition de l'assistant IA…",
+                     self.ai_modules)
+        gm.addAction(icons.icon("layers", theme.CURRENT.text, 16), "Par nombre de leçons…", self.group_by_count)
+        gm.addAction(icons.icon("edit", theme.CURRENT.text, 16), "Renommer ce module…", self.rename_module)
+        gm.addAction(icons.icon("x", theme.CURRENT.text, 16), "Retirer les modules", self.clear_modules)
+        group.setMenu(gm)
+        mr.addWidget(group)
+        self.lang_combo = QComboBox()
+        self.lang_combo.setToolTip("Langue apprise dans cette leçon (par défaut : celle du cours)")
+        self.lang_combo.currentIndexChanged.connect(self._lesson_meta_changed)
+        mr.addWidget(self.lang_combo)
+        self.level_combo = QComboBox()
+        self.level_combo.addItem("Niveau du cours", "")
+        for lv in LEVELS:
+            self.level_combo.addItem(lv, lv)
+        self.level_combo.currentIndexChanged.connect(self._lesson_meta_changed)
+        mr.addWidget(self.level_combo)
+        self.theme_edit = QLineEdit()
+        self.theme_edit.setPlaceholderText("Thème (restaurant, voyage…)")
+        self.theme_edit.setMaximumWidth(200)
+        self.theme_edit.editingFinished.connect(self._lesson_meta_changed)
+        mr.addWidget(self.theme_edit)
+        self.studied_btn = button("Étudiée", "check", tooltip="Marque la leçon comme étudiée aujourd'hui : ses mots "
+                                  "entrent dans le calendrier de révision (J+1, J+3, J+7, J+14, J+30)")
+        self.studied_btn.setCheckable(True)
+        self.studied_btn.clicked.connect(self._toggle_studied)
+        mr.addWidget(self.studied_btn)
+        rl.addLayout(mr)
+
+        from .lesson_panels import ExercisesPanel, VocabPanel
+
+        self.tabs = QTabWidget()
+        tab_text = QWidget()
+        tl1 = QVBoxLayout(tab_text)
+        tl1.setContentsMargins(0, 10, 0, 0)
+        tl1.setSpacing(10)
+        self.vocab_panel = VocabPanel(ctx)
+        self.vocab_panel.changed.connect(self._panel_changed)
+        self.vocab_panel.listen_requested.connect(self._listen_item)
+        self.ex_panel = ExercisesPanel(ctx)
+        self.ex_panel.changed.connect(self._panel_changed)
+        self.tabs.addTab(self.vocab_panel, icons.icon("dictionary", theme.CURRENT.muted, 16), "Vocabulaire et phrases")
+        self.tabs.addTab(tab_text, icons.icon("book", theme.CURRENT.muted, 16), "Texte de la leçon")
+        self.tabs.addTab(self.ex_panel, icons.icon("help-circle", theme.CURRENT.muted, 16),
+                         "Exercices, résumé et quiz")
+        self.tabs.setCurrentIndex(1)
 
         bar = QHBoxLayout()
         bar.setSpacing(6)
@@ -331,32 +353,52 @@ class ManuscriptPage(Page):
         listen.clicked.connect(self.listen_selection)
         find = IconButton("search", "Rechercher / remplacer (Ctrl+F)", 36, 18)
         find.clicked.connect(self.toggle_find)
-        heading.hide()  # « # Rubrique » s'écrit directement ; place gagnée pour les outils du podcast
+        think = button("Réflexion", "lightbulb", tooltip="Pause de réflexion après une question posée à l'auditeur "
+                       "(durée réglée dans Production, ou [réflexion 10s])")
+        tm = QMenu(self)
+        tm.addAction("Pause de réflexion (durée par défaut)", lambda: self.insert(" [réflexion]"))
+        for sec in (5, 10, 20, 30):
+            tm.addAction(f"Pause de réflexion de {sec} s", lambda sec=sec: self.insert(f" [réflexion {sec}s]"))
+        tm.addSeparator()
+        tm.addAction(icons.icon("sparkles", theme.CURRENT.text, 16), "Proposées par l'assistant IA…",
+                     self.ai_reflections)
+        think.setMenu(tm)
+        self.lang_btn = button("Langue", "globe", "primary", tooltip="Passage lu par une voix native : entoure la "
+                               "sélection d'une balise de langue, « [es]…[/es] », ou l'ajoute en tête du paragraphe")
+        self.lang_menu = QMenu(self)
+        self.lang_menu.aboutToShow.connect(self._fill_lang_menu)
+        self.lang_btn.setMenu(self.lang_menu)
+        heading.hide()  # « # Rubrique » s'écrit directement ; place gagnée pour les outils
         for b, tip in ((clean, "Nettoyer le texte importé"), (pause, "Insérer une pause [pause 1s]"),
-                       (preview, "Aperçu de lecture")):
+                       (preview, "Aperçu de lecture"), (think, "Pause de réflexion"), (self.emo_btn, "Émotion"),
+                       (self.rate_btn, "Débit")):
             b.setText("")  # icône seule (info-bulle) : de la place pour Son, Studio…
             b.setFixedWidth(44)
             b.setToolTip(tip + " — " + b.toolTip() if b.toolTip() and tip not in b.toolTip() else tip)
         stress.hide()  # dans le menu Studio
         ia.setText("IA")
         ia.setToolTip("Assistant IA : " + ia.toolTip())
-        for w in (clean, pause, self.sound_btn, self.role_btn, self.emo_btn, self.rate_btn, studio, ia, preview):
+        for w in (self.lang_btn, clean, pause, think, self.sound_btn, self.role_btn, self.emo_btn, self.rate_btn,
+                  studio, ia, preview):
             bar.addWidget(w)
         bar.addStretch(1)
         bar.addWidget(find)
         bar.addWidget(listen)
-        rl.addLayout(bar)
+        tl1.addLayout(bar)
 
         self.editor = QPlainTextEdit()
         self.editor.setObjectName("Editor")
-        self.editor.setPlaceholderText("Le texte de l'épisode…")
+        self.editor.setPlaceholderText("Le texte de la leçon : dialogue, petite histoire, grammaire…\n\n"
+                                       "@Maria: [es] Hola, ¿qué tal?\nBonjour, comment ça va ?\n\n"
+                                       "Le mot [es]gracias[/es] veut dire merci.")
         self.editor.setLineWrapMode(QPlainTextEdit.WidgetWidth)
         self.editor.textChanged.connect(self._text_changed)
         self.highlighter = ScriptHighlighter(self.editor.document())
         self.find_bar = FindBar(self.editor, lambda m: self.ctx.toast(m, "success"))
         self.find_bar.hide()
-        rl.addWidget(self.find_bar)
-        rl.addWidget(self.editor, 1)
+        tl1.addWidget(self.find_bar)
+        tl1.addWidget(self.editor, 1)
+        rl.addWidget(self.tabs, 1)
         from PySide6.QtGui import QShortcut, QKeySequence
 
         QShortcut(QKeySequence("Ctrl+F"), self.editor, activated=self.toggle_find)
@@ -364,8 +406,8 @@ class ManuscriptPage(Page):
         status = QHBoxLayout()
         self.stats = label("", "Hint")
         status.addWidget(self.stats, 1)
-        self.help = label("Astuces : « @Alex: réplique », « [par-dessus] », « [son: applaudissements] », « [virgule] », "
-                          "« [chapitre: Titre] », « [pause 2s] », « [joyeux] », « %% note »", "Faint")
+        self.help = label("Astuces : « [es]mot[/es] », « [ja] phrase », « @Maria: réplique », « [ralenti] », "
+                          "« [réflexion] », « [pause 2s] », « [son: ding] », « %% note »", "Faint")
         status.addWidget(self.help)
         rl.addLayout(status)
         self.split.addWidget(right)
@@ -415,14 +457,17 @@ class ManuscriptPage(Page):
             ch = pr.chapter_by_id(it.data(Qt.UserRole))
             if ch is None:
                 continue
-            words = ch.word_count()
-            num = pr.episode_number(ch)
-            head = {"trailer": "Bande-annonce", "bonus": "Bonus"}.get(ch.episode_type, f"Épisode {num}")
-            it.setText(f"{head} · {ch.title}\n{words:,} mots · ≈ {format_duration(words / 155 * 60)}"
-                       .replace(",", " "))
+            num = pr.lesson_number(ch) if ch.include else 0
+            head = f"Leçon {num} · {ch.title}" if num else ch.title
+            code, _loc = pr.target_of(ch)
+            extra = [f"{len(ch.words())} mots" if ch.words() else "", f"{len(ch.phrases())} phrases"
+                     if ch.phrases() else "", f"quiz {len(ch.quiz)}" if ch.quiz else "",
+                     "étudiée ✓" if ch.id in pr.studied else ""]
+            it.setText(f"{head}\n{ch.module or 'Hors module'} · {languages.language_name(code)}\n"
+                       + (" · ".join(x for x in extra if x) or "à écrire"))
             it.setCheckState(Qt.Checked if ch.include else Qt.Unchecked)
             it.setForeground(QColor(theme.CURRENT.text if ch.include else theme.CURRENT.faint))
-            it.setToolTip("Décochez pour exclure cet épisode du podcast")
+            it.setToolTip("Décochez pour exclure cette leçon du cours audio")
         self._loading = False
         inc = pr.included_chapters()
         self.count_lbl.setText(f"{len(inc)}/{len(pr.chapters)}")
@@ -432,7 +477,7 @@ class ManuscriptPage(Page):
         voices = self.ctx.library.all()
         for combo, current, first in ((self.voice_combo_narr, pr.narrator_voice_id, None),
                                       (self.chapter_voice, self._current.voice_id if self._current else "",
-                                       "Voix principale")):
+                                       "Voix d'explication du cours")):
             combo.blockSignals(True)
             combo.clear()
             if first:
@@ -469,29 +514,65 @@ class ManuscriptPage(Page):
         self.editor.setPlainText(ch.text if ch else "")
         idx = self.chapter_voice.findData(ch.voice_id if ch else "")
         self.chapter_voice.setCurrentIndex(max(0, idx))
-        self._load_episode_info(ch)
+        self._load_lesson_extras(ch)
         self._loading = False
         self._update_stats()
 
-    def _load_episode_info(self, ch: Chapter | None) -> None:
-        self.ep_number.setValue(ch.number if ch else 0)
-        self.ep_season.setValue(ch.season if ch else 0)
-        self.ep_type.setCurrentIndex(max(0, self.ep_type.findData(ch.episode_type if ch else "full")))
-        d = QDate.fromString(ch.pub_date, "yyyy-MM-dd") if ch and ch.pub_date else QDate()
-        self.ep_date.setDate(d if d.isValid() else self.ep_date.minimumDate())
-        self.ep_desc.setPlainText(ch.description if ch else "")
+    def _load_lesson_extras(self, ch: Chapter | None) -> None:
+        self._fill_modules()
+        pr = self.ctx.project
+        self.lang_combo.blockSignals(True)
+        self.lang_combo.clear()
+        self.lang_combo.addItem(f"Langue du cours ({languages.language_name(pr.metadata.target_language)})", "")
+        for lang in languages.sorted_languages():
+            self.lang_combo.addItem(lang.name, lang.code)
+        self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(ch.target_language if ch else "")))
+        self.lang_combo.blockSignals(False)
+        self.level_combo.blockSignals(True)
+        self.level_combo.setCurrentIndex(max(0, self.level_combo.findData(ch.level if ch else "")))
+        self.level_combo.blockSignals(False)
+        self.theme_edit.setText(ch.theme if ch else "")
+        self.studied_btn.setChecked(bool(ch and ch.id in pr.studied))
+        self.studied_btn.setText(f"Étudiée le {pr.studied[ch.id][8:10]}/{pr.studied[ch.id][5:7]}"
+                                 if ch and ch.id in pr.studied else "Étudiée")
+        self.vocab_panel.load(ch)
+        self.ex_panel.load(ch)
 
-    def _episode_info_changed(self, *_a) -> None:
+    def _lesson_meta_changed(self, *_a) -> None:
         ch = self._current
         if self._loading or ch is None:
             return
-        ch.number = self.ep_number.value()
-        ch.season = self.ep_season.value()
-        ch.episode_type = self.ep_type.currentData() or "full"
-        d = self.ep_date.date()
-        ch.pub_date = "" if d == self.ep_date.minimumDate() else d.toString("yyyy-MM-dd")
-        ch.description = self.ep_desc.toPlainText().strip()
+        code = self.lang_combo.currentData() or ""
+        if code != ch.target_language:
+            ch.target_language = code
+            ch.target_locale = ""
+        ch.level = self.level_combo.currentData() or ""
+        ch.theme = " ".join(self.theme_edit.text().split())[:80]
         self.ctx.mark_dirty()
+        self.vocab_panel.load(ch)
+        self._refresh_items()
+
+    def _panel_changed(self) -> None:
+        self.ctx.mark_dirty()
+        self._refresh_items()
+
+    def _toggle_studied(self) -> None:
+        ch = self._current
+        if ch is None:
+            return
+        pr = self.ctx.project
+        if ch.id in pr.studied:
+            if QMessageBox.question(self, "Leçon étudiée", "Retirer cette leçon (et ses mots) du calendrier de "
+                                    "révision ?") == QMessageBox.Yes:
+                srs.unmark_studied(pr, ch)
+        else:
+            n = srs.mark_studied(pr, ch)
+            self.ctx.toast(f"{n} mot(s) et phrase(s) ajouté(s) aux révisions : première révision demain." if n else
+                           "Leçon notée comme étudiée (aucun nouveau mot à réviser).", "success", 5000)
+        self.ctx.mark_dirty()
+        self._loading = True
+        self._load_lesson_extras(ch)
+        self._loading = False
         self._refresh_items()
 
     def _item_changed(self, it: QListWidgetItem) -> None:
@@ -538,10 +619,14 @@ class ManuscriptPage(Page):
         words = len(text.split())
         chars = find_characters(text)
         tot = self.ctx.project
-        s = f"{words:,} mots · ≈ {format_duration(words / 155 * 60)} pour cet épisode".replace(",", " ")
-        s += f"  ·  Livre : ≈ {format_duration(tot.estimated_minutes() * 60)}"
+        s = f"{words:,} mots dans le texte".replace(",", " ")
+        tags = languages_in_text(text)
+        if tags:
+            s += "  ·  Langues : " + ", ".join(languages.locale_name(t) for t in tags[:5])
         if chars:
             s += f"  ·  Intervenants : {', '.join(chars[:6])}"
+        if tot.chapters:
+            s += f"  ·  Cours : {len(tot.chapters)} leçon(s)"
         self.stats.setText(s)
 
     # -- actions sur les chapitres -----------------------------------------------------
@@ -552,7 +637,8 @@ class ManuscriptPage(Page):
         self._commit_text()
         pr = self.ctx.project
         row = self._row() + 1 if self._row() >= 0 else len(pr.chapters)
-        pr.chapters.insert(row, Chapter(title=f"Épisode {len(pr.chapters) + 1}", text=""))
+        module = self._current.module if self._current else ""
+        pr.chapters.insert(row, Chapter(title="Nouvelle leçon", text="", module=module))
         self.ctx.mark_dirty()
         self._reload_list(row)
         self.title_edit.setFocus()
@@ -564,10 +650,13 @@ class ManuscriptPage(Page):
         if row < 0:
             return
         ch = pr.chapters[row]
-        if QMessageBox.question(self, "Supprimer l'épisode",
+        if QMessageBox.question(self, "Supprimer la leçon",
                                 f"Supprimer définitivement « {ch.title} » ?") != QMessageBox.Yes:
             return
         del pr.chapters[row]
+        for it in ch.vocab:
+            pr.reviews.pop(it.id, None)
+        pr.studied.pop(ch.id, None)
         self._current = None
         self.ctx.mark_dirty()
         self._reload_list(row)
@@ -604,9 +693,9 @@ class ManuscriptPage(Page):
         text = self.editor.toPlainText()
         before, after = text[:pos].rstrip(), text[pos:].lstrip()
         if not after:
-            self.ctx.toast("Placez le curseur à l'endroit où commence le nouvel épisode.", "warning")
+            self.ctx.toast("Placez le curseur à l'endroit où commence la nouvelle leçon.", "warning")
             return
-        title = "Nouvel épisode"
+        title = "Nouvelle leçon"
         first = after.split("\n", 1)[0].strip()
         if first.startswith("#") or (len(first) < 80 and not first.endswith((".", ",", ";"))):
             title = first.lstrip("#").strip() or title
@@ -614,19 +703,25 @@ class ManuscriptPage(Page):
         pr = self.ctx.project
         row = self._row()
         self._current.text = before
-        pr.chapters.insert(row + 1, Chapter(title=title, text=after, voice_id=self._current.voice_id))
+        pr.chapters.insert(row + 1, Chapter(title=title, text=after, voice_id=self._current.voice_id,
+                                            module=self._current.module))
         self.ctx.mark_dirty()
         self._reload_list(row + 1)
 
     def _list_menu(self, pos) -> None:
         m = QMenu(self)
-        m.addAction(icons.icon("plus", theme.CURRENT.text, 16), "Ajouter un épisode", self.add_chapter)
-        m.addAction(icons.icon("podcast", theme.CURRENT.text, 16), "Nouvel épisode depuis un modèle…",
-                    self.add_from_template)
+        m.addAction(icons.icon("plus", theme.CURRENT.text, 16), "Ajouter une leçon", self.add_chapter)
+        m.addAction(icons.icon("sparkles", theme.CURRENT.text, 16), "Créer la leçon avec l'IA…", self.ai_lesson)
         m.addAction(icons.icon("layers", theme.CURRENT.text, 16), "Fusionner avec le suivant", self.merge_next)
         m.addAction(icons.icon("scissors", theme.CURRENT.text, 16), "Découper aux intertitres (#)",
                     self.split_on_headings)
         m.addAction(icons.icon("edit", theme.CURRENT.text, 16), "Renommer…", self.rename)
+        m.addSeparator()
+        m.addAction(icons.icon("sparkles", theme.CURRENT.text, 16), "Organiser en modules (assistant IA)…",
+                    self.ai_modules)
+        m.addAction(icons.icon("layers", theme.CURRENT.text, 16), "Organiser en modules par nombre de leçons…",
+                    self.group_by_count)
+        m.addAction(icons.icon("edit", theme.CURRENT.text, 16), "Renommer le module…", self.rename_module)
         m.addSeparator()
         m.addAction(icons.icon("check", theme.CURRENT.text, 16), "Tout inclure", lambda: self._include_all(True))
         m.addAction(icons.icon("x", theme.CURRENT.text, 16), "Tout exclure", lambda: self._include_all(False))
@@ -643,7 +738,7 @@ class ManuscriptPage(Page):
     def rename(self) -> None:
         if self._current is None:
             return
-        name, ok = QInputDialog.getText(self, "Renommer", "Titre de l'épisode :", text=self._current.title)
+        name, ok = QInputDialog.getText(self, "Renommer", "Titre de la leçon :", text=self._current.title)
         if ok and name.strip():
             self._current.title = name.strip()
             self.title_edit.setText(self._current.title)
@@ -656,14 +751,15 @@ class ManuscriptPage(Page):
         self._commit_text()
         parts = re.split(r"(?m)^#\s+(.+)$", self._current.text)
         if len(parts) < 3:
-            self.ctx.toast("Aucun intertitre « # » trouvé dans cet épisode.", "warning")
+            self.ctx.toast("Aucun intertitre « # » trouvé dans cette leçon.", "warning")
             return
         pr = self.ctx.project
         row = self._row()
         head = parts[0].strip()
         new = []
         for i in range(1, len(parts), 2):
-            new.append(Chapter(title=parts[i].strip(), text=parts[i + 1].strip(), voice_id=self._current.voice_id))
+            new.append(Chapter(title=parts[i].strip(), text=parts[i + 1].strip(), voice_id=self._current.voice_id,
+                               module=self._current.module))
         if head:
             self._current.text = head
             pr.chapters[row + 1:row + 1] = new
@@ -671,7 +767,7 @@ class ManuscriptPage(Page):
             pr.chapters[row:row + 1] = new
         self.ctx.mark_dirty()
         self._reload_list(row)
-        self.ctx.toast(f"{len(new)} épisodes créés", "success")
+        self.ctx.toast(f"{len(new)} leçons créées", "success")
 
     # -- actions sur le texte ----------------------------------------------------------
     def insert(self, snippet: str) -> None:
@@ -697,7 +793,7 @@ class ManuscriptPage(Page):
         if names:
             self.role_menu.addSeparator()
         self.role_menu.addAction(icons.icon("plus", theme.CURRENT.text, 16), "Nouvel intervenant…", self._new_role)
-        self.role_menu.addAction(icons.icon("users", theme.CURRENT.text, 16), "Gérer les animateurs…",
+        self.role_menu.addAction(icons.icon("users", theme.CURRENT.text, 16), "Gérer les intervenants…",
                                  lambda: self.ctx.navigate("hosts"))
 
     def _tag_emotion(self, emotion: str) -> None:
@@ -816,24 +912,90 @@ class ManuscriptPage(Page):
         if not text:
             self.ctx.toast("Sélectionnez un passage à écouter.", "warning")
             return
-        from ...core.textproc import CHARACTER_LINE_RE
+        from ...core import renderer
+        from ...core.textproc import parse_script, strip_language_tags
 
-        voice = None
-        m = CHARACTER_LINE_RE.match(text)
-        if m:
-            host = self.ctx.project.host_by_name(m.group(1))
-            vid = host.voice_id if host and host.voice_id else next(
-                (v for k, v in self.ctx.project.cast.items() if k.lower() == m.group(1).strip().lower()), "")
-            voice = self.ctx.library.get(vid)
-            text = m.group(2)
-        text = re.sub(r"^#+\s*", "", text)
-        if voice is None:
-            vid = (self._current.voice_id if self._current else "") or self.ctx.project.narrator_voice_id
-            voice = self.ctx.library.get(vid) or (self.ctx.library.all() or [None])[0]
-        if voice is None:
-            self.ctx.toast("Aucune voix disponible.", "error")
+        items = [i for i in parse_script(text, split=True) if i.kind == "para"]
+        if not items:
+            self.ctx.toast("Rien à lire dans la sélection.", "warning")
             return
-        self.ctx.preview_voice(voice, text)
+        resolver = renderer.VoiceResolver(self.ctx.project, self.ctx.library)
+        # la voix du premier passage dans une autre langue que l'explication, sinon celle du premier passage
+        first = next((i for i in items if i.lang or i.voice_key), items[0])
+        voice, lang = resolver.resolve_item(first.voice_key, first.lang, self._current)
+        if len(items) > 1 and any(i.lang != first.lang or i.voice_key != first.voice_key for i in items):
+            items = [i for i in items if i.lang == first.lang and i.voice_key == first.voice_key]
+            self.ctx.toast("Plusieurs voix dans la sélection : écoute du premier passage dans cette langue.", "info")
+        spoken = strip_language_tags(" ".join(i.text for i in items))
+        self.ctx.preview_voice(voice, spoken, language=lang)
+
+    def _listen_item(self, item) -> None:
+        from ...core import course, renderer
+
+        ch = self._current
+        spec = course.target_spec(self.ctx.project, ch) if ch else self.ctx.project.metadata.target_language
+        voice = renderer.VoiceResolver(self.ctx.project, self.ctx.library).native(spec, ch)
+        self.ctx.preview_voice(voice, item.term, language=spec)
+
+    # -- balises de langue -------------------------------------------------------------
+    def _fill_lang_menu(self) -> None:
+        m = self.lang_menu
+        m.clear()
+        pr = self.ctx.project
+        ch = self._current
+        spec = course.target_spec(pr, ch) if ch else pr.metadata.target_language
+        name = languages.locale_name(spec)
+        m.addAction(icons.icon("globe", theme.CURRENT.accent2, 16), f"{name} — passage sélectionné [{spec}]…[/{spec}]",
+                    lambda: self.tag_language(spec))
+        m.addAction(icons.icon("globe", theme.CURRENT.text, 16), f"{name} — tout le paragraphe [{spec}]",
+                    lambda: self.tag_language(spec, paragraph=True))
+        explain = pr.metadata.language or "fr"
+        m.addAction(icons.icon("user", theme.CURRENT.text, 16),
+                    f"Langue d'explication ({languages.language_name(explain)}) [{explain}]",
+                    lambda: self.tag_language(explain))
+        lang = languages.get(spec)
+        if lang and len(lang.locales) > 1:
+            acc = m.addMenu(icons.icon("globe", theme.CURRENT.text, 16), "Autre accent de la même langue")
+            for loc, lbl in lang.locales:
+                acc.addAction(f"{lbl} [{loc}]", lambda loc=loc: self.tag_language(loc))
+        others = m.addMenu(icons.icon("globe", theme.CURRENT.text, 16), "Autre langue")
+        for lg in languages.sorted_languages():
+            others.addAction(f"{lg.name} [{lg.code}]", lambda c=lg.code: self.tag_language(c))
+        m.addSeparator()
+        m.addAction(icons.icon("info", theme.CURRENT.text, 16), "Comment ça marche ?", self._lang_help)
+
+    def tag_language(self, spec: str, paragraph: bool = False) -> None:
+        """Entoure la sélection de [spec]…[/spec], ou place [spec] en tête du paragraphe (après « @Nom: »)."""
+        cur = self.editor.textCursor()
+        if cur.hasSelection() and not paragraph:
+            text = cur.selectedText().replace("\u2029", "\n")
+            if "\n" in text.strip():
+                cur.insertText(f"[{spec}]\n{text.strip()}\n[/{spec}]")
+            else:
+                cur.insertText(f"[{spec}]{text.strip()}[/{spec}]")
+        else:
+            cur.movePosition(QTextCursor.StartOfBlock)
+            line = cur.block().text()
+            m = re.match(r"^@[^:\n]{1,40}:\s*", line)
+            start = m.end() if m else 0
+            old = re.match(r"\[\s*[a-zA-Z]{2,3}(?:[-_][A-Za-z0-9]{2,9}){0,2}\s*\]\s*", line[start:])
+            cur.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, start)
+            if old and languages.is_language_tag(old.group(0).strip(" []")):
+                cur.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, old.end())
+            cur.insertText(f"[{spec}] ")
+        self.editor.setFocus()
+
+    def _lang_help(self) -> None:
+        QMessageBox.information(
+            self, "Balises de langue",
+            "Les passages dans une autre langue que la langue d'explication sont lus par une voix native :\n\n"
+            "• au milieu d'une phrase : « Le mot [es]gato[/es] veut dire chat. »\n"
+            "• pour tout un paragraphe : « [ja] おはようございます。 »\n"
+            "• pour plusieurs paragraphes : une ligne « [en-GB] », le texte, puis une ligne « [/en] »\n"
+            "• dans un dialogue : « @Maria: [es] Hola » — chaque intervenant a sa propre voix native "
+            "(page Intervenants).\n\n"
+            "L'accent se choisit avec la variante : [en-GB], [en-US], [en-AU], [es-MX], [pt-BR], [zh-TW]…\n"
+            "Les voix natives se règlent dans la page Langues et voix.")
 
     def ai_assistant(self) -> None:
         if self._current is None:
@@ -863,59 +1025,149 @@ class ManuscriptPage(Page):
         if dlg.exec():
             self.ctx.mark_dirty()
 
-    # -- podcast : assistant d'écriture et notes d'épisode -------------------------------
-    def write_dialogue(self) -> None:
+    # -- assistant IA : leçon complète ----------------------------------------------------
+    def ai_lesson(self) -> None:
         if self._current is None:
-            self.ctx.toast("Créez ou ouvrez d'abord un épisode.", "warning")
+            self.add_chapter()
+        if self._current is None:
             return
         self._commit_text()
-        from ..dialogs.write_dialogue import WriteDialogueDialog
+        from ..dialogs.lesson_ai import LessonAIDialog
 
-        dlg = WriteDialogueDialog(self.ctx, self._current, self)
+        dlg = LessonAIDialog(self.ctx, self._current, self)
         if dlg.exec():
             self._loading = True
             self.title_edit.setText(self._current.title)
             self.editor.setPlainText(self._current.text)
-            self._load_episode_info(self._current)
+            self._load_lesson_extras(self._current)
             self._loading = False
             self.ctx.mark_dirty()
             self._update_stats()
             self._refresh_items()
+            self.tabs.setCurrentIndex(0)
 
-    def ai_episode_notes(self) -> None:
+    # -- cours : modules ---------------------------------------------------------------
+    def _fill_modules(self) -> None:
+        self.module_combo.blockSignals(True)
+        current = self._current.module if self._current else ""
+        self.module_combo.clear()
+        self.module_combo.addItem("")  # hors module
+        for title in course.module_titles(self.ctx.project.chapters):
+            self.module_combo.addItem(title)
+        self.module_combo.setCurrentText(current)
+        self.module_combo.blockSignals(False)
+
+    def _module_changed(self) -> None:
+        if self._loading or self._current is None:
+            return
+        title = " ".join(self.module_combo.currentText().split())[:80]
+        if title != self._current.module:
+            self._current.module = title
+            self.ctx.mark_dirty()
+            self._fill_modules()
+            self._refresh_items()
+
+    def _apply_modules(self, titles: list[str], lessons: list[Chapter]) -> None:
+        for c, t in zip(lessons, titles):
+            c.module = t
+        self.ctx.mark_dirty()
+        self._fill_modules()
+        self._refresh_items()
+        n = len(course.module_titles(lessons))
+        self.ctx.toast(f"{len(lessons)} leçons réparties en {n} modules.", "success")
+
+    def group_by_count(self) -> None:
+        pr = self.ctx.project
+        if not pr.chapters:
+            return
+        n, ok = QInputDialog.getInt(self, "Organiser en modules", "Nombre de leçons par module :", 4, 1, 50)
+        if not ok:
+            return
+        self._commit_text()
+        course.group_lessons(pr.chapters, n)
+        self._apply_modules([c.module for c in pr.chapters], pr.chapters)
+
+    def rename_module(self) -> None:
+        old = self._current.module if self._current else ""
+        if not old:
+            self.ctx.toast("Cette leçon n'appartient à aucun module.", "info")
+            return
+        new, ok = QInputDialog.getText(self, "Renommer le module", "Titre du module :", text=old)
+        new = " ".join(new.split())[:80]
+        if ok and new and new != old:
+            course.rename_module(self.ctx.project.chapters, old, new)
+            self.ctx.mark_dirty()
+            self._fill_modules()
+            self._refresh_items()
+
+    def clear_modules(self) -> None:
+        if QMessageBox.question(self, "Retirer les modules", "Retirer toutes les leçons de leur module ?") \
+                != QMessageBox.Yes:
+            return
+        for c in self.ctx.project.chapters:
+            c.module = ""
+        self.ctx.mark_dirty()
+        self._fill_modules()
+        self._refresh_items()
+
+    def ai_modules(self) -> None:
+        pr = self.ctx.project
+        lessons = list(pr.chapters)
+        if len(lessons) < 2:
+            self.ctx.toast("Il faut au moins deux leçons pour former des modules.", "info")
+            return
+        self._commit_text()
+        from ...core import ai
+        from .. import tasks
+
+        payload = [(c.title, (c.theme + ". " if c.theme else "") + c.text[:1500]) for c in lessons]
+
+        def work():
+            return ai.organize_modules(payload, ai.client_from_settings())
+
+        def done(titles):
+            preview = "\n".join(f"• {t}" for t in dict.fromkeys(titles))
+            if QMessageBox.question(self, "Modules proposés", f"L'assistant propose ces modules :\n\n{preview}\n\n"
+                                    "Les appliquer ? (les leçons gardent leur ordre)") == QMessageBox.Yes:
+                self._apply_modules(titles, lessons)
+
+        self.ctx.toast("DeepSeek organise les leçons en modules…", "info", 3000)
+        self._ai_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 7000))
+
+    def ai_reflections(self) -> None:
         ch = self._current
         if ch is None:
             return
         self._commit_text()
         if not ch.text.strip():
-            self.ctx.toast("Écrivez d'abord le script de l'épisode.", "warning")
+            self.ctx.toast("Le texte de la leçon est vide.", "warning")
             return
         from ...core import ai
         from .. import tasks
 
         def work():
-            return ai.episode_notes(ch.title, ch.text, ai.client_from_settings())
+            return ai.reflection_points(ch.text, ai.client_from_settings())
 
-        def done(res):
-            title, desc = res
-            if self._current is not ch:
+        def done(points):
+            if not points:
+                self.ctx.toast("Aucune pause de réflexion proposée pour cette leçon.", "info")
                 return
-            if title:
-                ch.title = title
-                self.title_edit.setText(title)
-            if desc:
-                self.ep_desc.setPlainText(desc)
-            self.ctx.mark_dirty()
-            self._refresh_items()
-            self.ctx.toast("Titre et description proposés (Ctrl+Z dans la description pour annuler).", "success")
+            from ..dialogs.reflections import ReflectionsDialog
 
-        def fail(msg, _tb):
-            self.ctx.toast(msg, "error", 7000)
+            dlg = ReflectionsDialog(points, self)
+            if dlg.exec() and self._current is ch:
+                ch.text = ai.apply_reflections(ch.text, dlg.accepted_points())
+                self._loading = True
+                self.editor.setPlainText(ch.text)
+                self._loading = False
+                self.ctx.mark_dirty()
+                self._update_stats()
+                self._refresh_items()
 
-        self.ctx.toast("DeepSeek rédige les notes de l'épisode…", "info", 2500)
-        self._notes_task = tasks.run(work, on_done=done, on_error=fail)
+        self.ctx.toast("DeepSeek cherche les bons moments pour faire réfléchir…", "info", 3000)
+        self._refl_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 7000))
 
-    # -- podcast : sons, réactions, chapitres, prises, réécriture -------------------------
+    # -- studio : sons, réactions, chapitres, prises, réécriture --------------------------
     def _project_dir(self):
         pr = self.ctx.project
         return pr.path.parent if pr.path is not None else None
@@ -1050,9 +1302,9 @@ class ManuscriptPage(Page):
             self.editor.setPlainText(ch.text)
             self._loading = False
             self.ctx.mark_dirty()
-            self.ctx.toast("Chapitres ajoutés : ils apparaîtront dans les MP3 et les notes d'épisode.", "success")
+            self.ctx.toast("Chapitres ajoutés : ils apparaîtront dans les MP3 des leçons.", "success")
 
-        self.ctx.toast("DeepSeek découpe l'épisode en chapitres…", "info", 2500)
+        self.ctx.toast("DeepSeek découpe la leçon en chapitres…", "info", 2500)
         self._chap_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 7000))
 
     def record_take(self) -> None:
@@ -1078,28 +1330,8 @@ class ManuscriptPage(Page):
         cur.insertText(text)
         self.ctx.toast("Prise enregistrée : votre voix remplacera la synthèse pour cette réplique.", "success")
 
-    def add_from_template(self) -> None:
-        from ...core.models import Host
-        from ...core.templates import template
-        from ..dialogs.templates import TemplateDialog
-        from ..main_window import pick_voices
 
-        dlg = TemplateDialog(self, "Nouvel épisode", for_episode=True)
-        if not dlg.exec():
-            return
-        self._commit_text()
-        tpl = template(dlg.selected)
-        pr = self.ctx.project
-        missing = [(n, r, b) for n, r, b in tpl.hosts if pr.host_by_name(n) is None]
-        if missing:  # les intervenants du modèle absents du podcast sont ajoutés (voix encore libres)
-            taken = {h.voice_id for h in pr.hosts}
-            free = [v for v in pick_voices(self.ctx.library, len(pr.hosts) + len(missing) + 4) if v not in taken]
-            for i, (n, r, b) in enumerate(missing):
-                pr.hosts.append(Host(n, r, free[i] if i < len(free) else "", b))
-        row = self._row() + 1 if self._row() >= 0 else len(pr.chapters)
-        pr.chapters.insert(row, Chapter(title=tpl.episode_title, text=tpl.script))
-        self.ctx.mark_dirty()
-        self._reload_list(row)
-        self.ctx.toast(f"Épisode « {tpl.name} » ajouté" + (f" avec {len(missing)} intervenant(s) de plus"
-                                                              if missing else "") + " : complétez la trame.",
-                       "success", 6000)
+def languages_in_text(text: str) -> list[str]:
+    from ...core.textproc import languages_in
+
+    return languages_in(text)

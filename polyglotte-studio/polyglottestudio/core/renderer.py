@@ -219,8 +219,8 @@ class VoiceResolver:
         if explicit is not None:
             return explicit, spec
         lang = languages.get(spec)
-        if lang is None:
-            return self.narrator(chapter), explain
+        if lang is None or (host is not None and host.role == "host" and lang.code == explain):
+            return self.narrator(chapter), explain  # professeur : voix d'explication
         gender = host.gender if host else ""
         order = self._speakers.setdefault((lang.code, gender), [])
         if key.lower() not in order:

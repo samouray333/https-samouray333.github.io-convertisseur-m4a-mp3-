@@ -1,4 +1,7 @@
-"""Page Animateurs : les personnes qui parlent dans le podcast (animateurs, invités, voix off) et leurs voix."""
+"""Page Intervenants : les personnages des dialogues (et le professeur), leur langue, leur sexe et leur voix.
+
+Sans voix choisie, un intervenant reçoit automatiquement une voix native de sa langue, différente de celle des
+autres personnages (femmes et hommes en alternance)."""
 
 from __future__ import annotations
 
@@ -6,6 +9,7 @@ import re
 
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
 
+from ...core import languages
 from ...core.models import HOST_ROLES, Host
 
 PAN_CHOICES = [(None, "Stéréo : auto"), (-1.0, "À gauche"), (-0.5, "Un peu à gauche"), (0.0, "Au centre"),
@@ -21,14 +25,14 @@ def host_color(name: str) -> str:
 
 
 def sync_cast(project) -> None:
-    """Recopie les voix des animateurs dans la distribution (utilisée par les autres pages)."""
+    """Recopie les voix des intervenants dans la distribution (utilisée par les autres pages)."""
     for h in project.hosts:
         if h.name.strip():
             project.cast[h.name.strip()] = h.voice_id
 
 
 def rename_in_scripts(project, old: str, new: str) -> int:
-    """Remplace « @Ancien: » par « @Nouveau: » dans tous les épisodes ; renvoie le nombre de répliques."""
+    """Remplace « @Ancien: » par « @Nouveau: » dans toutes les leçons ; renvoie le nombre de répliques."""
     rx = re.compile(r"(?m)^@" + re.escape(old.strip()) + r"\s*:", re.IGNORECASE)
     count = 0
     for ch in project.chapters:
@@ -87,6 +91,22 @@ class HostRow(QFrame):
         self.pan.currentIndexChanged.connect(self._changed)
         top.addWidget(self.pan)
         col.addLayout(top)
+        mid = QHBoxLayout()
+        self.lang = QComboBox()
+        self.lang.setToolTip("Langue que parle cet intervenant (voix native automatique)")
+        self.lang.addItem("Langue apprise de la leçon", "")
+        for lg in languages.sorted_languages():
+            self.lang.addItem(lg.name, lg.code)
+        self.lang.setCurrentIndex(max(0, self.lang.findData(host.language)))
+        self.lang.currentIndexChanged.connect(self._changed)
+        mid.addWidget(self.lang, 1)
+        self.gender = QComboBox()
+        for key, text in (("", "Femme ou homme"), ("F", "Femme"), ("M", "Homme")):
+            self.gender.addItem(text, key)
+        self.gender.setCurrentIndex(max(0, self.gender.findData(host.gender)))
+        self.gender.currentIndexChanged.connect(self._changed)
+        mid.addWidget(self.gender)
+        col.addLayout(mid)
         self.bio = QLineEdit(host.bio)
         self.bio.setPlaceholderText("Présentation (facultatif) : métier, personnalité, ton… — aide l'assistant IA")
         self.bio.textEdited.connect(self._changed)
@@ -97,7 +117,7 @@ class HostRow(QFrame):
         play = IconButton("play", "Écouter cette voix", 34, 15, color=theme.CURRENT.accent)
         play.clicked.connect(self._preview)
         lay.addWidget(play)
-        tag = IconButton("edit", "Insérer « @Nom: » dans l'épisode ouvert", 34, 15)
+        tag = IconButton("edit", "Insérer « @Nom: » dans la leçon ouverte", 34, 15)
         tag.clicked.connect(self._insert_tag)
         lay.addWidget(tag)
         rm = IconButton("trash", "Retirer", 34, 15, color=theme.CURRENT.danger)
@@ -108,7 +128,7 @@ class HostRow(QFrame):
     def fill_voices(self) -> None:
         self.voice.blockSignals(True)
         self.voice.clear()
-        self.voice.addItem(icons.icon("user", theme.CURRENT.muted, 16), "Choisir une voix…", "")
+        self.voice.addItem(icons.icon("globe", theme.CURRENT.accent2, 16), "Voix native automatique", "")
         for v in self.page.ctx.library.all():
             self.voice.addItem(icons.icon("mic" if v.is_clone else "user", v.color, 16), v.name, v.id)
         self.voice.setCurrentIndex(max(0, self.voice.findData(self.host.voice_id)))
@@ -116,9 +136,10 @@ class HostRow(QFrame):
 
     def set_count(self, n: int) -> None:
         v = self.page.ctx.library.get(self.host.voice_id)
-        txt = f"{n} réplique(s) dans les épisodes" if n else "Aucune réplique pour l'instant"
+        txt = f"{n} réplique(s) dans les leçons" if n else "Aucune réplique pour l'instant"
         if v is None:
-            txt += " · sans voix : la voix principale sera utilisée"
+            auto = self.page.auto_voice(self.host)
+            txt += f" · voix native automatique : {auto.name}" if auto else ""
         self.info.setText(txt)
 
     def _changed(self, *_a) -> None:
@@ -126,6 +147,8 @@ class HostRow(QFrame):
         self.host.voice_id = self.voice.currentData() or ""
         self.host.bio = self.bio.text().strip()
         self.host.pan = self.pan.currentData()
+        self.host.language = self.lang.currentData() or ""
+        self.host.gender = self.gender.currentData() or ""
         self.page.changed()
 
     def _renamed(self) -> None:
@@ -151,18 +174,18 @@ class HostRow(QFrame):
             self.page.ctx.project_changed.emit()
 
     def _preview(self) -> None:
-        v = self.page.ctx.library.get(self.host.voice_id)
+        v = self.page.ctx.library.get(self.host.voice_id) or self.page.auto_voice(self.host)
         if v is None:
-            self.page.ctx.toast("Choisissez d'abord une voix.", "warning")
+            self.page.ctx.toast("Aucune voix pour cet intervenant.", "warning")
             return
-        role = HOST_ROLES.get(self.host.role, "").lower()
-        self.page.ctx.preview_voice(v, f"Bonjour, je suis {self.host.name}, {role} de ce podcast. "
-                                       "Merci de nous écouter, et bonne écoute !")
+        code = self.host.language or self.page.ctx.project.metadata.target_language
+        hello = languages.sample_sentence(code)
+        self.page.ctx.preview_voice(v, f"{hello} {self.host.name}." if hello else None, language=code)
 
     def _insert_tag(self) -> None:
         page = self.page.ctx.window.pages.get("manuscript")
         if page is None or page._current is None:
-            self.page.ctx.toast("Ouvrez d'abord un épisode.", "warning")
+            self.page.ctx.toast("Ouvrez d'abord une leçon.", "warning")
             return
         self.page.ctx.navigate("manuscript")
         page._tag_role(self.host.name)
@@ -172,22 +195,24 @@ class HostsPage(Page):
     name = "hosts"
 
     def __init__(self, ctx):
-        super().__init__(ctx, "Animateurs et invités",
-                         "Les personnes qui parlent dans votre podcast et leurs voix. Dans le script, chaque "
-                         "réplique commence par leur nom : « @Alex: Bonjour ! ».", scroll=True)
+        super().__init__(ctx, "Intervenants",
+                         "Les personnages des dialogues et leurs voix. Dans le script, chaque réplique commence par "
+                         "leur nom : « @Maria: [es] ¡Hola! ». Sans voix choisie, chacun reçoit une voix native de sa "
+                         "langue.", scroll=True)
         self._loading = False
-        add_host = button("Ajouter un animateur", "plus", "primary")
-        add_host.clicked.connect(lambda: self.add("host"))
-        add_guest = button("Ajouter un invité", "user")
-        add_guest.clicked.connect(lambda: self.add("guest"))
-        clone = button("Cloner une voix", "mic", tooltip="Créez la voix d'un animateur à partir d'un enregistrement")
+        add_host = button("Ajouter un personnage", "plus", "primary")
+        add_host.clicked.connect(lambda: self.add("guest"))
+        add_guest = button("Ajouter un professeur", "user")
+        add_guest.clicked.connect(lambda: self.add("host"))
+        clone = button("Cloner une voix", "mic", tooltip="Créez une voix à partir d'un enregistrement (la vôtre, "
+                       "celle d'un professeur…)")
         clone.clicked.connect(lambda: self.ctx.navigate("voices"))
         for b in (clone, add_guest, add_host):
             self.header.add_action(b)
 
         main = Card()
-        main.add(card_title("Voix principale", "Lit le texte qui n'est attribué à personne (paragraphes sans "
-                            "« @Nom: ») et annonce le titre des épisodes.", "user"))
+        main.add(card_title("Voix d'explication", "Lit les consignes, les traductions et tout le texte sans balise "
+                            "de langue ni « @Nom: » (« @Prof: » aussi).", "user"))
         mr = QHBoxLayout()
         self.narrator = QComboBox()
         self.narrator.setMinimumWidth(300)
@@ -198,9 +223,9 @@ class HostsPage(Page):
         self.body.addWidget(main)
 
         people = Card()
-        people.add(card_title("Qui parle ?", "Donnez une voix différente à chacun pour que l'auditeur les "
-                              "reconnaisse : Microsoft (en ligne), Kokoro (hors ligne), voix clonée — ou votre vraie "
-                              "voix, réplique par réplique (Épisodes → Studio → Enregistrer au micro).", "users"))
+        people.add(card_title("Qui parle ?", "Indiquez la langue et le sexe de chaque personnage : une voix native "
+                              "différente lui est attribuée. Vous pouvez aussi choisir une voix précise, une voix "
+                              "clonée — ou votre vraie voix (Leçons → Studio → Enregistrer au micro).", "users"))
         self.rows_box = QVBoxLayout()
         self.rows_box.setSpacing(8)
         holder = QWidget()
@@ -238,7 +263,8 @@ class HostsPage(Page):
                 w.deleteLater()
         self.rows = []
         if not pr.hosts:
-            self.rows_box.addWidget(label("Aucun animateur pour l'instant : ajoutez-en un.", "Hint"))
+            self.rows_box.addWidget(label("Aucun intervenant pour l'instant. Les personnages des dialogues créés par "
+                                          "l'assistant IA s'ajoutent ici automatiquement.", "Hint"))
         for h in pr.hosts:
             row = HostRow(self, h)
             self.rows.append(row)
@@ -258,8 +284,9 @@ class HostsPage(Page):
         unknown = sorted({m for m in counts if m not in known})
         self.unknown.setVisible(bool(unknown))
         if unknown:
-            self.unknown.setText("Noms utilisés dans les scripts mais absents de cette liste : "
-                                 + ", ".join(unknown) + ". Ajoutez-les pour leur donner une voix.")
+            self.unknown.setText("Noms utilisés dans les leçons mais absents de cette liste : "
+                                 + ", ".join(unknown) + ". Ils parlent la langue apprise avec une voix native "
+                                 "automatique ; ajoutez-les pour choisir leur langue, leur sexe ou leur voix.")
 
     # -- actions -----------------------------------------------------------------------
     def changed(self) -> None:
@@ -277,17 +304,37 @@ class HostsPage(Page):
             self.ctx.project.narrator_voice_id = vid
             self.ctx.mark_dirty()
 
-    def add(self, role: str = "host") -> None:
+    def auto_voice(self, host: Host):
+        """Voix native que recevra cet intervenant s'il n'a pas de voix choisie."""
+        from ...core import renderer
+
         pr = self.ctx.project
-        base = "Invité" if role == "guest" else "Animateur"
+        from ...core import course
+
+        explain = course.explain_code(pr)
+        if host.role == "host" and (not host.language or getattr(languages.get(host.language), "code", "") == explain):
+            return self.ctx.library.get(pr.narrator_voice_id)  # le professeur parle avec la voix d'explication
+        res = renderer.VoiceResolver(pr, self.ctx.library)
+        spec = host.language or pr.metadata.target_locale or pr.metadata.target_language
+        lang = languages.get(spec)
+        if lang is None:
+            return None
+        same = [h for h in pr.hosts if (languages.get(h.language or pr.metadata.target_language) is lang)
+                and h.gender == host.gender and not h.voice_id]
+        idx = next((i for i, h in enumerate(same) if h.id == host.id), 0)
+        return res.native(spec, None, idx, host.gender)
+
+    def add(self, role: str = "guest") -> None:
+        pr = self.ctx.project
+        base = "Professeur" if role == "host" else "Personnage"
         n = 1
         name = base
         while pr.host_by_name(name) is not None:
             n += 1
             name = f"{base} {n}"
-        taken = {h.voice_id for h in pr.hosts}
-        free = next((v for v in self.ctx.library.all() if v.id not in taken and v.language == "fr"), None)
-        pr.hosts.append(Host(name, role, free.id if free else ""))
+        gender = "F" if sum(1 for h in pr.hosts if h.role != "host") % 2 == 0 else "M"
+        pr.hosts.append(Host(name, role, "", language="" if role != "host" else pr.metadata.language or "fr",
+                             gender=gender))
         self.changed()
         self.reload()
         if self.rows:
@@ -300,4 +347,4 @@ class HostsPage(Page):
         pr.cast.pop(host.name, None)
         self.changed()
         self.reload()
-        self.ctx.toast(f"« {host.name} » retiré. Ses répliques seront lues par la voix principale.", "info")
+        self.ctx.toast(f"« {host.name} » retiré. Ses répliques gardent une voix native automatique.", "info")
