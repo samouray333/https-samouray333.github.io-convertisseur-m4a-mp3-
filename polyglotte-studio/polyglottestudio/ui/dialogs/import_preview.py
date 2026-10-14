@@ -1,4 +1,4 @@
-"""Aperçu du découpage en épisodes avant la création du projet."""
+"""Aperçu du découpage en leçons avant la création du projet."""
 
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ class ImportPreviewDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(26, 22, 26, 20)
         lay.setSpacing(12)
-        lay.addWidget(card_title(f"Vérifiez les épisodes de « {source_name} »",
+        lay.addWidget(card_title(f"Vérifiez les leçons de « {source_name} »",
                                  "Décochez ce qui ne doit pas être lu (sommaire, mentions légales…), renommez ou "
-                                 "fusionnez des épisodes, ou essayez un autre découpage.", "list"))
+                                 "fusionnez des leçons, ou essayez un autre découpage.", "list"))
         top = QHBoxLayout()
-        top.addWidget(label("Titre du podcast", "Muted"))
+        top.addWidget(label("Titre du cours", "Muted"))
         self.title = QLineEdit(doc.metadata.title)
         top.addWidget(self.title, 2)
         top.addSpacing(16)
@@ -49,9 +49,9 @@ class ImportPreviewDialog(QDialog):
         self.list.itemChanged.connect(self._item_changed)
         ll.addWidget(self.list, 1)
         tb = QHBoxLayout()
-        merge = IconButton("layers", "Fusionner avec l'épisode précédent", 34, 16)
+        merge = IconButton("layers", "Fusionner avec la leçon précédente", 34, 16)
         merge.clicked.connect(self._merge_prev)
-        delete = IconButton("trash", "Supprimer cet épisode", 34, 16, color=theme.CURRENT.danger)
+        delete = IconButton("trash", "Supprimer cette leçon", 34, 16, color=theme.CURRENT.danger)
         delete.clicked.connect(self._delete)
         tb.addWidget(merge)
         tb.addWidget(delete)
@@ -109,7 +109,7 @@ class ImportPreviewDialog(QDialog):
     def _update_stats(self) -> None:
         inc = [c for c in self.chapters if c.include]
         words = sum(c.word_count() for c in inc)
-        self.stats.setText(f"{len(inc)}/{len(self.chapters)} épisodes · ≈ {format_duration(words / 155 * 60)}")
+        self.stats.setText(f"{len(inc)}/{len(self.chapters)} leçons · ≈ {format_duration(words / 155 * 60)}")
 
     def _row(self) -> int:
         return self.list.currentRow()

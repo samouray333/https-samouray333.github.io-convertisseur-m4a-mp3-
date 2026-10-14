@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLineEdit, QListWidget, QListWidgetItem,
-                               QTableWidget, QTableWidgetItem, QVBoxLayout)
+                               QTableWidget, QTableWidgetItem)
 
 from ...core import course, languages, textproc
 from ...core.models import LEVEL_LABELS, LEVELS
@@ -162,6 +162,7 @@ class LanguagesPage(Page):
 
     # -- synchronisation ---------------------------------------------------------------
     def on_project_changed(self) -> None:
+        self.voice_lang.clear()  # nouvelle liste : la langue apprise du projet est sélectionnée
         self.reload()
 
     def on_show(self) -> None:

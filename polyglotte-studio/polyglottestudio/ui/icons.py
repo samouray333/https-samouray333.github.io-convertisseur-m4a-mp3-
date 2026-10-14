@@ -151,33 +151,53 @@ def check_icon_file() -> str:
 
 
 def app_logo(size: int = 256) -> QPixmap:
-    """Logo de l'application : micro de studio et ses ondes sur fond dégradé, onde sonore en bas."""
-    from . import theme
+    """Logo : bulle de dialogue blanche sur fond bleu, « A文 » doré et petite onde sonore dorée."""
+    from PySide6.QtGui import QFont
 
-    p = theme.CURRENT
+    from .. import BRAND_ACCENT, BRAND_ACCENT2, BRAND_BG
+
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)
     painter = QPainter(pm)
     painter.setRenderHint(QPainter.Antialiasing)
+    painter.setRenderHint(QPainter.TextAntialiasing)
     rect = QRectF(size * 0.04, size * 0.04, size * 0.92, size * 0.92)
     grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    grad.setColorAt(0, QColor(p.accent))
-    grad.setColorAt(1, QColor(p.accent2))
+    grad.setColorAt(0, QColor(BRAND_ACCENT).lighter(115))
+    grad.setColorAt(1, QColor(BRAND_BG).lighter(130))
     path = QPainterPath()
     path.addRoundedRect(rect, size * 0.24, size * 0.24)
     painter.fillPath(path, grad)
-    renderer = QSvgRenderer(QByteArray(svg("podcast", "#FFFFFF").replace(b'stroke-width="2"', b'stroke-width="1.8"')))
-    renderer.render(painter, QRectF(size * 0.2, size * 0.12, size * 0.6, size * 0.6))
-    # onde sonore
-    pen_color = QColor("#FFFFFF")
+    # bulle de dialogue
+    bubble = QPainterPath()
+    b = QRectF(size * 0.16, size * 0.17, size * 0.68, size * 0.48)
+    bubble.addRoundedRect(b, size * 0.13, size * 0.13)
+    tail = QPainterPath()
+    tail.moveTo(size * 0.30, b.bottom() - size * 0.02)
+    tail.lineTo(size * 0.25, size * 0.77)
+    tail.lineTo(size * 0.45, b.bottom() - size * 0.02)
+    tail.closeSubpath()
+    painter.fillPath(bubble.united(tail), QColor("#FFFFFF"))
+    # « A文 »
+    gold = QColor(BRAND_ACCENT2)
+    font = QFont()
+    font.setFamilies(["Segoe UI", "Microsoft YaHei", "Yu Gothic", "Noto Sans CJK SC", "Noto Sans", "DejaVu Sans"])
+    font.setBold(True)
+    font.setPixelSize(max(6, int(size * 0.27)))
+    painter.setFont(font)
+    painter.setPen(QColor(BRAND_ACCENT))
+    painter.drawText(QRectF(b.left(), b.top(), b.width() * 0.5, b.height()), Qt.AlignRight | Qt.AlignVCenter, "A")
+    painter.setPen(gold.darker(108))
+    painter.drawText(QRectF(b.center().x() + size * 0.01, b.top(), b.width() * 0.5, b.height()),
+                     Qt.AlignLeft | Qt.AlignVCenter, "文")
+    # onde sonore dorée
     painter.setPen(Qt.NoPen)
-    painter.setBrush(pen_color)
-    bars = [0.35, 0.7, 1.0, 0.6, 0.85, 0.45, 0.25]
-    bw = size * 0.045
-    gap = size * 0.03
-    total = len(bars) * bw + (len(bars) - 1) * gap
-    x = (size - total) / 2
-    base_y = size * 0.83
+    painter.setBrush(gold)
+    bars = [0.35, 0.75, 1.0, 0.55, 0.8, 0.4]
+    bw = size * 0.04
+    gap = size * 0.028
+    x = size * 0.52
+    base_y = size * 0.80
     for h in bars:
         bh = size * 0.12 * h
         painter.drawRoundedRect(QRectF(x, base_y - bh / 2, bw, bh), bw / 2, bw / 2)

@@ -141,8 +141,8 @@ class SettingsPage(Page):
         self.body.addWidget(perf)
 
         aic = Card()
-        aic.add(card_title("Assistant IA (DeepSeek)", "Repère qui parle, les émotions et les noms difficiles à "
-                           "prononcer (Épisodes → Assistant IA).", "sparkles"))
+        aic.add(card_title("Assistant IA (DeepSeek)", "Écrit les leçons (vocabulaire, dialogues, grammaire, quiz), "
+                           "propose le plan du cours et les translittérations.", "sparkles"))
         g4 = QGridLayout()
         g4.setHorizontalSpacing(14)
         g4.setVerticalSpacing(10)
@@ -163,8 +163,8 @@ class SettingsPage(Page):
         g4.setColumnStretch(1, 1)
         aic.add(g4)
         self.ai_info = label("Créez une clé sur platform.deepseek.com (API keys). Elle est chiffrée sur cet "
-                             "ordinateur. Service payant à l'usage : quelques centimes par épisode ; le texte des "
-                             "épisodes analysés est envoyé à DeepSeek.", "Hint", wrap=True)
+                             "ordinateur. Service payant à l'usage : quelques centimes par leçon ; le texte des "
+                             "leçons analysées est envoyé à DeepSeek.", "Hint", wrap=True)
         aic.add(self.ai_info)
         self.body.addWidget(aic)
 
@@ -195,9 +195,9 @@ class SettingsPage(Page):
         self.body.addWidget(data)
 
         about = Card()
-        about.add(card_title(f"Polyglotte Studio {__version__}", "Logiciel libre et gratuit de création de "
-                             "podcasts. Moteurs IA, modèles et voix partagés avec AudioLivre Studio et "
-                             "Leçon Studio.", "info"))
+        about.add(card_title(f"Polyglotte Studio {__version__}", "Logiciel libre et gratuit pour apprendre "
+                             "les langues à l'écoute. Moteurs IA, modèles et voix partagés avec AudioLivre Studio et "
+                             "Leçon Studio et PodCast Studio.", "info"))
         about.add(label("Voix neuronales : Microsoft Edge (service en ligne gratuit), XTTS-v2 (Coqui, licence CPML), "
                         "Chatterbox (Resemble AI, MIT), Kokoro (Apache 2.0). Traitement audio : FFmpeg. Interface : "
                         "Qt for Python (PySide6). Lecture PDF : PyMuPDF.", "Hint", wrap=True))

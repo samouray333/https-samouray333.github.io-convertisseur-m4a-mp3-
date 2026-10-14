@@ -1,4 +1,4 @@
-"""Page Production : génération des épisodes, suivi, réécoute et nouvelles prises."""
+"""Page Production : génération des leçons, suivi, réécoute et nouvelles prises."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ class ProductionPage(Page):
     name = "production"
 
     def __init__(self, ctx):
-        super().__init__(ctx, "Production", "Générez l'audio de chaque épisode. Les passages déjà produits sont "
+        super().__init__(ctx, "Production", "Générez l'audio de chaque leçon. Les passages déjà produits sont "
                          "conservés : seuls les textes modifiés sont régénérés.")
         self.bridge = Bridge()
         self.bridge.progress.connect(self._on_progress)
@@ -82,10 +82,10 @@ class ProductionPage(Page):
         right.addWidget(self.detail_lbl)
         tiles = QHBoxLayout()
         tiles.setSpacing(12)
-        self.t_chapters = StatTile("book", "0/0", "épisodes prêts")
+        self.t_chapters = StatTile("book", "0/0", "leçons prêtes")
         self.t_segments = StatTile("wave", "0/0", "passages synthétisés", theme.CURRENT.info)
         self.t_eta = StatTile("clock", "—", "temps restant estimé", theme.CURRENT.warning)
-        self.t_duration = StatTile("headphones", "—", "durée estimée du podcast", theme.CURRENT.success)
+        self.t_duration = StatTile("headphones", "—", "durée estimée du cours", theme.CURRENT.success)
         for t in (self.t_chapters, self.t_segments, self.t_eta, self.t_duration):
             tiles.addWidget(t, 1)
         right.addLayout(tiles)
@@ -103,7 +103,7 @@ class ProductionPage(Page):
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(12)
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Épisode", "État", "Progression", "Durée", ""])
+        self.table.setHorizontalHeaderLabels(["Leçon", "État", "Progression", "Durée", ""])
         self.table.verticalHeader().hide()
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -149,7 +149,7 @@ class ProductionPage(Page):
         sl.setContentsMargins(14, 0, 0, 0)
         sl.setSpacing(12)
         st = Card(margins=(18, 14, 18, 14), spacing=10)
-        st.add(card_title("Réglages de lecture", "S'appliquent à tout le podcast.", "sliders"))
+        st.add(card_title("Réglages de lecture", "S'appliquent à tout le cours.", "sliders"))
         g = QGridLayout()
         g.setVerticalSpacing(8)
         g.setHorizontalSpacing(10)
@@ -168,11 +168,33 @@ class ProductionPage(Page):
         self.breaths.addItem("Naturelles", "natural")
         self.breaths.setToolTip("Légère respiration dans certains silences entre les phrases, comme une vraie "
                                 "voix humaine")
+        self.t_speed = QDoubleSpinBox()
+        self.t_speed.setRange(0.6, 1.3)
+        self.t_speed.setSingleStep(0.05)
+        self.t_speed.setSuffix(" ×")
+        self.t_speed.setToolTip("Débit des voix natives (un peu plus lent aide les débutants)")
+        self.slow = QDoubleSpinBox()
+        self.slow.setRange(0.5, 0.95)
+        self.slow.setSingleStep(0.05)
+        self.slow.setSuffix(" ×")
+        self.slow.setToolTip("Débit de la « lecture lente » des exercices ([ralenti])")
+        self.repeat = QDoubleSpinBox()
+        self.repeat.setRange(1.0, 3.0)
+        self.repeat.setSingleStep(0.1)
+        self.repeat.setSuffix(" × la durée du mot")
+        self.p_translate = self._ms_spin(1000, 15000)
+        self.p_dictation = self._ms_spin(3000, 30000)
+        self.p_reflect = self._ms_spin(1000, 30000)
+        self.p_quiz = self._ms_spin(1000, 30000)
         self.p_overlap = self._ms_spin(100, 1500)
         self.p_overlap.setToolTip("Durée du chevauchement (balise « [par-dessus] » ou réaction automatique)")
-        rows = [("Vitesse de lecture", self.speed), ("Pause entre phrases", self.p_sentence),
+        rows = [("Débit de la voix d'explication", self.speed), ("Débit des voix natives", self.t_speed),
+                ("Lecture lente des exercices", self.slow), ("Silence pour répéter", self.repeat),
+                ("Temps pour traduire", self.p_translate), ("Temps pour écrire (dictée)", self.p_dictation),
+                ("Temps de réflexion", self.p_reflect), ("Temps de réponse au quiz", self.p_quiz),
+                ("Pause entre phrases", self.p_sentence),
                 ("Pause entre paragraphes", self.p_para), ("Pause après un titre", self.p_head),
-                ("Silence en début d'épisode", self.p_start), ("Silence en fin d'épisode", self.p_end),
+                ("Silence en début de leçon", self.p_start), ("Silence en fin de leçon", self.p_end),
                 ("Respirations", self.breaths), ("Chevauchement des réactions", self.p_overlap)]
         for i, (t, w) in enumerate(rows):
             g.addWidget(label(t, "Muted"), i, 0)
@@ -181,8 +203,16 @@ class ProductionPage(Page):
         self.t_natural = ToggleSwitch("Pauses naturelles (selon la ponctuation, respiration entre les voix)")
         self.t_natural.setToolTip("Pause plus longue après « … », « ? » ou « ! », plus courte après « ; », légère "
                                   "variation pour éviter un rythme mécanique, 2 s aux changements de scène (***)")
-        self.t_announce = ToggleSwitch("Annoncer le titre de chaque épisode")
-        self.t_announce_num = ToggleSwitch("… précédé de son numéro (« Épisode 3. »)")
+        self.t_announce = ToggleSwitch("Annoncer le titre de chaque leçon")
+        self.t_announce_num = ToggleSwitch("… précédé de son numéro (« Leçon 3. »)")
+        self.t_module = ToggleSwitch("Annoncer le module avant sa première leçon")
+        self.t_vocab = ToggleSwitch("Lire la section « Vocabulaire » avant le texte")
+        self.t_phrases = ToggleSwitch("Lire la section « Phrases utiles »")
+        self.t_summary = ToggleSwitch("Lire le résumé en fin de leçon")
+        self.t_quiz = ToggleSwitch("Lire le quiz en fin de leçon")
+        from ...core.models import EXERCISES
+
+        self.ex_toggles = {k: ToggleSwitch(v) for k, v in EXERCISES.items()}
         self.t_stereo = ToggleSwitch("Stéréo : chaque intervenant à sa place (gauche, droite), comme en studio")
         self.t_overlap = ToggleSwitch("Réactions courtes (« Ah oui ! ») lancées par-dessus la fin de la réplique")
         self.t_numbers = ToggleSwitch("Lire nombres, dates et heures en toutes lettres")
@@ -190,16 +220,27 @@ class ProductionPage(Page):
         self.t_trim = ToggleSwitch("Uniformiser les silences des voix")
         self.t_asr = ToggleSwitch("Relecture automatique par l'IA (Whisper)")
         self.t_asr.setToolTip("Réécoute les passages des voix neuronales et refait ceux où des mots manquent")
-        for t in (self.t_stereo, self.t_overlap, self.t_natural, self.t_announce, self.t_announce_num, self.t_numbers,
-                  self.t_abbr, self.t_trim, self.t_asr):
+        st.add(label("Exercices audio de chaque leçon (une leçon peut avoir les siens)", "Muted"))
+        for t in self.ex_toggles.values():
+            st.add(t)
+        st.add(label("Structure des leçons", "Muted"))
+        for t in (self.t_vocab, self.t_phrases, self.t_summary, self.t_quiz, self.t_module, self.t_announce,
+                  self.t_announce_num):
+            st.add(t)
+        st.add(label("Voix et son", "Muted"))
+        for t in (self.t_stereo, self.t_overlap, self.t_natural, self.t_numbers, self.t_abbr, self.t_trim,
+                  self.t_asr):
             st.add(t)
         self.asr_hint = label("", "Hint", wrap=True)
         st.add(self.asr_hint)
-        for w in (self.speed, self.p_sentence, self.p_para, self.p_head, self.p_start, self.p_end, self.p_overlap):
+        for w in (self.speed, self.p_sentence, self.p_para, self.p_head, self.p_start, self.p_end, self.p_overlap,
+                  self.t_speed, self.slow, self.repeat, self.p_translate, self.p_dictation, self.p_reflect,
+                  self.p_quiz):
             w.valueChanged.connect(self._settings_changed)
         self.breaths.currentIndexChanged.connect(self._settings_changed)
         for t in (self.t_stereo, self.t_overlap, self.t_natural, self.t_announce, self.t_announce_num, self.t_numbers,
-                  self.t_abbr, self.t_trim, self.t_asr):
+                  self.t_abbr, self.t_trim, self.t_asr, self.t_module, self.t_vocab, self.t_phrases, self.t_summary,
+                  self.t_quiz, *self.ex_toggles.values()):
             t.toggled.connect(self._settings_changed)
         sl.addWidget(st)
         lg = Card(margins=(14, 12, 14, 12), spacing=6)
@@ -264,7 +305,21 @@ class ProductionPage(Page):
         self.t_natural.setChecked(p.natural_pauses)
         self.breaths.setCurrentIndex(max(0, self.breaths.findData(p.breaths)))
         self.t_announce.setChecked(p.announce_chapter_titles)
-        self.t_announce_num.setChecked(p.announce_episode_number)
+        self.t_announce_num.setChecked(p.announce_lesson_number)
+        self.t_module.setChecked(p.announce_module)
+        self.t_vocab.setChecked(p.include_vocabulary)
+        self.t_phrases.setChecked(p.include_phrases)
+        self.t_summary.setChecked(p.include_summary)
+        self.t_quiz.setChecked(p.include_quiz)
+        for k, t in self.ex_toggles.items():
+            t.setChecked(k in p.exercises)
+        self.t_speed.setValue(p.target_speed)
+        self.slow.setValue(p.slow_rate)
+        self.repeat.setValue(p.repeat_factor)
+        self.p_translate.setValue(p.translation_think_ms)
+        self.p_dictation.setValue(p.dictation_pause_ms)
+        self.p_reflect.setValue(p.reflection_pause_ms)
+        self.p_quiz.setValue(p.quiz_think_ms)
         self.t_stereo.setChecked(p.stereo)
         self.t_overlap.setChecked(p.overlap_reactions)
         self.p_overlap.setValue(p.overlap_ms)
@@ -296,7 +351,20 @@ class ProductionPage(Page):
         p.natural_pauses = self.t_natural.isChecked()
         p.breaths = self.breaths.currentData() or "off"
         p.announce_chapter_titles = self.t_announce.isChecked()
-        p.announce_episode_number = self.t_announce_num.isChecked()
+        p.announce_lesson_number = self.t_announce_num.isChecked()
+        p.announce_module = self.t_module.isChecked()
+        p.include_vocabulary = self.t_vocab.isChecked()
+        p.include_phrases = self.t_phrases.isChecked()
+        p.include_summary = self.t_summary.isChecked()
+        p.include_quiz = self.t_quiz.isChecked()
+        p.exercises = [k for k, t in self.ex_toggles.items() if t.isChecked()]
+        p.target_speed = round(self.t_speed.value(), 2)
+        p.slow_rate = round(self.slow.value(), 2)
+        p.repeat_factor = round(self.repeat.value(), 2)
+        p.translation_think_ms = self.p_translate.value()
+        p.dictation_pause_ms = self.p_dictation.value()
+        p.reflection_pause_ms = self.p_reflect.value()
+        p.quiz_think_ms = self.p_quiz.value()
         p.stereo = self.t_stereo.isChecked()
         p.overlap_reactions = self.t_overlap.isChecked()
         p.overlap_ms = self.p_overlap.value()
@@ -367,11 +435,11 @@ class ProductionPage(Page):
         self.t_segments.set_value(f"{done_seg}/{total_seg}")
         self.t_duration.set_value(format_duration(est))
         frac = done_seg / total_seg if total_seg else 0.0
-        self.ring.set_value(frac, sub="du podcast")
+        self.ring.set_value(frac, sub="du cours")
         warnings = sorted({w for rc in plan for w in rc.warnings})
         if ready == len(plan) and plan:
-            self.status_lbl.setText("Podcast prêt à exporter ✨")
-            self.detail_lbl.setText("Tous les épisodes sont produits. Rendez-vous dans Export pour créer vos "
+            self.status_lbl.setText("Cours prêt à exporter ✨")
+            self.detail_lbl.setText("Toutes les leçons sont produites. Rendez-vous dans Export pour créer vos "
                                     "fichiers.")
         else:
             self.status_lbl.setText("Prêt à produire")
@@ -407,10 +475,10 @@ class ProductionPage(Page):
         al = QHBoxLayout(actions)
         al.setContentsMargins(0, 0, 6, 0)
         al.setSpacing(2)
-        play = IconButton("play", "Écouter l'épisode", 30, 14, color=theme.CURRENT.accent)
+        play = IconButton("play", "Écouter la leçon", 30, 14, color=theme.CURRENT.accent)
         play.setEnabled(status == "done")
         play.clicked.connect(lambda _=False, cid=rc.id, t=rc.title: self._play_chapter(cid, t))
-        redo = IconButton("refresh", "Produire cet épisode", 30, 14)
+        redo = IconButton("refresh", "Produire cette leçon", 30, 14)
         redo.clicked.connect(lambda _=False, cid=rc.id: self.start([cid]))
         al.addWidget(play)
         al.addWidget(redo)
@@ -528,7 +596,7 @@ class ProductionPage(Page):
                 changed = True
             else:
                 self.ctx.toast("Ce passage est écrit sur plusieurs lignes dans le script : corrigez-le dans la "
-                               "page Épisodes.", "warning", 6500)
+                               "page Leçons.", "warning", 6500)
         if word and say:
             from ...core.models import LexiconEntry
 
@@ -558,8 +626,8 @@ class ProductionPage(Page):
             if path is not None:
                 self.ctx.play(path, f"{rc.title} — passage corrigé")
             if n > 1:
-                self.ctx.toast(f"{n} passages refaits dans cet épisode (le mot y apparaissait plusieurs fois). "
-                               "Les autres épisodes seront mis à jour à la prochaine production.", "success", 7000)
+                self.ctx.toast(f"{n} passages refaits dans cette leçon (le mot y apparaissait plusieurs fois). "
+                               "Les autres leçons seront mis à jour à la prochaine production.", "success", 7000)
 
         self._retake_task = tasks.run(work, on_done=done, on_error=lambda m, _t: self.ctx.toast(m, "error", 6000))
 
@@ -572,7 +640,7 @@ class ProductionPage(Page):
     def _start_selection(self) -> None:
         ids = self._selected_ids()
         if not ids:
-            self.ctx.toast("Sélectionnez un ou plusieurs épisodes.", "warning")
+            self.ctx.toast("Sélectionnez une ou plusieurs leçons.", "warning")
             return
         self.start(ids)
 
@@ -581,7 +649,7 @@ class ProductionPage(Page):
             return
         pr = self.ctx.project
         if not pr.included_chapters():
-            self.ctx.toast("Aucun épisode à produire.", "warning")
+            self.ctx.toast("Aucune leçon à produire.", "warning")
             return
         try:
             plan = renderer.build_plan(pr, self.ctx.library, chapter_ids)

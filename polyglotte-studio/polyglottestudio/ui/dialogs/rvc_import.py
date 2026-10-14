@@ -102,7 +102,7 @@ class RVCImportDialog(QDialog):
         self.consent.toggled.connect(self._update)
         lay.addWidget(self.consent)
         lay.addWidget(label("Les modèles de célébrités, de comédiens de doublage ou d'intervenants trouvés en ligne "
-                            "sont en général faits sans leur accord : leur utilisation, surtout dans un épisode "
+                            "sont en général faits sans leur accord : leur utilisation, surtout dans une leçon "
                             "publié, peut être illégale.", "Hint", wrap=True))
         row = QHBoxLayout()
         row.addStretch(1)

@@ -345,7 +345,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{star}{pr.display_title} — {APP_NAME}" if has else APP_NAME)
         if has:
             self.sidebar.proj_title.setText(pr.display_title)
-            mins = pr.estimated_minutes()
+            pr.estimated_minutes()
             self.sidebar.proj_info.setText(
                 f"{len(pr.included_chapters())} leçons · {len(pr.all_vocab())} mots et phrases · "
                 f"{languages.language_name(pr.metadata.target_language)}"

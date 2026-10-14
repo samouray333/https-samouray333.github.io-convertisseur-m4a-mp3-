@@ -135,6 +135,7 @@ class EdgeEngine(TTSEngine):
 
     def __init__(self):
         self._voices: list[BuiltinVoice] | None = None
+        self._live = False  # liste réelle du service (et non la courte liste de secours)
 
     def status(self):
         try:
@@ -175,6 +176,7 @@ class EdgeEngine(TTSEngine):
                     except Exception:
                         raw = None
         voices: list[BuiltinVoice] = []
+        self._live = bool(raw)
         if raw:
             for v in raw:
                 short = v.get("ShortName", "")
@@ -200,7 +202,7 @@ class EdgeEngine(TTSEngine):
 
     def cached_voices(self) -> list[BuiltinVoice] | None:
         """Voix déjà connues (liste en mémoire ou mise en cache sur le disque), sans appel au réseau."""
-        if self._voices is not None:
+        if self._voices is not None and self._live:
             return self._voices
         cache = self._cache_file()
         if not cache.exists():

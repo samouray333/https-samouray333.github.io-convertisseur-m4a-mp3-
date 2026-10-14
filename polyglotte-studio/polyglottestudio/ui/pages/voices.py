@@ -706,7 +706,7 @@ class CastTab(QWidget):
     def _set_role(self, name: str, combo: QComboBox) -> None:
         self.ctx.project.cast[name] = combo.currentData() or ""
         host = self.ctx.project.host_by_name(name)
-        if host is not None:  # même voix que dans la page Animateurs
+        if host is not None:  # même voix que dans la page Intervenants
             host.voice_id = combo.currentData() or ""
         self.ctx.mark_dirty()
 

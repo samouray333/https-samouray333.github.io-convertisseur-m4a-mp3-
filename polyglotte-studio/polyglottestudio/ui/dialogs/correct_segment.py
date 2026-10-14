@@ -36,7 +36,7 @@ class CorrectSegmentDialog(QDialog):
         g.addWidget(label("Se prononce", "Muted"), 0, 2)
         g.addWidget(self.say, 0, 3)
         lay.addLayout(g)
-        lay.addWidget(label("La prononciation est ajoutée au lexique du projet : elle s'applique à tout le podcast.",
+        lay.addWidget(label("La prononciation est ajoutée au lexique du projet : elle s'applique à tout le cours.",
                             "Hint", wrap=True))
         row = QHBoxLayout()
         row.addStretch(1)

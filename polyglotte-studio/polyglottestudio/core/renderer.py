@@ -350,6 +350,7 @@ def _engine_limits(voice: VoiceProfile) -> tuple[int, int]:
     return eng.info.max_chars, eng.info.min_chars
 
 
+SLOW_TAG_RATE = 0.72  # valeur de « [ralenti] » dans textproc.RATE_ALIASES
 NORMALIZED_LANGS = {"fr", "en"}  # nombres et abréviations écrits en toutes lettres ; ailleurs, la voix native les lit
 
 
@@ -469,6 +470,8 @@ def build_chapter_plan(project: Project, chapter: Chapter, library: VoiceLibrary
                      resolver.narrator(chapter), 0.0, 350, name=item.source)
         else:
             voice, item_lang = resolver.resolve_item(item.voice_key, item.lang, chapter)
+            if abs(item.rate - SLOW_TAG_RATE) < 1e-6:  # « [ralenti] » : débit réglé dans Production
+                item.rate = prod.slow_rate
             pan = project.host_pan(item.voice_key) if prod.stereo else 0.0
             if item.take:
                 flush()

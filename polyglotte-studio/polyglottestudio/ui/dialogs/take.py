@@ -35,7 +35,7 @@ class TakeDialog(QDialog):
         who = f" — {speaker}" if speaker else ""
         lay.addWidget(card_title(f"Votre vraie voix{who}",
                                  "Lisez la réplique au micro : l'enregistrement remplace la voix de synthèse pour ce "
-                                 "passage (son niveau est ajusté automatiquement). Idéal pour un vrai animateur avec "
+                                 "passage (son niveau est ajusté automatiquement). Idéal pour un vrai professeur avec "
                                  "un invité de synthèse.", "mic"))
         card = Card(obj="CardFlat")
         self.text_lbl = label(text or "(réplique sans texte : dites ce que vous voulez)", wrap=True)

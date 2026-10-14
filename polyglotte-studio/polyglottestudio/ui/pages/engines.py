@@ -20,7 +20,7 @@ DEVICES = [("auto", "Matériel : automatique"), ("cuda", "Carte graphique NVIDIA
 XTTS_LICENSE = (
     "Le modèle XTTS-v2 est distribué par Coqui sous la licence « Coqui Public Model License » (CPML).\n\n"
     "• Utilisation gratuite à des fins personnelles et non commerciales.\n"
-    "• La vente des podcasts produits avec ce modèle n'est pas couverte par cette licence.\n"
+    "• La vente des cours produits avec ce modèle n'est pas couverte par cette licence.\n"
     "• Pour un usage commercial, préférez Chatterbox (licence MIT) ou les voix Microsoft.\n\n"
     "Acceptez-vous les conditions de la licence CPML (https://coqui.ai/cpml) ?"
 )
@@ -176,7 +176,7 @@ class EnginesPage(Page):
         else:
             self.hw_icon.setPixmap(icons.pixmap("cpu", p.warning, 24))
             self.hw_lbl.setText("<b>Aucune carte graphique NVIDIA détectée.</b> Les moteurs de clonage fonctionneront "
-                                "sur le processeur, nettement plus lentement (comptez plusieurs heures pour un épisode). "
+                                "sur le processeur, nettement plus lentement (comptez plusieurs heures pour un cours). "
                                 "Les voix Microsoft et Kokoro restent rapides.")
         for c in self.cards:
             c.refresh()

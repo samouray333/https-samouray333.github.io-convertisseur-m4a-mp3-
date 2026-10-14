@@ -188,22 +188,21 @@ def run_selftest(report_path: Path) -> int:
         project_holder.update(pr=pr, plan=plan)
         return f"{len(plan)} pistes, {sum(len(rc.segments) for rc in plan)} passages"
 
-    @check("mastering -16 LUFS, MP3 des épisodes et flux RSS")
+    @check("mastering -16 LUFS, MP3 des leçons, support écrit, flashcards et Anki")
     def _():
-        import xml.etree.ElementTree as ET
-
-        from .core import renderer
+        from .core import handouts, renderer
         from .core.exporter import ExportItem, export_audiobook
         from .core.mastering import MasteringOptions
 
         pr, plan = project_holder["pr"], project_holder["plan"]
-        pr.export.formats = ["mp3_chapters", "rss", "flac"]
-        pr.metadata.media_base_url = "https://exemple.org/podcast"
-        items = [ExportItem(rc.title, renderer.chapter_output(pr, rc.id), rc.kind, id=rc.id, number=i)
-                 for i, rc in enumerate(plan, 1)]
+        pr.export.formats = ["mp3_modules", "module_single", "flac"]
+        items = [ExportItem(rc.title, renderer.chapter_output(pr, rc.id), rc.kind, id=rc.id, lesson=i,
+                            module="Module 1", module_index=1) for i, rc in enumerate(plan, 1)]
         res = export_audiobook(items, pr.metadata, pr.export, MasteringOptions(preset="streaming"), work / "export")
-        assert res.feed is not None and len(ET.parse(res.feed).findall("channel/item")) == len(plan)
-        assert len(res.episodes) == len(plan)
+        assert sum(1 for f in res.files if f.suffix == ".mp3") == len(plan) + 1
+        assert handouts.write_handout(pr, work / "export" / "support.html").exists()
+        assert handouts.write_flashcards(pr, work / "export" / "cartes.html").exists()
+        assert handouts.write_anki(pr, work / "export" / "anki").csv.exists()
         assert res.acx_ok, [(t, s.acx_checks()) for t, s in res.stats]
         return [f.name for f in res.files]
 

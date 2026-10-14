@@ -198,7 +198,7 @@ class CloneWizard(QDialog):
         drop.clicked.connect(self._browse)
         left.add(drop)
         tips = label("Conseils pour un clone réussi :\n• 10 à 30 secondes de parole continue\n• une seule voix, sans "
-                     "musique ni bruit de fond\n• un ton naturel, comme pour lire un épisode\n• un bon micro près de "
+                     "musique ni bruit de fond\n• un ton naturel, comme pour lire une leçon\n• un bon micro près de "
                      "la bouche, pièce calme", "Hint", wrap=True)
         left.add(tips)
         left.add(None)
@@ -427,7 +427,7 @@ class CloneWizard(QDialog):
         g.addWidget(self.desc, 3, 1)
         c.add(g)
         self.consent = QCheckBox("Je certifie qu'il s'agit de ma voix, ou que la personne enregistrée m'a donné son "
-                                 "accord pour cloner sa voix et l'utiliser dans ce podcast.")
+                                 "accord pour cloner sa voix et l'utiliser dans ce cours.")
         self.consent.setStyleSheet("QCheckBox { font-weight: 600; }")
         c.add(None)
         c.add(self.consent)

@@ -282,7 +282,8 @@ zu-ZA Thando F, Themba M
 
 def _parse_edge(src: str) -> dict[str, list[tuple[str, str]]]:
     out: dict[str, list[tuple[str, str]]] = {}
-    for chunk in " ".join(src.split("\n")).split("|"):
+    # une ligne qui commence par une espace continue la précédente ; sinon chaque ligne est une nouvelle entrée
+    for chunk in re.split(r"[|\n]", src.replace("\n ", " ")):
         chunk = chunk.strip()
         if not chunk:
             continue

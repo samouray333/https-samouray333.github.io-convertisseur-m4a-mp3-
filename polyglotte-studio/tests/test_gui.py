@@ -324,108 +324,111 @@ def test_rate_emphasis_tools_and_correction(app, tmp_path):
     win.close()
 
 
-def test_hosts_page_rename_and_dialogue(app):
-    from polyglottestudio.core import ai
-    from polyglottestudio.core.models import VoiceProfile
-    from polyglottestudio.ui.dialogs.write_dialogue import WriteDialogueDialog
-    from polyglottestudio.ui.main_window import MainWindow, new_podcast
+def test_hosts_page_language_gender_and_rename(app):
+    from polyglottestudio.core import renderer
+    from polyglottestudio.core.models import Chapter, Host, Project
+    from polyglottestudio.ui.main_window import MainWindow
 
     win = MainWindow()
-    lib = win.ctx.library
-    va = lib.save(VoiceProfile(name="Voix A", engine="edge", gender="F"))
-    vb = lib.save(VoiceProfile(name="Voix B", engine="edge", gender="M"))
-    pr = new_podcast(lib)
-    assert [h.name for h in pr.hosts] == ["Alex", "Sam"]
-    assert pr.hosts[0].voice_id and pr.hosts[0].voice_id != pr.hosts[1].voice_id
+    pr = Project(chapters=[Chapter("Au café", "@Maria: [es] Hola.\n\n@Pedro: ¿Qué tal?")])
+    pr.metadata.target_language = "es"
+    pr.metadata.target_locale = "es-MX"
+    pr.hosts = [Host("Maria", gender="F"), Host("Pedro", gender="M")]
     win.ctx.set_project(pr)
     page = win.pages["hosts"]
     win.show_page("hosts")
+    assert "voix native automatique" in page.rows[0].info.text()
     row = page.rows[0]
-    row.name.setText("Camille")
+    row.name.setText("Lucía")
     row._renamed()
-    assert pr.hosts[0].name == "Camille"
-    assert "@Camille:" in pr.chapters[0].text and "@Alex:" not in pr.chapters[0].text
-    assert pr.cast.get("Camille") == pr.hosts[0].voice_id
-    page.add("guest")
-    assert pr.hosts[-1].role == "guest" and pr.hosts[-1].name == "Invité"
-
-    ch = pr.chapters[0]
-    ch.title = "Épisode 1"
-    dlg = WriteDialogueDialog(win.ctx, ch, win)
-    assert dlg.notes.toPlainText() == ""  # le script est déjà un dialogue
-    dlg._done(("Titre IA", "Desc IA", [ai.DialogueLine("Camille", "Bonjour !", "joyeux"),
-                                       ai.DialogueLine("Sam", "Salut.")]))
-    assert dlg.use.isEnabled()
-    dlg._apply()
-    assert ch.text == "@Camille: [joyeux] Bonjour !\n\n@Sam: Salut."
-    assert ch.title == "Titre IA" and ch.description == "Desc IA"
-
-    ep = win.pages["manuscript"]
-    win.show_page("manuscript")
-    ep.list.setCurrentRow(0)
-    ep.ep_number.setValue(7)
-    ep.ep_type.setCurrentIndex(ep.ep_type.findData("bonus"))
-    assert ch.number == 7 and ch.episode_type == "bonus"
-    assert ep.list.item(0).text().startswith("Bonus · Titre IA")
-    for key in win.pages:
-        win.show_page(key)
-        app.processEvents()
-    for v in (va, vb):
-        lib.delete(v.id)
+    assert pr.hosts[0].name == "Lucía" and "@Lucía:" in pr.chapters[0].text
+    page.rows[1].lang.setCurrentIndex(page.rows[1].lang.findData("pt"))
+    assert pr.hosts[1].language == "pt"
+    segs = renderer.build_plan(pr, win.ctx.library)[0].segments
+    lucia, pedro = (win.ctx.library.get(s.voice_id) for s in segs[-2:])
+    assert lucia.engine_voice.startswith("es-MX") and lucia.gender == "F"
+    assert pedro.engine_voice.startswith("pt-") and pedro.gender == "M"
+    page.add("host")
+    assert pr.hosts[-1].role == "host" and pr.hosts[-1].language == "fr"
     win.ctx.dirty = False
     win.close()
 
 
-def test_calendar_templates_and_studio_tools(app, monkeypatch):
-    from PySide6.QtCore import QDate
+def test_new_course_lessons_vocab_reviews_and_glossary(app, monkeypatch):
+    from PySide6.QtGui import QTextCursor
 
-    from polyglottestudio.core.models import VoiceProfile
-    from polyglottestudio.ui.dialogs.templates import TemplateDialog
-    from polyglottestudio.ui.main_window import MainWindow, new_podcast
+    from polyglottestudio.core import srs
+    from polyglottestudio.core.models import VocabItem
+    from polyglottestudio.ui.dialogs.new_course import NewCourseDialog
+    from polyglottestudio.ui.main_window import MainWindow, setup_course
 
     win = MainWindow()
-    lib = win.ctx.library
-    vs = [lib.save(VoiceProfile(name=f"V{i}", engine="edge", gender="FM"[i % 2])) for i in range(3)]
-    pr = new_podcast(lib, "debat")
-    assert [h.name for h in pr.hosts] == ["Nora", "Paul", "Zoé"]
-    assert len({h.voice_id for h in pr.hosts}) == 3
+    dlg = NewCourseDialog(win)
+    dlg.target.setCurrentIndex(dlg.target.findData("ja"))
+    assert dlg.locale.currentData() == "ja-JP" and "romaji" in dlg.info.text()
+    dlg.explain.setCurrentIndex(dlg.explain.findData("en"))
+    pr = dlg.build_project()
+    assert (pr.metadata.target_language, pr.metadata.language) == ("ja", "en") and len(pr.chapters) == 1
+    setup_course(pr, win.ctx.library)
+    assert pr.narrator_voice_id.startswith("native:edge:en-")  # voix d'explication anglaise
     win.ctx.set_project(pr)
-    dlg = TemplateDialog(win, for_episode=True)
-    dlg._choose("interview")
-    assert dlg.selected_name == "Interview"
-    ep = win.pages["manuscript"]
-    win.show_page("manuscript")
-    ep.list.setCurrentRow(0)
-    monkeypatch.setattr(TemplateDialog, "exec", lambda self: (self._choose("interview"), True)[1])
-    ep.add_from_template()
-    assert len(pr.chapters) == 2 and pr.host_by_name("Camille") is not None
-    ep.list.setCurrentRow(0)
-    cur = ep.editor.textCursor()
-    cur.movePosition(cur.MoveOperation.Start)
-    while cur.block().isValid() and not cur.block().text().startswith("@Paul:"):
-        cur.movePosition(cur.MoveOperation.NextBlock)
-    ep.editor.setTextCursor(cur)
-    ep.tag_overlap()
-    assert "@Paul: [par-dessus]" in ep.editor.toPlainText()
-    ep._insert_block("[son: ding]")
-    assert "\n[son: ding]\n" in ep.editor.toPlainText()
-    ep._fill_sounds()
-    assert ep.sound_menu.actions()
 
-    cal = win.pages["calendar"]
-    win.show_page("calendar")
-    cal.start.setDate(QDate(2026, 11, 2))
-    cal.plan()
-    assert [c.pub_date for c in pr.chapters] == ["2026-11-02", "2026-11-09"]
-    assert cal.table.rowCount() == 2 and cal.table.item(0, 3).text() in ("Écrit", "À écrire")
-    hosts = win.pages["hosts"]
-    win.show_page("hosts")
-    hosts.rows[1].pan.setCurrentIndex(hosts.rows[1].pan.findData(1.0))
-    assert pr.hosts[1].pan == 1.0 and pr.host_pan("Paul") == 1.0
+    page = win.pages["manuscript"]
+    win.show_page("manuscript")
+    page.list.setCurrentRow(0)
+    page.vocab_panel.add("word")
+    item = pr.chapters[0].vocab[0]
+    page.vocab_panel.table.item(0, 2).setText("ありがとう [x]")
+    page.vocab_panel.table.item(0, 4).setText("thank you")
+    assert item.term == "ありがとう (x)" and item.translation == "thank you"
+    page.vocab_panel._double_clicked(0, 0)
+    assert item.favorite
+    # balise de langue sur la sélection
+    page.editor.setPlainText("The word sakura means cherry blossom.")
+    cur = page.editor.textCursor()
+    start = page.editor.toPlainText().index("sakura")
+    cur.setPosition(start)
+    cur.setPosition(start + 6, QTextCursor.KeepAnchor)
+    page.editor.setTextCursor(cur)
+    page.tag_language("ja")
+    assert "[ja]sakura[/ja]" in page.editor.toPlainText()
+    page.editor.moveCursor(QTextCursor.Start)
+    page.tag_language("ja-JP", paragraph=True)
+    assert page.editor.toPlainText().startswith("[ja-JP] The word")
+    page._fill_lang_menu()
+    assert page.lang_menu.actions()
+    page._save_timer.stop()
+    # exercices propres à la leçon
+    page.ex_panel.custom.setChecked(True)
+    page.ex_panel.ex_boxes["dictation"].setChecked(True)
+    assert "dictation" in pr.chapters[0].exercises
+    # étudiée : entre dans les révisions
+    page._toggle_studied()
+    assert item.id in pr.reviews and pr.chapters[0].id in pr.studied
+    rev = win.pages["reviews"]
+    win.show_page("reviews")
+    rev._day = srs.today()
+    rev.reload()
+    assert rev.table.rowCount() == 0  # première révision demain
+    tomorrow = srs.today() + __import__("datetime").timedelta(days=1)
+    rev._day = tomorrow
+    rev._fill_day()
+    assert rev.table.rowCount() == 1 and rev.table.item(0, 4).text() == "J+1"
+    gl = win.pages["glossary"]
+    win.show_page("glossary")
+    assert gl.table.rowCount() == 1 and gl.table.item(0, 0).text() == "★"
+    gl.fav.setChecked(True)
+    assert gl.table.rowCount() == 1
+    pr.chapters[0].vocab.append(VocabItem("さくら", "cherry blossom"))
+    gl.reload()
+    assert gl.table.rowCount() == 1  # favoris seulement
+    lang = win.pages["languages"]
+    win.show_page("languages")
+    assert lang.voice_lang.currentData() == "ja" and lang.voices.count() >= 2
+    lang.voices.item(1).setCheckState(lang.voices.item(1).checkState().__class__.Checked)
+    assert pr.language_voices["ja"]
     for key in win.pages:
         win.show_page(key)
         app.processEvents()
-    for v in vs:
-        lib.delete(v.id)
     win.ctx.dirty = False
     win.close()

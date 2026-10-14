@@ -28,7 +28,7 @@ def qpixmap_to_pil(pm) -> Image.Image:
 
 def main() -> None:
     app = QApplication.instance() or QApplication([])
-    from polyglottestudio import APP_NAME, BRAND_ACCENT, BRAND_ACCENT2
+    from polyglottestudio import APP_NAME, BRAND_ACCENT, BRAND_ACCENT2, BRAND_BG
     from polyglottestudio.ui import icons, theme
 
     theme.apply(app, "dark", BRAND_ACCENT)
@@ -43,7 +43,8 @@ def main() -> None:
     # Grande image latérale de l'assistant d'installation (164 × 314, mise à l'échelle 2x)
     w, h = 328, 628
     a1 = tuple(int(BRAND_ACCENT[i:i + 2], 16) for i in (1, 3, 5))
-    a2 = tuple(int(BRAND_ACCENT2[i:i + 2], 16) for i in (1, 3, 5))
+    a2 = tuple(int(BRAND_BG[i:i + 2], 16) for i in (1, 3, 5))
+    gold = tuple(int(BRAND_ACCENT2[i:i + 2], 16) for i in (1, 3, 5))
     bg = tuple(int(theme.CURRENT.bg[i:i + 2], 16) for i in (1, 3, 5))
     side = Image.new("RGB", (w, h), bg)
     draw = ImageDraw.Draw(side)
@@ -51,7 +52,7 @@ def main() -> None:
         t = y / h
         draw.line([(0, y), (w, y)], fill=tuple(int(c1 * (1 - t) + (c2 * 0.55 + c0 * 0.45) * t)
                                                 for c1, c2, c0 in zip(a1, a2, bg)))
-    tint = tuple(int(255 * 0.8 + c * 0.2) for c in a1)
+    tint = gold
     for i in range(22):
         import math
 

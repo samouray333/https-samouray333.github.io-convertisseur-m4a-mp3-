@@ -13,8 +13,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFrame, QHBoxLayout
 
 from ...core import course, languages, srs
 from ...core.models import LEVELS, Chapter
-from ...core.textproc import (EMOTION_ALIASES, EMOTION_LABELS, EMPHASIS_RE, RATE_ALIASES, clean_imported_text, find_characters,
-                              format_duration)
+from ...core.textproc import (EMOTION_ALIASES, EMOTION_LABELS, EMPHASIS_RE, RATE_ALIASES, clean_imported_text, find_characters)
 from .. import icons, theme
 from ..widgets import Card, EmptyState, IconButton, ToggleSwitch, button, label
 from .base import Page

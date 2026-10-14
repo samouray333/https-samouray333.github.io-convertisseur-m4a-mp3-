@@ -57,10 +57,10 @@ class AIAnnotateDialog(QDialog):
         self.key_card.setVisible(not unprotect(settings().get("ai_key", "")))
 
         top = QHBoxLayout()
-        self.status = label("Le texte de l'épisode sera envoyé à DeepSeek (service en ligne payant, quelques "
-                            "centimes par épisode).", "Muted", wrap=True)
+        self.status = label("Le texte de la leçon sera envoyé à DeepSeek (service en ligne payant, quelques "
+                            "centimes par leçon).", "Muted", wrap=True)
         top.addWidget(self.status, 1)
-        self.go = button("Analyser l'épisode", "sparkles", "primary")
+        self.go = button("Analyser la leçon", "sparkles", "primary")
         self.go.clicked.connect(self.start)
         top.addWidget(self.go)
         lay.addLayout(top)

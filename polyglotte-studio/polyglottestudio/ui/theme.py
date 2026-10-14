@@ -57,14 +57,14 @@ def make_palette(theme: str = "dark", accent: str = BRAND_ACCENT) -> Palette:
         accent2 = BRAND_ACCENT2
     else:
         accent2 = _mix(accent, "#FF4FA3", 0.55) if accent.upper() != "#FF4FA3" else "#FF8A5B"
-    # Tons chauds (studio d'enregistrement) : même mise en page qu'AudioLivre Studio, ambiance propre au podcast
+    # Bleu nuit et or : même mise en page qu'AudioLivre Studio, couleurs propres à Polyglotte Studio
     if theme == "light":
-        return Palette("light", bg="#FBF6F2", sidebar="#FFFFFF", surface="#FFFFFF", surface2="#FCF8F5",
-                       surface3="#F4ECE6", border="#EADFD7", text="#241A14", muted="#76655A", faint="#B5A598",
-                       accent=accent, accent2=accent2, success="#059669", warning="#B45309", danger="#DC2626",
-                       info="#0284C7")
-    return Palette("dark", bg="#13100E", sidebar="#191411", surface="#1F1915", surface2="#271F1A",
-                   surface3="#312720", border="#3D3129", text="#F6EFEA", muted="#BBA99C", faint="#786659",
+        return Palette("light", bg="#F3F7FC", sidebar="#FFFFFF", surface="#FFFFFF", surface2="#F7FAFE",
+                       surface3="#E8F0FA", border="#D6E2F0", text="#0F1B2D", muted="#4B5D78", faint="#9FB3CC",
+                       accent=accent, accent2="#E0A800" if accent2 == BRAND_ACCENT2 else accent2, success="#059669",
+                       warning="#B45309", danger="#DC2626", info="#0284C7")
+    return Palette("dark", bg="#0F1B2D", sidebar="#122036", surface="#16263E", surface2="#1C2F4B",
+                   surface3="#243A5A", border="#2C4466", text="#EEF4FC", muted="#A7B9D3", faint="#62789A",
                    accent=accent, accent2=accent2)
 
 
@@ -134,9 +134,9 @@ QPushButton:hover {{ background: {p.surface3}; border-color: {rgba(p.accent, 0.6
 QPushButton:pressed {{ background: {acc_soft}; }}
 QPushButton:disabled {{ color: {p.faint}; background: {p.surface}; border-color: {p.border}; }}
 QPushButton#Primary {{ border: none; color: white; padding: 9px 20px;
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p.accent}, stop:1 {p.accent2}); }}
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {p.accent}, stop:1 {_mix(p.accent, '#26C6DA', 0.45)}); }}
 QPushButton#Primary:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {_mix(p.accent, '#FFFFFF', 0.12)},
-    stop:1 {_mix(p.accent2, '#FFFFFF', 0.12)}); }}
+    stop:1 {_mix(_mix(p.accent, '#26C6DA', 0.45), '#FFFFFF', 0.12)}); }}
 QPushButton#Primary:disabled {{ background: {p.surface3}; color: {p.faint}; }}
 QPushButton#Danger {{ color: {p.danger}; }}
 QPushButton#Danger:hover {{ background: {rgba(p.danger, 0.12)}; border-color: {p.danger}; }}

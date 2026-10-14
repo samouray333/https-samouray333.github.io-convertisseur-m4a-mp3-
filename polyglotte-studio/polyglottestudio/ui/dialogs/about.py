@@ -34,7 +34,7 @@ Moteurs installés à la demande :
 Voix Microsoft : service en ligne de Microsoft Edge, soumis à ses conditions d'utilisation.
 
 Utilisation responsable : ne clonez une voix qu'avec l'accord de la personne concernée et
-respectez les droits d'auteur des textes que vous transformez en podcasts.
+respectez les droits d'auteur des textes que vous utilisez dans vos cours.
 """
 
 
@@ -54,7 +54,7 @@ class AboutDialog(QDialog):
         t = label(f"Polyglotte Studio {__version__}")
         t.setStyleSheet("font-size: 18pt; font-weight: 800;")
         col.addWidget(t)
-        col.addWidget(label("Créez vos podcasts à plusieurs voix, du script au flux RSS.", "Muted"))
+        col.addWidget(label("Apprenez les langues à l'écoute, avec des voix natives.", "Muted"))
         top.addLayout(col, 1)
         lay.addLayout(top)
         info = (f"Python {sys.version.split()[0]} · {platform.system()} {platform.release()} · "

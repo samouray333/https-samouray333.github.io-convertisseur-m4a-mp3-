@@ -1,4 +1,4 @@
-"""Page Export & RSS : informations du podcast, couverture, MP3 des épisodes, jingles, flux RSS et rapport."""
+"""Page Export : MP3 par leçon et par module, séances de révision, support écrit, flashcards, Anki, rapport."""
 
 from __future__ import annotations
 
@@ -18,13 +18,11 @@ from .. import icons, tasks, theme
 from ..widgets import Badge, Card, ToggleSwitch, button, card_title, label
 from .base import Page
 
-from ...core.rss import CATEGORIES
-
-GENRES = ["Podcast"]
+GENRES = ["Cours de langue", "Langues", "Méthode de langue", "Vocabulaire", "Conversation"]
 PRESET_HELP = {
-    "acx": "Égalisation, de-essing, compression douce, RMS -19,5 dB : un peu moins fort, pour les voix posées.",
-    "streaming": "Normalisation à -16 LUFS, crêtes -1,5 dBTP : le volume attendu par Apple Podcasts, Spotify, "
-                 "Deezer et YouTube.",
+    "acx": "Égalisation, de-essing, compression douce, RMS -19,5 dB, crêtes ≤ -3,6 dB, bruit de fond -72 dB. "
+           "Conforme aux exigences d'Audible / ACX.",
+    "streaming": "Normalisation à -16 LUFS, crêtes -1,5 dBTP : volume confortable au téléphone et en voiture.",
     "natural": "Traitement léger qui préserve la dynamique naturelle de la voix.",
     "none": "Aucun traitement : l'audio brut des voix est exporté tel quel.",
 }
@@ -64,10 +62,11 @@ class ExportPage(Page):
     name = "export"
 
     def __init__(self, ctx):
-        super().__init__(ctx, "Export & RSS", "Créez les MP3 de vos épisodes et le flux RSS, prêts à publier sur "
-                         "Apple Podcasts, Spotify, Deezer…", scroll=True)
+        super().__init__(ctx, "Export", "Créez les fichiers de votre cours : MP3 par leçon et par module, séances de "
+                         "révision, support écrit avec traductions et réponses, flashcards et paquet Anki.",
+                         scroll=True)
         self._loading = False
-        self.export_btn = button("Exporter les épisodes", "download", "primary")
+        self.export_btn = button("Exporter le cours", "download", "primary")
         self.export_btn.clicked.connect(self.export)
         self.header.add_action(self.export_btn)
 
@@ -88,15 +87,15 @@ class ExportPage(Page):
         row1 = QHBoxLayout()
         row1.setSpacing(18)
         meta = Card()
-        meta.add(card_title("Informations du podcast", "Inscrites dans les MP3 et dans le flux RSS, elles sont "
-                            "affichées par les applications d'écoute.", "podcast"))
+        meta.add(card_title("Informations du cours", "Elles sont inscrites dans les fichiers (titre, auteur, "
+                            "professeur…) et affichées par les lecteurs audio.", "graduation"))
         g = QGridLayout()
         g.setHorizontalSpacing(12)
         g.setVerticalSpacing(8)
         self.f = {}
-        fields = [("title", "Nom du podcast"), ("subtitle", "Accroche"), ("author", "Auteur / producteur"),
-                  ("narrator", "Animé par"), ("website", "Site web"), ("owner_email", "E-mail (Apple, Spotify)"),
-                  ("copyright", "Copyright"), ("year", "Année")]
+        fields = [("title", "Titre du cours"), ("subtitle", "Sous-titre / public"), ("author", "Auteur"),
+                  ("narrator", "Présenté par"), ("publisher", "Établissement"), ("year", "Année"),
+                  ("series", "Programme / cursus"), ("copyright", "Copyright")]
         for i, (key, name) in enumerate(fields):
             w = QLineEdit()
             w.textEdited.connect(self._meta_changed)
@@ -104,27 +103,18 @@ class ExportPage(Page):
             g.addWidget(label(name, "Muted"), i // 2, (i % 2) * 2)
             g.addWidget(w, i // 2, (i % 2) * 2 + 1)
         r = len(fields) // 2
-        self.genre = QComboBox()  # catégorie Apple Podcasts
-        for key, name in CATEGORIES.items():
-            self.genre.addItem(name, key)
-        self.genre.currentIndexChanged.connect(self._meta_changed)
-        self.lang = QComboBox()
-        from .voices import LANGS
-
-        for code, name in LANGS[:-1]:
-            self.lang.addItem(name, code)
-        self.lang.currentIndexChanged.connect(self._meta_changed)
-        g.addWidget(label("Catégorie", "Muted"), r, 0)
+        self.genre = QComboBox()
+        self.genre.setEditable(True)
+        self.genre.addItems(GENRES)
+        self.genre.currentTextChanged.connect(self._meta_changed)
+        self.lang = label("", "Muted")
+        g.addWidget(label("Genre", "Muted"), r, 0)
         g.addWidget(self.genre, r, 1)
-        g.addWidget(label("Langue", "Muted"), r, 2)
-        g.addWidget(self.lang, r, 3)
+        g.addWidget(self.lang, r, 2, 1, 2)
         g.setColumnStretch(1, 1)
         g.setColumnStretch(3, 1)
         meta.add(g)
-        self.explicit = ToggleSwitch("Contenu explicite (langage grossier, thèmes réservés aux adultes)")
-        self.explicit.toggled.connect(self._meta_changed)
-        meta.add(self.explicit)
-        meta.add(label("Description du podcast", "Muted"))
+        meta.add(label("Présentation du cours (objectifs, prérequis)", "Muted"))
         self.desc = QPlainTextEdit()
         self.desc.setMaximumHeight(90)
         self.desc.textChanged.connect(self._meta_changed)
@@ -132,7 +122,7 @@ class ExportPage(Page):
         row1.addWidget(meta, 3)
 
         cov = Card()
-        cov.add(card_title("Couverture", "Image carrée exigée par Apple Podcasts et Spotify (1400 à 3000 pixels).",
+        cov.add(card_title("Couverture", "Image carrée affichée par les lecteurs audio (logo, titre du cours…).",
                            "image"))
         self.cover = CoverView(self._set_cover)
         cov.add(self.cover)
@@ -144,7 +134,7 @@ class ExportPage(Page):
         cr.addWidget(pick)
         cr.addWidget(rm)
         cov.add(cr)
-        self.acx_cover = ToggleSwitch("Haute définition 3000 × 3000 (sinon 1400)")
+        self.acx_cover = ToggleSwitch("Haute définition 2400 × 2400 (sinon 1400)")
         self.acx_cover.toggled.connect(self._export_changed)
         cov.add(self.acx_cover)
         cov.add(None)
@@ -163,44 +153,21 @@ class ExportPage(Page):
             self.fmt_toggles[key] = t
             fm.add(t)
         br = QGridLayout()
-        self.m4b_rate = QComboBox()  # non affiché : le M4B ne sert pas aux podcasts
+        self.m4b_rate = QComboBox()
         self.m4b_rate.addItems(["64k", "96k", "128k", "192k"])
         self.mp3_rate = QComboBox()
-        self.mp3_rate.addItems(["96k", "128k", "192k"])
-        self.mp3_rate.currentTextChanged.connect(self._export_changed)
-        br.addWidget(label("Débit MP3", "Muted"), 0, 0)
-        br.addWidget(self.mp3_rate, 0, 1)
-        br.addWidget(label("128 kb/s : qualité conseillée pour la voix", "Faint"), 0, 2)
-        br.setColumnStretch(2, 1)
+        self.mp3_rate.addItems(["128k", "192k", "256k", "320k"])
+        for c in (self.m4b_rate, self.mp3_rate):
+            c.currentTextChanged.connect(self._export_changed)
+        br.addWidget(label("Débit M4B", "Muted"), 0, 0)
+        br.addWidget(self.m4b_rate, 0, 1)
+        br.addWidget(label("Débit MP3", "Muted"), 0, 2)
+        br.addWidget(self.mp3_rate, 0, 3)
         fm.add(br)
-        fm.add(label("Adresse de publication (dossier en ligne où vous déposerez les fichiers)", "Muted"))
-        self.base_url = QLineEdit()
-        self.base_url.setPlaceholderText("https://votre-nom.github.io/mon-podcast")
-        self.base_url.textEdited.connect(self._meta_changed)
-        fm.add(self.base_url)
-        fm.add(label("Gratuit : GitHub Pages, Netlify ou votre site. Le flux sera « adresse/feed.xml », les MP3 dans "
-                     "« adresse/episodes/ ».", "Hint", wrap=True))
-        self.t_chap_notes = ToggleSwitch("Chapitres horodatés dans les notes d'épisode (« 03:12 La rubrique »)")
-        self.t_due = ToggleSwitch("Flux : seulement les épisodes dont la date de publication est passée")
-        self.t_due.setToolTip("Les épisodes programmés plus tard (page Calendrier) apparaîtront à leur date, "
-                              "lors d'un prochain export")
-        for t in (self.t_chap_notes, self.t_due):
-            t.toggled.connect(self._export_changed)
-            fm.add(t)
-        tr = QHBoxLayout()
-        tr.addWidget(label("Durée de la bande-annonce", "Muted"))
-        self.trailer_sec = QDoubleSpinBox()
-        self.trailer_sec.setRange(15, 90)
-        self.trailer_sec.setDecimals(0)
-        self.trailer_sec.setSuffix(" s")
-        self.trailer_sec.valueChanged.connect(self._export_changed)
-        tr.addWidget(self.trailer_sec)
-        tr.addStretch(1)
-        fm.add(tr)
         row2.addWidget(fm, 1)
 
         ms = Card()
-        ms.add(card_title("Mastering", "Le son final, homogène d'un épisode à l'autre.", "sliders"))
+        ms.add(card_title("Mastering", "Le son final, homogène d'une leçon à l'autre.", "sliders"))
         self.preset = QComboBox()
         for k, v in MASTERING_PRESETS.items():
             self.preset.addItem(v, k)
@@ -220,14 +187,13 @@ class ExportPage(Page):
 
         # ---- musique
         mus = Card()
-        mus.add(card_title("Jingles et musique", "Jingle d'intro et d'outro, fond sonore discret sous les voix (baissé "
-                           "automatiquement quand quelqu'un parle). Utilisez des musiques libres de droits "
-                           "(YouTube Audio Library, Pixabay Music, Free Music Archive…).", "music"))
+        mus.add(card_title("Musique", "Jingle d'ouverture et de fin, fond sonore discret sous la voix (baissé "
+                           "automatiquement quand le professeur parle). Utilisez des musiques libres de droits.", "music"))
         mg = QGridLayout()
         mg.setHorizontalSpacing(10)
         mg.setVerticalSpacing(8)
         self.music_fields: dict[str, QLineEdit] = {}
-        for row, (key, name) in enumerate((("intro_music", "Jingle d'intro"), ("outro_music", "Jingle d'outro"),
+        for row, (key, name) in enumerate((("intro_music", "Jingle d'ouverture"), ("outro_music", "Jingle de fin"),
                                            ("background_music", "Fond sonore"))):
             le = QLineEdit()
             le.setPlaceholderText("Aucune musique")
@@ -252,10 +218,11 @@ class ExportPage(Page):
         lr.addWidget(self.bg_level, 1)
         lr.addWidget(self.bg_level_lbl)
         mus.add(lr)
-        self.t_each = ToggleSwitch("Jingles au début et à la fin de chaque épisode (sinon : seulement au début "
-                                   "du premier et à la fin du dernier)")
+        self.t_each = ToggleSwitch("Jingles au début et à la fin de chaque module (sinon : début et fin du cours)")
         self.t_each.toggled.connect(self._export_changed)
         mus.add(self.t_each)
+        mus.add(label("Pour un cours, un fond sonore très discret (ou aucun) aide à rester concentré.", "Hint",
+                      wrap=True))
         self.body.addWidget(mus)
 
         # ---- crédits + destination
@@ -288,7 +255,7 @@ class ExportPage(Page):
         sr.addWidget(self.sample_min)
         sr.addStretch(1)
         cr_card.add(sr)
-        cr_card.hide()  # pas de crédits séparés dans un podcast (l'intro et l'outro sont dans le script)
+        cr_card.hide()  # pas de pistes de crédits séparées : la présentation se fait dans la première leçon
         row3.addWidget(cr_card, 1)
 
         dest = Card()
@@ -301,24 +268,12 @@ class ExportPage(Page):
         dr.addWidget(self.out_dir, 1)
         dr.addWidget(browse)
         dest.add(dr)
-        dest.add(label("Nom des pistes", "Muted"))
+        dest.add(label("Nom des fichiers de leçon", "Muted"))
         self.pattern = QLineEdit()
         self.pattern.textEdited.connect(self._export_changed)
         dest.add(self.pattern)
-        dest.add(label("Variables : {number:03d} (numéro d'épisode), {season} (saison), {title} (épisode), "
-                       "{podcast} (nom du podcast)", "Faint"))
-        sr2 = QHBoxLayout()
-        self.t_sample2 = ToggleSwitch("Créer un extrait du premier épisode de")
-        self.t_sample2.toggled.connect(lambda on: self.t_sample.setChecked(on))
-        self.sample_min2 = QDoubleSpinBox()
-        self.sample_min2.setRange(1, 5)
-        self.sample_min2.setSingleStep(0.5)
-        self.sample_min2.setSuffix(" min")
-        self.sample_min2.valueChanged.connect(lambda v: self.sample_min.setValue(v))
-        sr2.addWidget(self.t_sample2)
-        sr2.addWidget(self.sample_min2)
-        sr2.addStretch(1)
-        dest.add(sr2)
+        dest.add(label("Variables : {lesson:02d} (numéro de la leçon dans le module), {module} (numéro du "
+                       "module), {title} (leçon), {course} (cours)", "Faint"))
         self.t_report = ToggleSwitch("Générer un rapport qualité (HTML)")
         self.t_report.toggled.connect(self._export_changed)
         dest.add(self.t_report)
@@ -362,16 +317,13 @@ class ExportPage(Page):
         self._loading = True
         for key, w in self.f.items():
             w.setText(str(getattr(m, key, "") or ""))
-        self.genre.setCurrentIndex(max(0, self.genre.findData(m.category or "Society & Culture")))
-        self.explicit.setChecked(m.explicit)
-        self.base_url.setText(m.media_base_url)
-        self.t_each.setChecked(e.jingles_each_episode)
-        self.t_chap_notes.setChecked(e.chapters_in_notes)
-        self.t_due.setChecked(e.rss_only_due)
-        self.trailer_sec.setValue(e.trailer_seconds)
-        self.t_sample2.setChecked(e.make_sample)
-        self.sample_min2.setValue(e.sample_minutes)
-        self.lang.setCurrentIndex(max(0, self.lang.findData(m.language or "fr")))
+        self.genre.setCurrentText(m.genre or "Cours de langue")
+        self.t_each.setChecked(e.jingles_each_module)
+        from ...core import languages
+
+        self.lang.setText(f"{languages.language_name(m.target_language)} expliqué en "
+                          f"{languages.language_name(m.language).lower()} · niveau {m.level} "
+                          "(page Langues et voix)")
         self.desc.setPlainText(m.description)
         self.cover.set_path(m.cover_path)
         self.acx_cover.setChecked(e.acx_cover)
@@ -416,15 +368,17 @@ class ExportPage(Page):
             self.ready_lbl.setText(str(exc))
             return
         ready = [rc for rc in plan if renderer.chapter_is_current(pr, rc)]
-        self.export_btn.setEnabled(bool(ready) and not self.ctx.rendering)
+        written_only = bool(pr.export.formats) and set(pr.export.formats) <= WRITTEN_FORMATS
+        self.export_btn.setEnabled((bool(ready) or written_only) and not self.ctx.rendering)
         if len(ready) == len(plan):
             self.ready_icon.setPixmap(icons.pixmap("check", p.success, 22))
-            self.ready_lbl.setText(f"Les {len(plan)} épisodes sont produits et prêts à être exportés.")
+            self.ready_lbl.setText(f"Les {len(plan)} leçons sont produites et prêtes à être exportées.")
             self.produce_btn.hide()
         else:
             self.ready_icon.setPixmap(icons.pixmap("alert", p.warning, 22))
-            self.ready_lbl.setText(f"{len(ready)} épisode(s) prêt(s) sur {len(plan)}. Produisez les épisodes "
-                                   "manquants ou modifiés avant l'export.")
+            self.ready_lbl.setText(f"{len(ready)} leçon(s) prête(s) sur {len(plan)}. Produisez les leçons "
+                                   "manquantes ou modifiées avant l'export (le support écrit, les flashcards, "
+                                   "Anki et les révisions n'en ont pas besoin).")
             self.produce_btn.show()
 
     # -- modifications -----------------------------------------------------------------
@@ -449,11 +403,7 @@ class ExportPage(Page):
         m = self.ctx.project.metadata
         for key, w in self.f.items():
             setattr(m, key, w.text().strip())
-        m.category = self.genre.currentData() or "Society & Culture"
-        m.genre = "Podcast"
-        m.explicit = self.explicit.isChecked()
-        m.media_base_url = self.base_url.text().strip()
-        m.language = self.lang.currentData() or "fr"
+        m.genre = self.genre.currentText().strip()
         m.description = self.desc.toPlainText().strip()
         self.ctx.mark_dirty()
 
@@ -471,10 +421,7 @@ class ExportPage(Page):
         e.sample_minutes = self.sample_min.value()
         e.file_pattern = self.pattern.text() or "{index:02d} - {title}"
         e.write_report = self.t_report.isChecked()
-        e.jingles_each_episode = self.t_each.isChecked()
-        e.chapters_in_notes = self.t_chap_notes.isChecked()
-        e.rss_only_due = self.t_due.isChecked()
-        e.trailer_seconds = int(self.trailer_sec.value())
+        e.jingles_each_module = self.t_each.isChecked()
         out = self.out_dir.text().strip()
         e.output_dir = out if out and pr.path is not None and Path(out) != pr.path.parent / "Export" else ""
         prod.mastering_preset = self.preset.currentData()
@@ -529,12 +476,13 @@ class ExportPage(Page):
             return
         plan = renderer.build_plan(pr, self.ctx.library)
         ready = [rc for rc in plan if renderer.chapter_is_current(pr, rc)]
-        if len(ready) < len(plan):
+        audio_wanted = bool(set(pr.export.formats) - WRITTEN_FORMATS)
+        if len(ready) < len(plan) and audio_wanted:
             box = QMessageBox(self)
-            box.setWindowTitle("Épisodes non produits")
-            box.setText(f"{len(plan) - len(ready)} épisode(s) ne sont pas encore produits ou ont été modifiés.")
+            box.setWindowTitle("Leçons non produites")
+            box.setText(f"{len(plan) - len(ready)} leçon(s) ne sont pas encore produites ou ont été modifiées.")
             produce = box.addButton("Produire d'abord", QMessageBox.AcceptRole)
-            partial = box.addButton("Exporter les épisodes prêts", QMessageBox.DestructiveRole)
+            partial = box.addButton("Exporter les leçons prêtes", QMessageBox.DestructiveRole)
             box.addButton("Annuler", QMessageBox.RejectRole)
             box.exec()
             if box.clickedButton() is produce:
@@ -543,7 +491,7 @@ class ExportPage(Page):
                 return
             if box.clickedButton() is not partial:
                 return
-        if not ready:
+        if not ready and audio_wanted:
             return
         items = []
         for rc in ready:
@@ -551,10 +499,9 @@ class ExportPage(Page):
             cues = [(a, b, seg.display or seg.text) for (a, b), seg in zip(timings, rc.segments)]
             ch = pr.chapter_by_id(rc.id)
             items.append(ExportItem(rc.title, renderer.chapter_output(pr, rc.id), rc.kind, cues,
-                                    id=f"{pr.id}-{rc.id}", number=pr.episode_number(ch) if ch else 0,
-                                    season=ch.season if ch else 0, description=ch.description if ch else "",
-                                    pub_date=ch.pub_date if ch else "",
-                                    episode_type=ch.episode_type if ch else "full",
+                                    module=ch.module if ch else "", module_index=pr.module_number(ch) if ch else 0,
+                                    lesson=pr.lesson_number(ch) if ch else 0,
+                                    description=ch.description if ch else "",
                                     chapters=rc.chapter_marks(timings)))
         prod = pr.production
         mopts = MasteringOptions(preset=prod.mastering_preset, denoise=prod.denoise, deesser=prod.deesser,
@@ -570,21 +517,10 @@ class ExportPage(Page):
         self.export_btn.setEnabled(False)
         self.prog.setValue(0)
 
-        def work(task):
-            formats = list(pr.export.formats)
-            res = None
-            if any(f != "trailer" for f in formats):
-                res = export_audiobook(items, pr.metadata, pr.export, mopts, out,
-                                       progress=lambda m, f: task.report((m, f)), cancel=task.cancel_event)
-            else:
-                from ...core.exporter import ExportResult
+        lib = self.ctx.library
 
-                out.mkdir(parents=True, exist_ok=True)
-                res = ExportResult(output_dir=out)
-            if "trailer" in formats:
-                task.report(("Bande-annonce : choix des meilleurs passages…", 0.97))
-                res.files.append(self._make_trailer(pr, plan, out, mopts, task))
-            return res
+        def work(task):
+            return run_export(pr, lib, items, mopts, out, task)
 
         def progress(v):
             msg, frac = v
@@ -594,32 +530,6 @@ class ExportPage(Page):
         self._task = tasks.Task(work, pass_reporter=True, on_done=self._done, on_progress=progress,
                                 on_error=self._failed).start()
 
-    def _make_trailer(self, pr, plan, out, mopts, task):
-        """Bande-annonce : passages choisis par DeepSeek (ou, sans clé, les plus expressifs), sur le jingle."""
-        from ...core import ai, trailer
-        from ...core.exporter import safe_filename
-
-        seconds = pr.export.trailer_seconds or 30
-        passages = trailer.candidates(pr, plan)
-        chosen = []
-        try:
-            numbers = ai.pick_trailer([(p.number, p.episode, p.text, p.duration) for p in passages],
-                                      ai.client_from_settings(), seconds)
-            by_n = {p.number: p for p in passages}
-            chosen = [by_n[n] for n in numbers if n in by_n]
-        except Exception as exc:  # pas de clé, pas de réseau : choix automatique
-            task.report((f"Bande-annonce sans l'assistant IA ({exc})", 0.97))
-        if not chosen:
-            chosen = trailer.pick_fallback(passages, seconds)
-        music = pr.export.intro_music or pr.export.background_music
-        if not music:
-            from ...core import sounds
-
-            music = str(sounds.ensure_builtin("generique"))
-        target = out / f"{safe_filename(pr.metadata.title or 'Podcast')} - Bande-annonce.mp3"
-        trailer.build(chosen, target, music, pr.export.mp3_bitrate, mopts, task.cancel_event)
-        return target
-
     def _done(self, result) -> None:
         self._last_result = result
         self.export_btn.setEnabled(True)
@@ -628,7 +538,7 @@ class ExportPage(Page):
         p = theme.CURRENT
         for f in result.files:
             ic = {".m4b": "book", ".mp3": "headphones", ".jpg": "image", ".mp4": "image",
-                  ".srt": "type", ".xml": "rss"}.get(f.suffix.lower(), "file")
+                  ".srt": "type", ".html": "file", ".csv": "list"}.get(f.suffix.lower(), "file")
             try:
                 size = f.stat().st_size / 1e6
             except OSError:
@@ -638,18 +548,13 @@ class ExportPage(Page):
             self.results.addItem(it)
         self.verdict.show()
         if result.acx_ok:
-            self.verdict.set("✓ Volume et qualité conformes (≈ -16 LUFS)", "success")
+            self.verdict.set("✓ Qualité audio conforme", "success")
         else:
-            self.verdict.set("Certains critères techniques ne sont pas atteints", "warning")
+            self.verdict.set("Certains critères de qualité ne sont pas atteints", "warning")
         self.open_report.setVisible(result.report is not None)
-        for w in result.warnings:
-            self.ctx.toast(w, "warning", 9000)
-        if result.feed is not None:
-            base = self.ctx.project.metadata.media_base_url.rstrip("/")
-            where = f" Adresse du flux : {base}/feed.xml" if base else ""
-            self.prog_lbl.setText(self.prog_lbl.text() + " — Publiez le contenu du dossier (episodes, couverture.jpg, "
-                                  "feed.xml) en ligne, puis soumettez le flux aux plateformes." + where)
-        self.ctx.toast("Vos épisodes sont prêts ! 🎙️", "success", 6000)
+        for w in getattr(result, "warnings", [])[:3]:
+            self.ctx.toast(w, "warning", 7000)
+        self.ctx.toast("Votre cours de langue est prêt ! 🌍", "success", 6000)
 
     def _failed(self, msg: str, _tb: str) -> None:
         self.export_btn.setEnabled(True)
@@ -677,3 +582,50 @@ class ExportPage(Page):
         from ..main_window import open_path
 
         open_path(path)
+
+
+WRITTEN_FORMATS = {"handout", "anki", "flashcards", "reviews"}  # pas besoin des leçons produites
+
+
+def run_export(pr, library, items, mopts, out: Path, task=None):
+    """Export complet (appelé dans un fil d'exécution) : audio, séances de révision, supports écrits, Anki."""
+    from ...core import handouts, srs
+    from ...core.exporter import ExportResult, safe_filename, word_audio
+
+    def report(msg: str, frac: float) -> None:
+        if task is not None:
+            task.report((msg, frac))
+
+    formats = list(pr.export.formats)
+    cancel = task.cancel_event if task is not None else None
+    out.mkdir(parents=True, exist_ok=True)
+    base = safe_filename(pr.metadata.title or "Cours")
+    # séances de révision des prochains jours : produites ici (voix d'explication et voix natives)
+    if "reviews" in formats:
+        sessions = srs.planned_sessions(pr, pr.export.review_days)
+        r = renderer.Renderer(pr, library)
+        for i, ch in enumerate(sessions, 1):
+            report(f"Révision {i}/{len(sessions)} : {ch.title}", 0.05)
+            rc = renderer.build_chapter_plan(pr, ch, library, kind="review")
+            rep = r.render([rc])
+            if not rep.failed_segments:
+                items = items + [ExportItem(ch.title, renderer.chapter_output(pr, rc.id), "review")]
+    if any(f not in WRITTEN_FORMATS for f in formats) or any(it.kind == "review" for it in items):
+        res = export_audiobook(items, pr.metadata, pr.export, mopts, out, progress=report, cancel=cancel)
+    else:
+        res = ExportResult(output_dir=out)
+    if "reviews" in formats and not any(it.kind == "review" for it in items):
+        res.warnings.append("Aucune séance de révision à venir : marquez des leçons comme étudiées (page Révisions).")
+    if "handout" in formats:
+        res.files.append(handouts.write_handout(pr, out / f"{base} - Support écrit.html"))
+    if "flashcards" in formats and pr.all_vocab():
+        res.files.append(handouts.write_flashcards(pr, out / f"{base} - Flashcards.html"))
+    if "anki" in formats and pr.all_vocab():
+        def make(ch, it, target):
+            return word_audio(pr, library, ch, it, target)
+
+        anki = handouts.write_anki(pr, out / f"{base} - Anki", make,
+                                   progress=lambda i, n: report(f"Anki : audio {i}/{n}", 0.9 + 0.1 * i / max(1, n)))
+        res.files.append(anki.csv)
+        res.warnings += anki.errors[:3]
+    return res

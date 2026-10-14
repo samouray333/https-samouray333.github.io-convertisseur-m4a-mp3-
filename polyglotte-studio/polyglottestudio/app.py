@@ -106,8 +106,8 @@ def main(argv: list[str] | None = None) -> int:
             win.import_document(str(f))
     if settings().get("first_run", True):
         settings().set("first_run", False)
-        win.ctx.toast("Bienvenue ! Cliquez sur « Nouveau podcast » pour créer votre émission avec deux animateurs, "
-                      "ou importez un document Word ou PDF.", "info", 9000)
+        win.ctx.toast("Bienvenue ! Cliquez sur « Nouveau cours » : choisissez la langue à apprendre, votre niveau, "
+                      "et laissez l'assistant IA proposer les leçons.", "info", 9000)
     return app.exec()
 
 

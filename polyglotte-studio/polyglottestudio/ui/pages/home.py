@@ -11,7 +11,7 @@ from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QMenu, QMessageBox, QToolButton, QVBoxLayout
 
 from ...config import settings
-from ...core import engines, project_io
+from ...core import engines, languages, project_io
 from ...core.importers import SUPPORTED_EXTENSIONS
 from .. import icons, theme
 from ..widgets import Badge, Card, DropZone, button, card_title, label
@@ -102,9 +102,12 @@ class RecentCard(QFrame):
             data = json.loads(p.read_text(encoding="utf-8"))
             title = data.get("metadata", {}).get("title") or title
             chapters = [c for c in data.get("chapters", []) if c.get("include", True)]
-            words = sum(len(c.get("text", "").split()) for c in chapters)
-            author = data.get("metadata", {}).get("author", "")
-            info = f"{author + ' · ' if author else ''}{len(chapters)} épisodes · {words:,} mots".replace(",", " ")
+            sum(len(c.get("text", "").split()) for c in chapters)
+            data.get("metadata", {}).get("author", "")
+            meta = data.get("metadata", {})
+            target = languages.language_name(meta.get("target_language", ""))
+            vocab = sum(len(c.get("vocab", [])) for c in chapters)
+            info = f"{target} · niveau {meta.get('level', '')} · {len(chapters)} leçons · {vocab} mots et phrases"
         except Exception:
             pass
         t = label(title, wrap=True)
@@ -133,12 +136,13 @@ class HomePage(Page):
         hl = QVBoxLayout(hero)
         hl.setContentsMargins(38, 34, 38, 30)
         hl.setSpacing(10)
-        kicker = label("STUDIO DE PODCASTS · 100 % GRATUIT")
+        kicker = label("APPRENDRE LES LANGUES À L'ÉCOUTE · 100 % GRATUIT")
         kicker.setStyleSheet("color: rgba(255,255,255,0.8); font-weight: 700; letter-spacing: 2px; font-size: 8.5pt;")
-        title = label("Votre émission, à plusieurs voix.")
+        title = label("80 langues, des voix natives.")
         title.setStyleSheet("color: white; font-size: 27pt; font-weight: 800;")
-        sub = label("Animateurs et invités aux voix de synthèse ou clonées, dialogue écrit avec l'IA, jingles et "
-                    "fond musical : obtenez des épisodes MP3 au volume des plateformes et leur flux RSS.", wrap=True)
+        sub = label("Vocabulaire, dialogues, petites histoires et grammaire écrits par l'IA selon votre niveau, lus par "
+                    "des voix natives ; exercices « écoutez puis répétez », révisions espacées, MP3, flashcards et "
+                    "Anki.", wrap=True)
         sub.setStyleSheet("color: rgba(255,255,255,0.88); font-size: 11pt;")
         sub.setFixedWidth(640)
         sub.setMinimumHeight(48)
@@ -148,10 +152,10 @@ class HomePage(Page):
         hl.addSpacing(10)
         row = QHBoxLayout()
         row.setSpacing(10)
-        b1 = button("Nouveau podcast", "plus")
-        b1.setStyleSheet("QPushButton { background: white; color: #241A14; border: none; padding: 10px 20px; }"
-                         "QPushButton:hover { background: #FFF1EA; }")
-        b1.setIcon(icons.icon("plus", "#241A14", 18))
+        b1 = button("Nouveau cours", "plus")
+        b1.setStyleSheet("QPushButton { background: white; color: #0F1B2D; border: none; padding: 10px 20px; }"
+                         "QPushButton:hover { background: #EAF3FD; }")
+        b1.setIcon(icons.icon("plus", "#0F1B2D", 18))
         b1.clicked.connect(window.new_empty_project)
         b0 = button("Importer un document", "file-plus", icon_color="#FFFFFF")
         b2 = button("Ouvrir un projet", "folder", icon_color="#FFFFFF")
@@ -174,18 +178,18 @@ class HomePage(Page):
         grid = QHBoxLayout()
         grid.setSpacing(18)
         exts = ", ".join(sorted({e.lstrip(".").upper() for e in SUPPORTED_EXTENSIONS if e not in (".htm", ".markdown")}))
-        drop = DropZone("Glissez un document ici", f"chaque partie devient un épisode — {exts}", "upload", 240)
+        drop = DropZone("Glissez un document ici", f"chaque partie devient une leçon — {exts}", "upload", 240)
         drop.files_dropped.connect(lambda files: window.import_document(files[0]))
         drop.clicked.connect(window.import_document_dialog)
         grid.addWidget(drop, 3)
 
         steps = Card()
-        steps.add(card_title("Comment ça marche", "Quatre étapes vers un podcast professionnel", "sparkles"))
+        steps.add(card_title("Comment ça marche", "Quatre étapes pour apprendre une langue à l'écoute", "sparkles"))
         for i, (t, d) in enumerate([
-            ("Animateurs", "Créez vos animateurs et invités, donnez à chacun sa voix (ou clonez la vôtre)."),
-            ("Script", "Écrivez le dialogue « @Alex: … », ou laissez DeepSeek l'écrire à partir de vos notes."),
-            ("Produire", "Synthèse des voix, contrôle automatique et mastering à -16 LUFS."),
-            ("Publier", "MP3 par épisode avec jingles et métadonnées, flux RSS pour Apple Podcasts et Spotify."),
+            ("Choisir", "La langue, l'accent, votre niveau (A1 à C2) et la langue des explications."),
+            ("Créer", "DeepSeek écrit chaque leçon par thème ; les passages [es]…[/es] sont lus en voix native."),
+            ("Écouter", "Répéter, traduire, dictée, quiz : MP3 par leçon et par module pour le téléphone."),
+            ("Réviser", "Séances audio à J+1, J+3, J+7, J+14 et J+30, flashcards et Anki."),
         ], 1):
             r = QHBoxLayout()
             r.setSpacing(12)
@@ -275,8 +279,8 @@ class HomePage(Page):
             r = QMessageBox.warning(
                 self, "Supprimer le projet",
                 f"Supprimer définitivement le projet « {p.stem} » ?\n\n"
-                f"Seront supprimés : le fichier du projet et ses fichiers de travail (audio en cache, épisodes "
-                f"déjà produits).\nVos podcasts exportés et vos documents Word/PDF d'origine sont conservés.\n\n"
+                f"Seront supprimés : le fichier du projet et ses fichiers de travail (audio en cache, leçons "
+                f"déjà produites).\nVos MP3 exportés et vos documents Word/PDF d'origine sont conservés.\n\n"
                 f"Dossier : {p.parent}",
                 QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel)
             if r != QMessageBox.Yes:
