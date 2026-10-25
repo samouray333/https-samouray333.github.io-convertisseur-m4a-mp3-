@@ -64,7 +64,10 @@ class JobRunner(QObject):
         self.started.emit(title)
 
         def work():
-            return fn(job)
+            from ..core.power import keep_awake
+
+            with keep_awake():  # l'ordinateur ne se met pas en veille pendant un long doublage
+                return fn(job)
 
         def done(res):
             self.running = False

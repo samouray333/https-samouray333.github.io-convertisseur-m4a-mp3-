@@ -42,8 +42,11 @@ def ensure(eid: str, device: str) -> None:
     log(f"{eid} installé en {time.time() - t0:.0f} s")
 
 
-def make_video(work: Path) -> tuple[Path, list[tuple[float, float, str]]]:
-    """Vidéo de test : deux voix anglaises (Kokoro) sur une musique, image de mire."""
+def make_video(work: Path, minutes: float = 0.0) -> tuple[Path, list[tuple[float, float, str]]]:
+    """Vidéo de test : deux voix anglaises (Kokoro) sur une musique, image de mire.
+
+    Avec ``minutes``, le dialogue est répété jusqu'à cette durée, avec des passages de musique seule (sans
+    parole) et une réplique criée (+9 dB) à chaque tour."""
     import numpy as np
 
     from doublys.core import audio, ffmpeg
@@ -52,15 +55,26 @@ def make_video(work: Path) -> tuple[Path, list[tuple[float, float, str]]]:
 
     eng = get_engine("kokoro")
     sr = 44100
-    parts, truth, t = [audio.silence(1200, sr)], [], 1.2
+    clips = []
     for i, (voice, text) in enumerate(DIALOGUE):
         out = eng.synthesize(text, VoiceProfile(name=voice, engine="kokoro", engine_voice=voice, language="en"),
                              work / f"en{i}.wav", "en")
         data, s0 = audio.read_audio(out)
-        data = audio.resample(audio.trim_silence(data, s0), s0, sr)
-        truth.append((t, t + len(data) / sr, voice))
-        parts += [data, audio.silence(700, sr)]
-        t += len(data) / sr + 0.7
+        clips.append((voice, audio.resample(audio.trim_silence(data, s0), s0, sr)))
+    parts, truth, t, rep = [audio.silence(1200, sr)], [], 1.2, 0
+    while True:
+        for i, (voice, data) in enumerate(clips):
+            if minutes and i == len(clips) - 1:
+                data = np.clip(data * 2.8, -1, 1)  # réplique criée
+            truth.append((t, t + len(data) / sr, voice))
+            parts += [data, audio.silence(700, sr)]
+            t += len(data) / sr + 0.7
+        rep += 1
+        if not minutes or t >= minutes * 60:
+            break
+        if rep % 3 == 0:  # passage de musique seule
+            parts.append(audio.silence(25000, sr))
+            t += 25.0
     voice = np.concatenate(parts + [audio.silence(1500, sr)])
     n = len(voice)
     tt = np.arange(n) / sr
@@ -84,7 +98,7 @@ def make_video(work: Path) -> tuple[Path, list[tuple[float, float, str]]]:
     return video, truth
 
 
-def full(device: str, mode: str, translator: str) -> int:
+def full(device: str, mode: str, translator: str, minutes: float = 0.0) -> int:
     from doublys.config import settings
     from doublys.core import engines, ffmpeg, pipeline
     from doublys.core import project as project_io
@@ -94,7 +108,7 @@ def full(device: str, mode: str, translator: str) -> int:
         ensure(eid, device)
     LOG_LISTENERS.append(lambda e, m: log(f"[{e}] {m}"))
     work = Path(tempfile.mkdtemp(prefix="doublys-full-"))
-    video, truth = make_video(work)
+    video, truth = make_video(work, minutes)
     log(f"Vidéo de test : {video} ({ffmpeg.probe_duration(video):.1f} s)")
     settings().set("projects_dir", str(work / "projets"))
     pr = project_io.create_project(video, work / "projets", "Test réel")
@@ -118,6 +132,9 @@ def full(device: str, mode: str, translator: str) -> int:
     log(f"Chaîne complète en {total:.0f} s pour {pr.video.duration:.0f} s de vidéo")
     for s, d in pr.steps.items():
         log(f"  {s}: {d.get('detail')}")
+    order = sorted(timings.items(), key=lambda kv: kv[1]) + [("fin", time.time())]
+    for (s, t0_), (_n, t1_) in zip(order, order[1:]):
+        log(f"  durée {s} : {(t1_ - t0_) / 60:.1f} min ({(t1_ - t0_) / pr.video.duration:.2f} × la vidéo)")
     for ln in pr.lines:
         person = pr.person(ln.person_id)
         log(f"  [{ln.start:6.2f}-{ln.end:6.2f}] {person.name if person else '?'} {ln.state:5} "
@@ -216,9 +233,10 @@ def main() -> int:
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--mode", default="fastclone_offline")
     ap.add_argument("--translator", default="opus_big")
+    ap.add_argument("--minutes", type=float, default=0.0, help="durée de la vidéo de test (--full)")
     args = ap.parse_args()
     if args.full:
-        return full(args.device, args.mode, args.translator)
+        return full(args.device, args.mode, args.translator, args.minutes)
     if args.engine:
         return single(args.engine, args.device)
     ap.error("--engine ou --full")

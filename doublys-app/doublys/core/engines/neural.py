@@ -645,10 +645,15 @@ class WhisperTool(WorkerEngine):
                     raise
         return {}
 
-    def transcribe_words(self, path: Path, language: str = "en", model: str = "small", on_progress=None) -> dict:
-        """{"words": [[début, fin, mot, probabilité], …], "segments": […], "duration": s}."""
+    def transcribe_words(self, path: Path, language: str = "en", model: str = "small", on_progress=None,
+                         start: float = 0.0, end: float | None = None) -> dict:
+        """{"words": [[début, fin, mot, probabilité], …], "segments": […], "duration": s} sur [start, end]."""
         return self._call("transcribe_words", 6 * 3600, on_progress, path=str(path), language=language,
-                          model=model)
+                          model=model, start=start, end=end)
+
+    def vad(self, path: Path) -> list[list[float]]:
+        """Passages de parole [[début, fin], …] (WAV 16 kHz)."""
+        return self._call("vad", 3600, None, path=str(path)).get("speech", [])
 
     def transcribe(self, path: Path, language: str = "fr") -> str:
         for attempt in range(2):
@@ -674,13 +679,16 @@ class AnalysisTool(WhisperTool):
         return {"model_dir": str(installer.model_dir("analysis"))}
 
     def separate(self, path: Path, voice_out: Path, background_out: Path, block: float = 30.0,
-                 context: float = 2.0, on_progress=None) -> dict:
+                 context: float = 2.0, on_progress=None, speech: list | None = None, resume: bool = False) -> dict:
         return self._call("separate", 12 * 3600, on_progress, path=str(path), voice_out=str(voice_out),
-                          background_out=str(background_out), block=block, context=context)
+                          background_out=str(background_out), block=block, context=context, speech=speech,
+                          resume=resume)
 
     def embed(self, path: Path, segments: list[tuple[float, float]], on_progress=None) -> list[list[float]]:
         return self._call("embed", 6 * 3600, on_progress, path=str(path),
                           segments=[[float(a), float(b)] for a, b in segments]).get("embeddings", [])
 
-    def translate(self, texts: list[str], model: str, on_progress=None) -> list[str]:
-        return self._call("translate", 6 * 3600, on_progress, texts=list(texts), model=model).get("texts", [])
+    def translate(self, texts: list[str], model: str, on_progress=None, n_best: int = 1) -> list:
+        """Traductions ; avec ``n_best`` > 1, une liste de variantes par phrase (meilleure d'abord)."""
+        return self._call("translate", 6 * 3600, on_progress, texts=list(texts), model=model,
+                          n_best=n_best).get("texts", [])

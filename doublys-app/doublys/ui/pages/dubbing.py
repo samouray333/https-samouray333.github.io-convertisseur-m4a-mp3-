@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
                                QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QTableWidget, QTableWidgetItem)
 
@@ -20,6 +20,7 @@ from ...core.models import LINE_STATES, STEP_LABELS, STEPS, Person
 from ...core.speakers import COLORS
 from ...core.textproc import format_duration
 from .. import icons, tasks, theme
+from ..videopreview import VideoPreview
 from ..widgets import Card, IconButton, button, card_title, format_eta, label
 from .base import Page
 
@@ -83,10 +84,7 @@ class DubbingPage(Page):
         top.setSpacing(18)
         # vignette
         vcard = Card(margins=(14, 14, 14, 14), spacing=8)
-        self.thumb = QLabel()
-        self.thumb.setFixedSize(320, 180)
-        self.thumb.setAlignment(Qt.AlignCenter)
-        self.thumb.setStyleSheet(f"background: {theme.CURRENT.surface3}; border-radius: 10px;")
+        self.thumb = VideoPreview(320, 180)
         vcard.add(self.thumb)
         self.video_info = label("", "Hint", wrap=True)
         self.video_info.setMaximumWidth(320)
@@ -169,7 +167,8 @@ class DubbingPage(Page):
             ("vo", "VO", "headphones", "Écouter la voix d'origine"),
             ("vf", "VF", "volume", "Écouter la voix française seule"),
             ("mix", "Mixé", "wave", "Écouter le mélange final"),
-            ("preview", "Aperçu vidéo", "film", "Ouvre 20 s de vidéo doublée dans le lecteur de Windows"),
+            ("preview", "Aperçu", "film", "Voir la réplique avec l'image et le sous-titre, ici (double-clic sur le "
+                                             "numéro)"),
             ("retranslate", "Retraduire", "languages", "Nouvelle traduction automatique"),
             ("shorten", "Raccourcir", "scissors", "DeepSeek propose une version plus courte qui tient dans le temps"),
             ("redo", "Refaire la voix", "refresh", "Nouvelle prise de la voix française"),
@@ -248,9 +247,8 @@ class DubbingPage(Page):
                                          on_done=self._set_thumb, on_error=lambda *_: None)
 
     def _set_thumb(self, path) -> None:
-        pm = QPixmap(str(path))
-        if not pm.isNull():
-            self.thumb.setPixmap(pm.scaled(320, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        if not self.thumb.is_playing():
+            self.thumb.show_image(path)
 
     # -- étapes ---------------------------------------------------------------------------
     def fill_steps(self, running: str = "") -> None:
@@ -277,13 +275,19 @@ class DubbingPage(Page):
         self.stop_btn.setVisible(running)
         lines = bool(has and self.project.lines)
         for k, b in self.actions.items():
-            b.setEnabled(lines and (not running or k in ("vo", "vf", "mix")))
+            b.setEnabled(lines and (not running or k in ("vo", "vf", "mix", "preview")))
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers if running else
                                    QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         if self.project is not None and not running:
             nxt = self.project.next_step()
             self.auto_btn.setText("Créer la VF automatiquement" if not self.project.steps else
                                   ("Terminer la VF automatiquement" if nxt else "Refaire l'export de la VF"))
+            todo = pipeline.steps_to_run(self.project) + ["export"]
+            est = pipeline.estimate_seconds(self.project, todo)
+            idle = self.status.text() in ("Prêt.", "") or self.status.text().startswith("Temps de calcul")
+            if nxt and idle:
+                self.status.setText(f"Temps de calcul estimé sur cet ordinateur : environ {format_eta(est)} "
+                                    "(l'ordinateur ne se mettra pas en veille ; vous pouvez arrêter et reprendre).")
 
     def _start(self, title: str, plan: list[str], fn) -> None:
         if self.project is None:
@@ -448,6 +452,8 @@ class DubbingPage(Page):
             fit = f"{ln.duration:.1f} s"
             if ln.rate > 1.001 or ln.tempo > 1.001:
                 fit += f" · ×{ln.rate * ln.tempo:.2f}"
+            if ln.expressive:
+                fit += " · ✦"
         values += [fit, LINE_STATES.get(ln.state, ln.state)]
         self._filling = True
         for c, v in enumerate(values):
@@ -519,6 +525,8 @@ class DubbingPage(Page):
     def _double_clicked(self, index) -> None:
         if index.column() == C_EN:
             self.action("vo")
+        elif index.column() in (C_NUM, C_START, C_LEN):
+            self.action("preview")
 
     def _selection_changed(self) -> None:
         sel = self.selected_lines()
@@ -544,10 +552,15 @@ class DubbingPage(Page):
         if not sel or self.project is None:
             return
         m = QMenu(self)
-        for key in ("vo", "vf", "mix", "preview", None, "retranslate", "shorten", "redo", None, "merge", "split",
+        for key in ("vo", "vf", "mix", "preview", "external", None, "retranslate", "shorten", "redo", None, "merge", "split",
                     "delete"):
             if key is None:
                 m.addSeparator()
+                continue
+            if key == "external":
+                a = m.addAction(icons.icon("external", theme.CURRENT.text, 16),
+                                "Ouvrir 20 s dans le lecteur de Windows", lambda: self.action("external"))
+                a.setEnabled(self.actions["preview"].isEnabled())
                 continue
             b = self.actions[key]
             a = m.addAction(b.icon(), b.text(), lambda k=key: self.action(k))
@@ -601,24 +614,22 @@ class DubbingPage(Page):
             raise RuntimeError("La voix française de cette réplique n'est pas encore produite.")
         self.ctx.play(project_io.resolve(self.project, ln.audio), f"VF — {ln.fr[:60]}")
 
-    def _act_mix(self, sel, ln) -> None:
+    def _mix_audio(self, ln, a: float, end: float) -> tuple[Path, float, float | None]:
+        """Son mixé de [a, end] : (fichier, instant du fichier qui correspond à ``a``, fin de lecture)."""
         pr = self.project
-        end = ln.start + max(ln.length, ln.duration) + 0.6
         mix_path = pipeline.wf(pr, pipeline.MIX)
         if pr.step_done("mix") and mix_path.exists():
-            self.ctx.play(mix_path, f"Mixé — {ln.fr[:60]}", max(0.0, ln.start - 0.5), end)
-            return
+            return mix_path, a, end
         if not ln.audio:
             raise RuntimeError("La voix française de cette réplique n'est pas encore produite.")
         # mélange rapide de la seule réplique (le mixage complet n'est pas à jour)
         sep = pr.settings.separate and pipeline.wf(pr, pipeline.BACKGROUND).exists()
-        a = max(0.0, ln.start - 0.5)
         tmp = Path(tempfile.mkdtemp(dir=paths.temp_dir())) / "replique.wav"
         bg_src = pipeline.wf(pr, pipeline.BACKGROUND if sep else pipeline.ORIGINAL)
         bg, sr = refs.read_span(bg_src, a, end)
         if not sep:
             bg = bg * audio.db_to_lin(pr.settings.no_separation_duck_db)
-        voice, vsr = audio.read_audio(project_io.resolve(pr, ln.audio), mixer.SR)
+        voice, _vsr = audio.read_audio(project_io.resolve(pr, ln.audio), mixer.SR)
         bg = audio.resample(bg, sr, mixer.SR)
         off = int((ln.start - a) * mixer.SR)
         n = max(len(bg), off + len(voice))
@@ -626,17 +637,43 @@ class DubbingPage(Page):
         out[:len(bg)] += bg
         out[off:off + len(voice)] += voice
         audio.write_audio(tmp, np.clip(out, -1, 1), mixer.SR, subtype="PCM_16")
-        self.ctx.play(tmp, f"Mixé — {ln.fr[:60]}")
+        return tmp, 0.0, None
+
+    def _act_mix(self, sel, ln) -> None:
+        a = max(0.0, ln.start - 0.5)
+        path, t0, end = self._mix_audio(ln, a, ln.start + max(ln.length, ln.duration) + 0.6)
+        self.ctx.play(path, f"Mixé — {ln.fr[:60]}", t0, end)
 
     def _act_preview(self, sel, ln) -> None:
+        """Aperçu dans la page : images de la vidéo synchronisées avec le son mixé et le sous-titre."""
+        pr = self.project
+        a = max(0.0, ln.start - 1.0)
+        end = min(pr.video.duration or 1e9, a + min(20.0, max(ln.length, ln.duration) + 2.5))
+        path, t0, stop = self._mix_audio(ln, a, end)
+        frames_dir = Path(tempfile.mkdtemp(dir=paths.temp_dir()))
+        fps = 12.0
+        subs = [(x.start, x.start + max(x.length, x.duration), x.fr) for x in pr.lines
+                if x.fr and x.start < end and x.start + max(x.length, x.duration) > a]
+        self.status.setText("Préparation de l'aperçu…")
+
+        def done(frames):
+            self.status.setText(f"Aperçu de la réplique {pr.lines.index(ln) + 1}" if ln in pr.lines else "")
+            if not frames:
+                self.ctx.toast("Aucune image extraite de la vidéo.", "warning")
+                return
+            self.ctx.play(path, f"Aperçu — {ln.fr[:60]}", t0, stop)
+            self.thumb.play(frames, fps, a, self.ctx.player, t0, subs)
+
+        tasks.run(media.extract_frames, Path(pr.source_video), a, end - a, frames_dir, fps, 480,
+                  on_done=done, on_error=lambda m, _t: self.ctx.toast(f"Aperçu impossible : {m}", "error"))
+
+    def _act_external(self, sel, ln) -> None:
         pr = self.project
         mix_path = pipeline.wf(pr, pipeline.MIX)
         if not mix_path.exists():
             raise RuntimeError("Le mixage n'est pas encore fait : lancez la création de la VF.")
-        if not pr.step_done("mix"):
-            self.ctx.toast("Attention : le mixage n'est pas à jour (relancez l'étape Mixage).", "warning")
         out = project_io.work_dir(pr) / "apercu-replique.mp4"
-        self.ctx.toast("Préparation de l'aperçu…", "info", 2500)
+        self.ctx.toast("Préparation de l'extrait…", "info", 2500)
 
         def done(path):
             from ..main_window import open_path

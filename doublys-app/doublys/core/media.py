@@ -41,6 +41,15 @@ def thumbnail(video: Path, t: float, out: Path, width: int = 320) -> Path:
     return out
 
 
+def extract_frames(video: Path, start: float, length: float, out_dir: Path, fps: float = 12.0,
+                   width: int = 480) -> list[Path]:
+    """Images d'un passage de la vidéo (aperçu intégré)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ffmpeg.run_ffmpeg(["-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, length):.3f}", "-i", str(video),
+                       "-vf", f"fps={fps},scale={width}:-2", "-q:v", "5", str(out_dir / "%05d.jpg")])
+    return sorted(out_dir.glob("*.jpg"))
+
+
 def video_encoder() -> str:
     for enc in H264_ENCODERS:
         if ffmpeg.has_encoder(enc):

@@ -76,7 +76,8 @@ class FakeAnalysis(_FakeTool):
     def __init__(self):
         super().__init__("analysis")
 
-    def separate(self, path, voice_out, background_out, block=30.0, context=2.0, on_progress=None):
+    def separate(self, path, voice_out, background_out, block=30.0, context=2.0, on_progress=None, speech=None,
+                 resume=False):
         import soundfile as sf
 
         data, sr = sf.read(str(path), dtype="float32", always_2d=True)
@@ -102,8 +103,9 @@ class FakeAnalysis(_FakeTool):
             out.append(list(v / (np.linalg.norm(v) + 1e-9)))
         return out
 
-    def translate(self, texts, model, on_progress=None):
-        return [f"Voici la traduction numéro {i + 1}." for i, _t in enumerate(texts)]
+    def translate(self, texts, model, on_progress=None, n_best=1):
+        out = [f"Voici la traduction numéro {i + 1}." for i, _t in enumerate(texts)]
+        return [[t, t.replace("Voici", "Voilà")] for t in out] if n_best > 1 else out
 
 
 class FakeWhisper(_FakeTool):
@@ -112,10 +114,27 @@ class FakeWhisper(_FakeTool):
     def __init__(self):
         super().__init__("whisper")
 
-    def transcribe_words(self, path, language="en", model="small", on_progress=None):
+    def vad(self, path):
         from .core import audio
 
         data, sr = audio.read_audio(path)
+        db = audio.frame_rms_db(data, sr, 20.0)
+        on = np.append(db > (db.max() - 20), False)
+        regions, start = [], None
+        for i, v in enumerate(on):
+            if v and start is None:
+                start = i * 0.02
+            elif not v and start is not None:
+                regions.append([start, i * 0.02])
+                start = None
+        return regions
+
+    def transcribe_words(self, path, language="en", model="small", on_progress=None, start=0.0, end=None):
+        from .core import audio
+
+        data, sr = audio.read_audio(path)
+        a = int(start * sr)
+        data = data[a:int(end * sr) if end else len(data)]
         db = audio.frame_rms_db(data, sr, 20.0)
         active = db > (db.max() - 20)
         words, start = [], None
@@ -126,9 +145,11 @@ class FakeWhisper(_FakeTool):
             elif not on and start is not None:
                 n = max(1, int((t - start) / 0.4))
                 step = (t - start) / n
+                off = a / sr
                 for k in range(n):
                     w = f" word{len(words) + 1}" + ("." if k == n - 1 else "")
-                    words.append([round(start + k * step, 3), round(start + (k + 1) * step - 0.05, 3), w, 0.9])
+                    words.append([round(off + start + k * step, 3), round(off + start + (k + 1) * step - 0.05, 3),
+                                  w, 0.9])
                 start = None
         return {"words": words, "segments": [], "duration": len(data) / sr, "language": "en"}
 

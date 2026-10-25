@@ -147,6 +147,8 @@ class Line:
     tempo: float = 1.0  # accélération appliquée ensuite (atempo)
     gain_db: float = 0.0
     seed: int = 0
+    intensity: float = 0.0  # niveau de la réplique d'origine par rapport à la voix habituelle de la personne (dB)
+    expressive: bool = False  # voix produite par Chatterbox expressif (réplique forte)
 
     @classmethod
     def from_dict(cls, d):
@@ -199,6 +201,9 @@ class DubSettings:
     keep_original_voice: bool = False  # voix d'origine laissée faible sous la VF
     original_voice_db: float = -20.0
     match_level: bool = True  # niveau de la VF aligné sur la voix d'origine
+    expressive: bool = True  # répliques fortes (cris, colère) refaites avec Chatterbox expressif
+    expressive_db: float = 6.0  # à partir de combien de dB au-dessus de la voix habituelle
+    expressive_max: int = 25  # au plus N répliques par vidéo (environ 25 s de calcul chacune sans GPU)
 
     @classmethod
     def from_dict(cls, d):

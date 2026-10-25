@@ -5,9 +5,11 @@ extraction → séparation → transcription → répliques → personnes → tr
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import logging
+import shutil
 import threading
 import time
 from dataclasses import dataclass, field
@@ -16,6 +18,7 @@ from typing import Callable
 
 from . import ai, audio, dubvoice, engines, media, mixer, refs, segment, speakers, subtitles, timing
 from . import project as project_io
+from . import translate as local_translate
 from .engines import EngineError, ServiceBlocked
 from .engines.neural import WorkerDied
 from .ffmpeg import Cancelled
@@ -29,6 +32,9 @@ VOICE = "voix.wav"
 VOICE16 = "voix16.wav"
 BACKGROUND = "fond.wav"
 TRANSCRIPT = "transcription.json"
+SPEECH = "parole.json"
+TRANSCRIPT_PARTS = "transcription"  # dossier : un fichier par morceau (reprise)
+CHUNK_SECONDS = 600.0
 MIX = "vf_mix.wav"
 VF_VOICES = "vf_voix.wav"
 
@@ -46,6 +52,8 @@ class Job:
     on_line: Callable[[str], None] | None = None  # une réplique a changé (identifiant)
     cancel: threading.Event = field(default_factory=threading.Event)
     step: str = ""
+    resume: bool = False  # l'étape avait été interrompue : on garde le travail déjà fait
+    save: Callable[[], None] | None = None
 
     def progress(self, value: float, msg: str = "") -> None:
         if self.on_progress:
@@ -104,30 +112,102 @@ def step_extract(project: Project, job: Job) -> str:
         raise StepError(f"La vidéo est introuvable : {src}. Remettez-la à sa place ou ouvrez-la à nouveau.")
     if not project.video.duration:
         project.video = project_io.probe_video(src)
+    # le son change : les fichiers des étapes suivantes (éventuellement à moitié faits) ne valent plus rien
+    for name in (VOICE, VOICE16, BACKGROUND, SPEECH, TRANSCRIPT):
+        wf(project, name).unlink(missing_ok=True)
+    shutil.rmtree(wf(project, TRANSCRIPT_PARTS), ignore_errors=True)
     media.extract_audio(src, wf(project, ORIGINAL), wf(project, ORIGINAL16), project.video.duration,
                         progress=lambda f: job.progress(f, "Extraction du son"), cancel=job.cancel)
     return f"{project.video.duration / 60:.1f} min de son extrait"
 
 
+def speech_regions(project: Project, job: Job) -> list[list[float]] | None:
+    """Passages de parole du son d'origine (calculés une fois, en quelques secondes) ; None si indisponible."""
+    p = wf(project, SPEECH)
+    if p.exists():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except ValueError:
+            pass
+    tool = engines.get_tool("whisper")
+    if tool is None or not tool.is_ready():
+        return None
+    job.progress(0.0, "Repérage des passages parlés…")
+    regions = _guard(job, tool.vad, wf(project, ORIGINAL16))
+    p.write_text(json.dumps(regions), encoding="utf-8")
+    return regions
+
+
 def step_separate(project: Project, job: Job) -> str:
     tool = _tool("analysis")
     t0 = time.time()
+    speech = speech_regions(project, job)
     job.progress(0.0, "Chargement de Demucs…")
-    _guard(job, tool.separate, wf(project, ORIGINAL), wf(project, VOICE), wf(project, BACKGROUND),
-           on_progress=lambda v, m: job.progress(v, m))
+    res = _guard(job, tool.separate, wf(project, ORIGINAL), wf(project, VOICE), wf(project, BACKGROUND),
+                 on_progress=lambda v, m: job.progress(v, m), speech=speech, resume=job.resume)
     job.check()
     media.to_mono16(wf(project, VOICE), wf(project, VOICE16), job.cancel)
-    return f"voix et fond séparés en {time.time() - t0:.0f} s"
+    total = float(res.get("duration") or 0) or 1.0
+    skipped = max(0.0, 1 - float(res.get("separated", total)) / total)
+    extra = f" ({skipped * 100:.0f} % sans parole, non traités)" if skipped > 0.05 else ""
+    return f"voix et fond séparés en {(time.time() - t0) / 60:.1f} min{extra}"
+
+
+def chunks_for(duration: float, speech: list[list[float]] | None, size: float | None = None) -> list[tuple]:
+    """Morceaux d'environ ``size`` secondes, coupés au milieu d'un silence (aucun mot tranché)."""
+    size = size or CHUNK_SECONDS
+    if duration <= size * 1.3:
+        return [(0.0, duration)]
+    cuts = [0.0]
+    gaps = []
+    if speech:
+        gaps = [((a[1] + b[0]) / 2, b[0] - a[1]) for a, b in zip(speech, speech[1:]) if b[0] - a[1] > 0.3]
+    t = size
+    while t < duration - size * 0.3:
+        near = [g for g in gaps if abs(g[0] - t) < size * 0.25]
+        cut = max(near, key=lambda g: g[1] - abs(g[0] - t) / 60)[0] if near else t
+        cuts.append(round(cut, 2))
+        t = cut + size
+    cuts.append(duration)
+    return list(zip(cuts, cuts[1:]))
 
 
 def step_transcribe(project: Project, job: Job) -> str:
     tool = _tool("whisper")
     _voice, voice16 = speech_source(project)
-    job.progress(0.0, f"Chargement de Whisper « {project.settings.whisper_model} »…")
-    res = _guard(job, tool.transcribe_words, voice16, project.settings.source_language,
-                 project.settings.whisper_model, on_progress=lambda v, m: job.progress(v, m))
-    wf(project, TRANSCRIPT).write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")
-    words = res.get("words", [])
+    model = project.settings.whisper_model
+    duration = audio.duration_of(voice16) or project.video.duration
+    chunks = chunks_for(duration, speech_regions(project, job))
+    parts_dir = wf(project, TRANSCRIPT_PARTS)
+    if not job.resume:
+        shutil.rmtree(parts_dir, ignore_errors=True)
+    parts_dir.mkdir(parents=True, exist_ok=True)
+    words, segs = [], []
+    job.progress(0.0, f"Chargement de Whisper « {model} »…")
+    for k, (a, b) in enumerate(chunks):
+        job.check()
+        part = parts_dir / f"{k:03d}.json"
+        key = [round(a, 2), round(b, 2), model, voice16.name, int(voice16.stat().st_mtime)]
+        data = None
+        if part.exists():
+            try:
+                data = json.loads(part.read_text(encoding="utf-8"))
+                data = data if data.get("key") == key else None
+            except ValueError:
+                data = None
+        if data is None:
+            def prog(v, m, k=k):
+                job.progress((k + v) / len(chunks), f"{m} · morceau {k + 1} sur {len(chunks)}")
+
+            data = _guard(job, tool.transcribe_words, voice16, project.settings.source_language, model,
+                          on_progress=prog, start=a, end=b)
+            data["key"] = key
+            part.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        words += data.get("words", [])
+        segs += data.get("segments", [])
+        job.progress((k + 1) / len(chunks), f"{len(words)} mots reconnus")
+    wf(project, TRANSCRIPT).write_text(json.dumps({"words": words, "segments": segs, "duration": duration},
+                                                  ensure_ascii=False), encoding="utf-8")
     if not words:
         raise StepError("Whisper n'a reconnu aucune parole dans cette vidéo.")
     return f"{len(words)} mots reconnus"
@@ -202,9 +282,13 @@ def step_translate(project: Project, job: Job, only: list[str] | None = None, fo
         model = TRANSLATORS.get(s.translator, TRANSLATORS["opus_big"])[1]
         tool = _tool("analysis")
         job.progress(0.0, "Chargement du traducteur…")
-        res = _guard(job, tool.translate, [lines[i].en for i in todo], model,
-                     on_progress=lambda v, m: job.progress(v, m))
-        result = dict(zip(todo, res))
+        budgets = [timing.char_budget(a, s.chars_per_second) for a in avail]
+
+        def fn(sentences, n_best):
+            return _guard(job, tool.translate, sentences, model, on_progress=lambda v, m: job.progress(v, m),
+                          n_best=n_best)
+
+        result = local_translate.translate_lines(lines, budgets, fn, todo)
     job.check()
     changed = 0
     for i, fr in result.items():
@@ -232,6 +316,15 @@ def step_voices(project: Project, job: Job, only: list[str] | None = None) -> st
             person.reference = project_io.relative(project, path)
             person.reference_source = "auto"
             ref = path
+        # intensité de chaque réplique par rapport à la voix habituelle de la personne
+        levels = []
+        for ln in mine:
+            seg, ssr = refs.read_span(voice, ln.start, ln.end)
+            levels.append(timing.active_rms_db(seg, ssr))
+        usable = sorted(v for v in levels if v > -90)
+        median = usable[len(usable) // 2] if usable else -120.0
+        for ln, v in zip(mine, levels):
+            ln.intensity = round(v - median, 1) if v > -90 and median > -90 else 0.0
         data, sr = audio.read_audio(ref)
         person.pitch_hz = round(refs.estimate_pitch(data, sr), 1)
         g = refs.gender_from_pitch(person.pitch_hz)
@@ -241,15 +334,34 @@ def step_voices(project: Project, job: Job, only: list[str] | None = None) -> st
     return f"{len(people)} voix préparée(s)"
 
 
-def _line_key(project: Project, line: Line, slot: float, vkey: str) -> str:
+def _line_key(project: Project, line: Line, slot: float, vkey: str, expressive: bool = False) -> str:
     s = project.settings
-    blob = json.dumps([line.fr.strip(), vkey, round(slot, 2), s.max_rate, s.max_tempo, line.seed, s.match_level],
-                      ensure_ascii=False)
+    blob = json.dumps([line.fr.strip(), vkey, round(slot, 2), s.max_rate, s.max_tempo, line.seed, s.match_level,
+                       expressive], ensure_ascii=False)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 
+def expressive_lines(project: Project) -> set[str]:
+    """Répliques fortes (cris, colère…) confiées à Chatterbox expressif, dans la limite fixée."""
+    s = project.settings
+    if not s.expressive or s.expressive_max <= 0:
+        return set()
+    cb = engines.get_engine("chatterbox")
+    if cb is None or not cb.is_ready():
+        return set()
+    cands = []
+    for ln in project.lines:
+        person = project.person(ln.person_id)
+        if person is None or not dubvoice.voice_mode(project, person).startswith("fastclone"):
+            continue
+        if ln.intensity >= s.expressive_db and ln.length >= 0.6:
+            cands.append(ln)
+    cands.sort(key=lambda x: -x.intensity)
+    return {ln.id for ln in cands[:s.expressive_max]}
+
+
 def dub_line(project: Project, index: int, avail: list[float], keys: dict[str, str], job: Job | None = None,
-             force: bool = False) -> bool:
+             force: bool = False, expressive: set[str] | None = None) -> bool:
     """Produit et cale la voix française d'une réplique. Renvoie True si l'audio a été (re)fait."""
     line = project.lines[index]
     person = project.person(line.person_id)
@@ -258,11 +370,18 @@ def dub_line(project: Project, index: int, avail: list[float], keys: dict[str, s
         return False
     vkey = keys.get(person.id) or dubvoice.voice_key(project, person)
     keys[person.id] = vkey
-    key = _line_key(project, line, avail[index], vkey)
+    strong = bool(expressive and line.id in expressive)
+    key = _line_key(project, line, avail[index], vkey, strong)
     target = project_io.voices_dir(project) / f"{line.id}.wav"
     if not force and line.audio_key == key and line.audio and project_io.resolve(project, line.audio).exists():
         return False
     voice = dubvoice.voice_profile(project, person)
+    if strong:
+        # même extrait de voix, mais Chatterbox : intonation plus vive, d'autant plus que la réplique est forte
+        gain = min(0.7, max(0.2, (line.intensity - 3.0) / 12.0))
+        voice = dataclasses.replace(voice, engine="chatterbox", engine_voice="",
+                                    params={"exaggeration": round(0.5 + gain, 2), "cfg_weight": 0.4})
+    line.expressive = strong
     seed = line.seed or None
 
     def synth(rate: float):
@@ -296,6 +415,7 @@ def step_dub(project: Project, job: Job, only: list[str] | None = None, force: b
                 raise StepError(f"Voix de {person.name} : {msg}. Installez le moteur dans Moteurs IA ou changez "
                                 "le mode de voix dans Personnes.")
     keys: dict[str, str] = {}
+    strong = expressive_lines(project)
     idx = [i for i, ln in enumerate(lines) if only is None or ln.id in only]
     made = errors = long_ = 0
     t0 = time.time()
@@ -303,7 +423,7 @@ def step_dub(project: Project, job: Job, only: list[str] | None = None, force: b
         job.check()
         line = lines[i]
         try:
-            if dub_line(project, i, avail, keys, job, force):
+            if dub_line(project, i, avail, keys, job, force, strong):
                 made += 1
         except Cancelled:
             raise
@@ -318,6 +438,8 @@ def step_dub(project: Project, job: Job, only: list[str] | None = None, force: b
         if line.state == "long":
             long_ += 1
         job.line_changed(line.id)
+        if job.save and made and made % 25 == 0:  # vidéo longue : rien n'est perdu en cas d'arrêt
+            job.save()
         job.progress((n + 1) / max(1, len(idx)), f"Réplique {n + 1} sur {len(idx)}")
     msg = f"{made} répliques produites en {time.time() - t0:.0f} s"
     if long_:
@@ -355,10 +477,15 @@ STEP_FUNCS = {"extract": step_extract, "separate": step_separate, "transcribe": 
 
 def run_step(project: Project, step: str, job: Job, save: Callable[[], None] | None = None) -> str:
     job.step = step
+    job.save = save
     job.log(f"— {STEP_LABELS[step]} —")
     job.progress(0.0, STEP_LABELS[step])
+    # étape interrompue (pas encore faite) : on reprend ; étape déjà faite et relancée : on refait tout
+    job.resume = not project.step_done(step)
     project.invalidate_from(step)
+    t0 = time.time()
     detail = STEP_FUNCS[step](project, job)
+    learn_speed(step, time.time() - t0, project.video.duration, resumed=job.resume)
     project.mark_step(step, True, detail=detail)
     job.progress(1.0, detail)
     job.log(f"{STEP_LABELS[step]} : {detail}")
@@ -421,3 +548,43 @@ def export_files(project: Project, job: Job, out_dir: Path | None = None, previe
     if not preview:
         project.last_export = str(target)
     return files
+
+
+# ---------------------------------------------------------------------------------------
+# Temps de calcul : estimation apprise sur cet ordinateur
+# ---------------------------------------------------------------------------------------
+# secondes de calcul par seconde de vidéo, mesurées sur un portable 4 cœurs sans carte graphique
+DEFAULT_SPEED = {"extract": 0.01, "separate": 0.40, "transcribe": 0.13, "segment": 0.001, "speakers": 0.03,
+                 "translate": 0.08, "voices": 0.005, "dub": 1.10, "mix": 0.01, "export": 0.02}
+
+
+def learn_speed(step: str, seconds: float, duration: float, resumed: bool = False) -> None:
+    """Moyenne glissante du rapport calcul / durée de la vidéo (étapes complètes de plus de 2 min de vidéo)."""
+    if duration < 120 or resumed or seconds <= 0:
+        return
+    try:
+        from ..config import settings
+
+        speeds = dict(settings().get("speed_factors") or {})
+        old = float(speeds.get(step, DEFAULT_SPEED.get(step, 0.05)))
+        speeds[step] = round(0.5 * old + 0.5 * seconds / duration, 4)
+        settings().set("speed_factors", speeds)
+    except Exception:  # noqa: BLE001 - l'estimation ne doit jamais bloquer le doublage
+        log.debug("Vitesse non enregistrée", exc_info=True)
+
+
+def estimate_seconds(project: Project, steps: list[str]) -> float:
+    from ..config import settings
+
+    speeds = {**DEFAULT_SPEED, **(settings().get("speed_factors") or {})}
+    d = project.video.duration
+    total = 0.0
+    for s in steps:
+        f = float(speeds.get(s, 0.05))
+        if s == "dub" and project.lines:  # répliques déjà produites : rien à refaire
+            todo = [ln for ln in project.lines if not ln.audio]
+            f *= len(todo) / max(1, len(project.lines))
+        total += f * d
+    if "dub" in steps and project.settings.expressive:
+        total += 25.0 * min(project.settings.expressive_max, d / 120.0)  # répliques fortes (Chatterbox)
+    return total

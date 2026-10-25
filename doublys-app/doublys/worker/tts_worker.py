@@ -239,7 +239,7 @@ class ChatterboxBackend(Backend):
         t0 = time.time()
         self.model = ChatterboxMultilingualTTS.from_pretrained(device=self.device)
         self.sr = int(self.model.sr)
-        self.current = None
+        self.conds_cache = {}
         log(f"Chatterbox prêt sur {self.device} en {time.time() - t0:.0f} s")
         return {"sr": self.sr, **device_info(self.device)}
 
@@ -247,12 +247,15 @@ class ChatterboxBackend(Backend):
         p = req.get("params", {})
         refs = req.get("refs") or []
         exaggeration = float(p.get("exaggeration", 0.5))
-        key = (refs[0] if refs else None, os.path.getmtime(refs[0]) if refs else 0, exaggeration)
-        if refs and key != self.current:
-            self.model.prepare_conditionals(refs[0], exaggeration=exaggeration)
-            self.current = key
-        elif not refs and self.current is not None:
+        if not refs:
             raise RuntimeError("Chatterbox nécessite une voix clonée (enregistrement de référence).")
+        # une analyse par voix, gardée en mémoire : les personnes alternent d'une réplique à l'autre
+        # (l'expressivité est ajustée ensuite par generate(), sans nouvelle analyse)
+        key = (refs[0], os.path.getmtime(refs[0]))
+        if key not in self.conds_cache:
+            self.model.prepare_conditionals(refs[0], exaggeration=exaggeration)
+            self.conds_cache[key] = self.model.conds
+        self.model.conds = self.conds_cache[key]
         set_seed(req.get("seed"))
         lang = req.get("language", "fr").lower().split("-")[0]
         text = req["text"]
@@ -351,7 +354,7 @@ class ChatterboxVCBackend(Backend):
         if self.model is None:
             self.model = ChatterboxVC.from_pretrained(self.device)
         self.sr = int(self.model.sr)
-        self.current = None
+        self.ref_cache = {}
         log(f"Convertisseur ({'rapide' if self.mode == 'fast' else 'fidèle'}) prêt sur {self.device} "
             f"en {time.time() - t0:.0f} s")
         return {"sr": self.sr, "mode": self.mode, **device_info(self.device)}
@@ -376,9 +379,10 @@ class ChatterboxVCBackend(Backend):
         if not refs:
             raise RuntimeError("Aucun enregistrement de référence pour la conversion.")
         key = (refs[0], os.path.getmtime(refs[0]))
-        if key != self.current:
+        if key not in self.ref_cache:  # une analyse par voix cible, gardée en mémoire
             self.model.set_target_voice(refs[0])
-            self.current = key
+            self.ref_cache[key] = self.model.ref_dict
+        self.model.ref_dict = self.ref_cache[key]
         m = self.model
         t0 = time.time()
         with torch.inference_mode():
@@ -646,25 +650,54 @@ class WhisperBackend(Backend):
                                                 condition_on_previous_text=False, vad_filter=False)
         return {"text": " ".join(seg.text.strip() for seg in segments).strip()}
 
+    def vad(self, req):
+        return vad_regions(req)
+
     def transcribe_words(self, req):
-        """Transcription complète avec la position de chaque mot (doublage)."""
+        """Transcription avec la position de chaque mot, sur [start, end] du fichier (doublage, par morceaux)."""
+        from faster_whisper import BatchedInferencePipeline, decode_audio
+
         size = req.get("model") or self.size
         if size != self.size:
             self._load(size)
         lang = (req.get("language") or "en").split("-")[0]
-        segments, info = self.model.transcribe(
-            req["path"], language=lang, beam_size=int(req.get("beam_size", 5)), word_timestamps=True,
-            vad_filter=True, vad_parameters={"min_silence_duration_ms": 500},
-            condition_on_previous_text=False)
-        total = float(getattr(info, "duration", 0.0) or 0.0)
+        a = int(float(req.get("start", 0.0)) * 16000)
+        b = int(float(req["end"]) * 16000) if req.get("end") else None
+        try:  # WAV 16 kHz : seul le morceau demandé est lu (vidéos longues)
+            import soundfile as sf
+
+            if sf.info(req["path"]).samplerate != 16000:
+                raise ValueError("fréquence")
+            audio, _ = sf.read(req["path"], start=a, stop=b, dtype="float32", always_2d=True)
+            audio = audio.mean(axis=1)
+        except Exception:
+            audio = decode_audio(req["path"], sampling_rate=16000)[a:b]
+        offset = a / 16000
+        total = len(audio) / 16000
+        pipe = BatchedInferencePipeline(model=self.model)
+        segments, info = pipe.transcribe(audio, language=lang, beam_size=int(req.get("beam_size", 1)),
+                                         batch_size=int(req.get("batch_size", 8)), word_timestamps=True,
+                                         vad_filter=True, condition_on_previous_text=False)
         words, segs = [], []
         for seg in segments:
-            segs.append([round(seg.start, 3), round(seg.end, 3), seg.text.strip()])
+            segs.append([round(seg.start + offset, 3), round(seg.end + offset, 3), seg.text.strip()])
             for w in seg.words or []:
-                words.append([round(w.start, 3), round(w.end, 3), w.word, round(float(w.probability), 3)])
+                words.append([round(w.start + offset, 3), round(w.end + offset, 3), w.word, round(float(w.probability), 3)])
             if total:
                 progress(seg.end / total, f"{len(words)} mots reconnus")
         return {"words": words, "segments": segs, "duration": total, "language": info.language}
+
+
+def vad_regions(req):
+    """Passages de parole [[début, fin], …] d'un WAV 16 kHz (détecteur Silero de faster-whisper)."""
+    from faster_whisper import decode_audio
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+    audio = decode_audio(req["path"], sampling_rate=16000)
+    opts = VadOptions(min_silence_duration_ms=int(req.get("min_silence_ms", 600)), speech_pad_ms=200)
+    ts = get_speech_timestamps(audio, opts)
+    return {"speech": [[round(t["start"] / 16000, 2), round(t["end"] / 16000, 2)] for t in ts],
+            "duration": len(audio) / 16000}
 
 
 class AnalysisBackend(Backend):
@@ -696,7 +729,10 @@ class AnalysisBackend(Backend):
         return self.demucs[1]
 
     def separate(self, req):
-        """Sépare la voix du reste par blocs (RAM stable) : voix.wav et fond.wav (= mélange moins la voix)."""
+        """Sépare la voix du reste par blocs (RAM stable) : voix.wav et fond.wav (= mélange moins la voix).
+
+        Les blocs sans parole (``speech`` : [[début, fin], …]) ne passent pas par Demucs. Avec ``resume``, le
+        travail reprend au dernier bloc complet des fichiers déjà écrits."""
         import numpy as np
         import soundfile as sf
         import torch
@@ -711,32 +747,60 @@ class AnalysisBackend(Backend):
         total = int(info.frames)
         block = int(float(req.get("block", 30.0)) * sr)
         ctx = int(float(req.get("context", 2.0)) * sr)
+        speech = req.get("speech")
         vi = list(model.sources).index("vocals")
+        start = 0
+        vpath, bpath = req["voice_out"], req["background_out"]
+        if req.get("resume") and os.path.exists(vpath) and os.path.exists(bpath):
+            try:
+                done = min(sf.info(vpath).frames, sf.info(bpath).frames)
+                start = (done // block) * block
+            except Exception:
+                start = 0
+        mode = "r+" if start > 0 else "w"
+        if start:
+            log(f"Reprise de la séparation à {start / sr:.0f} s")
         t0 = time.time()
-        with sf.SoundFile(req["voice_out"], "w", sr, 2, "PCM_16") as fv, \
-                sf.SoundFile(req["background_out"], "w", sr, 2, "PCM_16") as fb:
-            pos = 0
+        computed = 0
+        fv = sf.SoundFile(vpath, mode, sr, 2, "PCM_16") if mode == "w" else sf.SoundFile(vpath, mode)
+        fb = sf.SoundFile(bpath, mode, sr, 2, "PCM_16") if mode == "w" else sf.SoundFile(bpath, mode)
+        try:
+            fv.seek(start)
+            fb.seek(start)
+            pos = start
             while pos < total:
+                n = min(block, total - pos)
                 a, b = max(0, pos - ctx), min(total, pos + block + ctx)
                 chunk, _ = sf.read(src, start=a, stop=b, dtype="float32", always_2d=True)
                 if chunk.shape[1] == 1:
                     chunk = np.repeat(chunk, 2, axis=1)
                 chunk = chunk[:, :2]
-                x = torch.from_numpy(np.ascontiguousarray(chunk.T))
-                ref = x.mean(0)
-                mean, std = ref.mean(), ref.std() + 1e-8
-                out = apply_model(model, ((x - mean) / std)[None], device=self.device, split=True, overlap=0.25,
-                                  progress=False)[0]
-                voice = (out[vi] * std + mean).cpu().numpy().T
-                n = min(block, total - pos)
-                keep = voice[pos - a:pos - a + n]
                 mix = chunk[pos - a:pos - a + n]
+                has_speech = speech is None or any(s0 < (pos + n) / sr + 0.5 and s1 > pos / sr - 0.5
+                                                   for s0, s1 in speech)
+                if has_speech:
+                    x = torch.from_numpy(np.ascontiguousarray(chunk.T))
+                    ref = x.mean(0)
+                    mean, std = ref.mean(), ref.std() + 1e-8
+                    out = apply_model(model, ((x - mean) / std)[None], device=self.device, split=True,
+                                      overlap=float(req.get("overlap", 0.1)), progress=False)[0]
+                    voice = (out[vi] * std + mean).cpu().numpy().T
+                    keep = voice[pos - a:pos - a + n]
+                    computed += n
+                else:  # pas de parole : tout le son va dans le fond
+                    keep = np.zeros_like(mix)
                 fv.write(np.clip(keep, -1, 1))
                 fb.write(np.clip(mix - keep, -1, 1))
+                fv.flush()
+                fb.flush()
                 pos += n
                 elapsed = time.time() - t0
-                progress(pos / total, f"{pos / sr:.0f} s sur {total / sr:.0f} s ({elapsed:.0f} s de calcul)", True)
-        return {"duration": total / sr, "seconds": time.time() - t0}
+                progress(pos / total, f"{pos / sr / 60:.1f} min sur {total / sr / 60:.1f} min "
+                         f"({elapsed / 60:.1f} min de calcul)", True)
+        finally:
+            fv.close()
+            fb.close()
+        return {"duration": total / sr, "seconds": time.time() - t0, "separated": computed / sr}
 
     # -- empreintes vocales -------------------------------------------------------------
     def _ecapa(self):
@@ -788,13 +852,16 @@ class AnalysisBackend(Backend):
         return self.mt[name]
 
     def translate(self, req):
+        """Traduit une liste de phrases ; avec ``n_best`` > 1, renvoie aussi les variantes (meilleure d'abord)."""
         import torch
 
         name = req.get("model") or "Helsinki-NLP/opus-mt-tc-big-en-fr"
         tok, model = self._mt(name)
         texts = [str(t or "") for t in req.get("texts") or []]
-        batch = max(1, int(req.get("batch", 8)))
-        out: list[str] = []
+        batch = max(1, int(req.get("batch", 16)))
+        n_best = max(1, int(req.get("n_best", 1)))
+        beams = max(n_best, int(req.get("beams", 4)))
+        out: list = []
         for i in range(0, len(texts), batch):
             part = texts[i:i + batch]
             todo = [t for t in part if t.strip()]
@@ -802,19 +869,23 @@ class AnalysisBackend(Backend):
             if todo:
                 enc = tok(todo, return_tensors="pt", padding=True, truncation=True, max_length=512).to(self.device)
                 with torch.inference_mode():
-                    gen = model.generate(**enc, num_beams=int(req.get("beams", 4)), max_new_tokens=400)
-                res = tok.batch_decode(gen, skip_special_tokens=True)
+                    gen = model.generate(**enc, num_beams=beams, num_return_sequences=n_best, max_new_tokens=400)
+                dec = [d.strip() for d in tok.batch_decode(gen, skip_special_tokens=True)]
+                res = [dec[k * n_best:(k + 1) * n_best] for k in range(len(todo))]
             it = iter(res)
-            out.extend(next(it).strip() if t.strip() else "" for t in part)
-            progress(min(len(texts), i + batch) / max(1, len(texts)), f"{min(len(texts), i + batch)} répliques "
-                     f"sur {len(texts)}")
+            for t in part:
+                cands = next(it) if t.strip() else [""]
+                out.append(cands if n_best > 1 else cands[0])
+            done = min(len(texts), i + batch)
+            progress(done / max(1, len(texts)), f"{done} phrases sur {len(texts)}")
         return {"texts": out}
+
 
 
 BACKENDS = {"dummy": DummyBackend, "xtts": XttsBackend, "chatterbox": ChatterboxBackend, "kokoro": KokoroBackend,
             "chatterbox_vc": ChatterboxVCBackend, "whisper": WhisperBackend, "rvc": RVCBackend,
             "analysis": AnalysisBackend}
-COMMANDS = ("convert", "transcribe", "transcribe_words", "separate", "embed", "translate")
+COMMANDS = ("convert", "transcribe", "transcribe_words", "vad", "separate", "embed", "translate")
 
 
 # =======================================================================================

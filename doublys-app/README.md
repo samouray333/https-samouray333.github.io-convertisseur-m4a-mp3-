@@ -25,6 +25,35 @@ Construite sur le moteur d'AudioLivre Studio (même dépôt, dossier `audiolivre
 | 9. Mixage | — | par blocs : fond + VF (option : voix d'origine laissée faible) |
 | 10. Export | FFmpeg | MP4 ou MKV, vidéo copiée sans réencodage, piste VF AAC 192 kb/s normalisée à −16 LUFS, VO en option, sous-titres FR/EN intégrés (mov_text ou srt) et fichiers `.srt`, incrustation en option (libx264, sinon libopenh264, sinon Media Foundation), piste VF seule en WAV/MP3, aperçu rapide sans normalisation |
 
+### Pensé pour les vidéos longues (jusqu'à 1 h 30 et plus)
+
+- **Passages sans parole sautés** : les silences et la musique seule ne passent pas par Demucs.
+- **Reprise après un arrêt** : la séparation reprend au dernier bloc de 30 s, la transcription au dernier morceau
+  d'environ 10 min (coupé dans un silence), le doublage à la dernière réplique ; le projet est enregistré toutes
+  les 25 répliques. Fermer l'application, une coupure de courant ou « Arrêter » ne font rien perdre.
+- **Pas de mise en veille** de l'ordinateur pendant le traitement (l'écran peut s'éteindre).
+- **Temps estimé** affiché avant le lancement, et appris sur votre ordinateur au fil des projets.
+- **Réglages rapides** : Whisper par lots, Demucs avec un recouvrement réduit, une seule analyse par voix
+  gardée en mémoire pour la conversion de timbre.
+
+### Traduction soignée
+
+- Chaque réplique est traduite **phrase par phrase** : une phrase courte (« Almost. ») n'est plus avalée.
+- Opus-MT propose 5 variantes par phrase ; Doublys garde celle qui respecte **le tutoiement ou le vouvoiement
+  choisi entre les deux personnes qui se parlent** (le même tout au long de la vidéo) et qui **tient dans le temps**.
+
+### Voix expressives
+
+Les répliques nettement plus fortes que la voix habituelle de la personne (cris, colère, au moins +6 dB) sont
+refaites avec **Chatterbox expressif** (25 au plus par vidéo, environ 25 s de calcul chacune sans carte graphique ;
+désactivable dans Paramètres). Elles sont marquées ✦ dans la colonne Calage.
+
+### Aperçu intégré
+
+Double-cliquez sur le numéro d'une réplique (ou bouton **Aperçu**) : l'image de la vidéo défile dans la page
+Doublage, synchronisée avec le son français, avec le sous-titre de la réplique. Clic droit → « Ouvrir 20 s dans le
+lecteur de Windows » pour un extrait vidéo complet.
+
 ### Modes de voix (page Personnes)
 
 | Mode | Hors ligne | Remarques |
@@ -33,7 +62,7 @@ Construite sur le moteur d'AudioLivre Studio (même dépôt, dossier `audiolivre
 | Clonage rapide Microsoft | ❌ | Henri ou Denise (selon le genre) + conversion Chatterbox : intonation plus naturelle |
 | XTTS-v2 | ✅ | ressemblance la plus fidèle, plus lent, **usage non commercial** |
 | Chatterbox | ✅ | clonage expressif, lent sans carte graphique |
-| Modèle RVC (.pth) | ✅/❌ | modèle de voix importé pour une personne |
+| Modèle RVC (.pth) | ✅/❌ | modèle `.pth` (+ `.index`) entraîné pour la personne ; voix de base Microsoft (Henri, Denise…) ou Kokoro hors ligne. RVC ne clone pas depuis l'extrait de la vidéo |
 | Voix Microsoft / Kokoro / Windows | ❌ / ✅ / ✅ | sans clonage |
 
 ---
