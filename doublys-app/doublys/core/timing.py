@@ -105,3 +105,39 @@ def match_level(data: np.ndarray, sr: int, target_db: float, max_gain_db: float 
         out = out * (0.97 / peak)
         gain += audio.lin_to_db(0.97 / peak)
     return out.astype(np.float32), gain
+
+
+def _envelope_db(data: np.ndarray, sr: int, frame: float = 0.05, smooth: float = 0.3) -> np.ndarray:
+    win = max(1, int(sr * frame))
+    n = len(data) // win
+    if n == 0:
+        return np.zeros(0)
+    rms = np.sqrt(np.mean(data[: n * win].astype(np.float64).reshape(n, win) ** 2, axis=1))
+    db = 20 * np.log10(np.maximum(rms, 1e-6))
+    k = max(1, int(smooth / frame))
+    if k > 1 and n > k:
+        db = np.convolve(db, np.ones(k) / k, mode="same")
+    return db
+
+
+def transfer_dynamics(vf: np.ndarray, sr: int, orig: np.ndarray, orig_sr: int, amount: float = 0.5,
+                      limit_db: float = 6.0) -> np.ndarray:
+    """Donne à la voix française les nuances de volume de la phrase d'origine (montée, chute, mot appuyé), à
+    l'échelle de la phrase (lissage de 0,3 s) et avec mesure (± 6 dB au plus)."""
+    frame = 0.05
+    ev, eo = _envelope_db(vf, sr, frame), _envelope_db(orig, orig_sr, frame)
+    if len(ev) < 6 or len(eo) < 6:
+        return vf
+    active_v = ev > ev.max() - 30
+    active_o = eo > eo.max() - 30
+    if active_v.sum() < 3 or active_o.sum() < 3:
+        return vf
+    rel_v = ev - np.median(ev[active_v])
+    rel_o = np.interp(np.linspace(0, 1, len(ev)), np.linspace(0, 1, len(eo)), eo - np.median(eo[active_o]))
+    gain = np.clip(amount * (rel_o - rel_v), -limit_db, limit_db)
+    gain[~active_v] = 0.0
+    win = int(sr * frame)
+    g = np.interp(np.arange(len(vf)), np.arange(len(gain)) * win + win / 2, 10 ** (gain / 20))
+    out = (vf * g).astype(np.float32)
+    peak = float(np.max(np.abs(out))) if out.size else 0.0
+    return out * (0.97 / peak) if peak > 0.97 else out

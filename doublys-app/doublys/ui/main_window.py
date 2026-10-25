@@ -28,6 +28,7 @@ NAV = [
     ("dubbing", "Doublage", "film"),
     ("people", "Personnes", "users"),
     ("export", "Export", "package"),
+    ("queue", "File d'attente", "list"),
 ]
 TOOLS = [
     ("engines", "Moteurs IA", "cpu"),
@@ -161,6 +162,7 @@ class MainWindow(QMainWindow):
         from .pages.export import ExportPage
         from .pages.home import HomePage
         from .pages.people import PeoplePage
+        from .pages.queuepage import QueuePage
         from .pages.settings import SettingsPage
 
         self.pages = {
@@ -168,6 +170,7 @@ class MainWindow(QMainWindow):
             "dubbing": DubbingPage(self.ctx, self),
             "people": PeoplePage(self.ctx),
             "export": ExportPage(self.ctx),
+            "queue": QueuePage(self.ctx, self),
             "engines": EnginesPage(self.ctx),
             "settings": SettingsPage(self.ctx, self),
         }
@@ -203,6 +206,20 @@ class MainWindow(QMainWindow):
         self.sidebar.update_btn.clicked.connect(self._open_update)
         if settings().get("check_updates", True):
             QTimer.singleShot(5000, lambda: self.check_updates(silent=True))
+        QTimer.singleShot(1500, self._offer_queue_resume)
+
+    def _offer_queue_resume(self) -> None:
+        from ..core import jobqueue
+
+        n = jobqueue.pending_count()
+        if not n or not self.isVisible() or self.ctx.runner.running or self.pages["queue"].active:
+            return
+        r = QMessageBox.question(self, "File d'attente",
+                                 f"{n} vidéo(s) de la file d'attente ne sont pas terminées. Reprendre maintenant ? "
+                                 "(le travail déjà fait est conservé)")
+        if r == QMessageBox.Yes:
+            self.show_page("queue")
+            self.pages["queue"].start()
 
     # -- mises à jour ------------------------------------------------------------------
     def check_updates(self, silent: bool = False) -> None:
@@ -231,7 +248,41 @@ class MainWindow(QMainWindow):
         from ..core import updates
 
         rel = self._update_info or {}
-        QDesktopServices.openUrl(QUrl(rel.get("download") or rel.get("url") or updates.RELEASES_PAGE))
+        url = rel.get("download")
+        if not url or self.ctx.runner.running:
+            QDesktopServices.openUrl(QUrl(rel.get("url") or updates.RELEASES_PAGE))
+            return
+        r = QMessageBox.question(self, "Mise à jour",
+                                 f"Télécharger et installer Doublys {rel.get('version')} maintenant ?\n\nDoublys se "
+                                 "fermera pendant l'installation ; vos projets et vos moteurs sont conservés.")
+        if r != QMessageBox.Yes:
+            return
+        self.sidebar.update_btn.setEnabled(False)
+        self.sidebar.update_btn.setText("  Téléchargement…")
+
+        def work(task):
+            from .. import paths
+            from ..core.engines.installer import download
+
+            target = paths.temp_dir() / Path(url).name
+            download(url, target, task.say, task.cancel_event)
+            return target
+
+        def done(path):
+            from ..core import support
+
+            self.confirm_discard()
+            support.launch_installer(path)
+            self.close()
+
+        def fail(msg, _tb):
+            self.sidebar.update_btn.setEnabled(True)
+            self.sidebar.update_btn.setText(f"  Version {rel.get('version')} disponible")
+            QMessageBox.warning(self, "Mise à jour impossible", f"{msg}\n\nVous pouvez la télécharger depuis "
+                                f"{updates.RELEASES_PAGE}")
+
+        self._dl_task = tasks.Task(work, pass_reporter=True, on_done=done, on_error=fail,
+                                   on_message=lambda m: self.sidebar.update_btn.setText("  " + m[-40:])).start()
 
     # -- menus & raccourcis ------------------------------------------------------------
     def _build_menu(self) -> None:
@@ -244,7 +295,9 @@ class MainWindow(QMainWindow):
             None,
             ("Ouvrir le dossier du projet", "external", None, self.open_project_folder),
             ("Journal de l'application", "list", None, self.open_logs),
-            ("À propos de Doublys", "info", "F1", self.about),
+            ("Guide de démarrage", "sparkles", "F1", self.guide),
+            ("Créer un rapport de bug…", "alert", None, self.bug_report),
+            ("À propos de Doublys", "info", None, self.about),
             None,
             ("Quitter", "x", "Ctrl+Q", self.close),
         ]
@@ -275,6 +328,12 @@ class MainWindow(QMainWindow):
             self.recent_menu.addAction(Path(r).stem, lambda r=r: self.open_project(r))
 
     def _build_shortcuts(self) -> None:
+        for keys, fn in (("Ctrl+Z", self.ctx.undo), ("Ctrl+Y", self.ctx.redo), ("Ctrl+Shift+Z", self.ctx.redo)):
+            a = QAction(self)
+            a.setShortcut(QKeySequence(keys))
+            a.setShortcutContext(Qt.WindowShortcut)  # les zones de texte gardent leur propre Ctrl+Z
+            a.triggered.connect(fn)
+            self.addAction(a)
         play = QAction(self)
         play.setShortcut(QKeySequence("Ctrl+Space"))
         play.setShortcutContext(Qt.ApplicationShortcut)
@@ -295,6 +354,14 @@ class MainWindow(QMainWindow):
     def dropEvent(self, e):
         files = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
         if files:
+            self.open_files(files)
+
+    def open_files(self, files: list[str]) -> None:
+        """Une vidéo : nouveau projet ; plusieurs : file d'attente."""
+        if len(files) > 1:
+            self.show_page("queue")
+            self.pages["queue"].add_videos(files)
+        else:
             self.open_any(files[0])
 
     def open_any(self, path: str) -> None:
@@ -450,6 +517,26 @@ class MainWindow(QMainWindow):
         from .. import paths
 
         open_path(paths.logs_dir())
+
+    def guide(self) -> None:
+        from .dialogs.guide import GuideDialog
+
+        GuideDialog(self).exec()
+
+    def bug_report(self) -> None:
+        from ..core import support
+
+        pr = self.ctx.project
+        try:
+            out = support.bug_report(pr.path if pr is not None else None)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Rapport impossible", str(exc))
+            return
+        QMessageBox.information(self, "Rapport de bug", "Le rapport a été créé :\n"
+                                f"{out}\n\nEnvoyez ce fichier avec une description du problème. Il contient le "
+                                "journal, les réglages (sans votre clé DeepSeek) et le projet ouvert (texte des "
+                                "répliques), mais aucune vidéo ni aucun son.")
+        open_path(out.parent)
 
     def about(self) -> None:
         from .dialogs.about import AboutDialog

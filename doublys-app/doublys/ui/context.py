@@ -121,6 +121,7 @@ def _wrap_cancel(fn):
 class AppContext(QObject):
     project_changed = Signal()  # nouveau projet chargé
     project_modified = Signal()  # contenu modifié
+    history_changed = Signal()  # annuler / rétablir
     lines_changed = Signal()  # répliques (ajout, suppression, texte)
     people_changed = Signal()
     engines_changed = Signal()
@@ -135,6 +136,8 @@ class AppContext(QObject):
         self.dirty = False
         self.player.error.connect(lambda m: self.toast(m, "error"))
         self._save_lock = threading.Lock()
+        self._undo: list[tuple[str, str]] = []  # (libellé, état du projet en JSON)
+        self._redo: list[tuple[str, str]] = []
 
     # -- état du projet ----------------------------------------------------------------
     def mark_dirty(self) -> None:
@@ -144,7 +147,74 @@ class AppContext(QObject):
     def set_project(self, project: Project | None) -> None:
         self.project = project
         self.dirty = False
+        self._undo.clear()
+        self._redo.clear()
         self.project_changed.emit()
+        self.history_changed.emit()
+
+    # -- annuler / rétablir --------------------------------------------------------------
+    HISTORY = 60
+
+    def _snapshot(self) -> str:
+        import dataclasses
+        import json
+
+        pr = self.project
+        return json.dumps({"lines": [dataclasses.asdict(x) for x in pr.lines],
+                           "people": [dataclasses.asdict(x) for x in pr.people],
+                           "steps": pr.steps, "settings": dataclasses.asdict(pr.settings)}, ensure_ascii=False)
+
+    def _restore(self, snap: str) -> None:
+        import json
+
+        from ..core.models import DubSettings, Line, Person
+
+        d = json.loads(snap)
+        pr = self.project
+        pr.lines = [Line.from_dict(x) for x in d["lines"]]
+        pr.people = [Person.from_dict(x) for x in d["people"]]
+        pr.steps = d["steps"]
+        pr.settings = DubSettings.from_dict(d["settings"])
+        self.mark_dirty()
+        self.people_changed.emit()
+        self.lines_changed.emit()
+        self.history_changed.emit()
+
+    def checkpoint(self, label: str) -> None:
+        """À appeler juste avant une modification faite par l'utilisateur (pour pouvoir l'annuler)."""
+        if self.project is None or self.runner.running:
+            return
+        self.push_undo(label, self._snapshot())
+
+    def push_undo(self, label: str, snapshot: str) -> None:
+        if self.project is None or self.runner.running:
+            return
+        self._undo.append((label, snapshot))
+        del self._undo[:-self.HISTORY]
+        self._redo.clear()
+        self.history_changed.emit()
+
+    def can_undo(self) -> str:
+        return self._undo[-1][0] if self._undo and not self.runner.running else ""
+
+    def can_redo(self) -> str:
+        return self._redo[-1][0] if self._redo and not self.runner.running else ""
+
+    def undo(self) -> None:
+        if not self.can_undo():
+            return
+        label, snap = self._undo.pop()
+        self._redo.append((label, self._snapshot()))
+        self._restore(snap)
+        self.toast(f"Annulé : {label}", "info", 2000)
+
+    def redo(self) -> None:
+        if not self.can_redo():
+            return
+        label, snap = self._redo.pop()
+        self._undo.append((label, self._snapshot()))
+        self._restore(snap)
+        self.toast(f"Rétabli : {label}", "info", 2000)
 
     def save(self) -> bool:
         if self.project is None or self.project.path is None:

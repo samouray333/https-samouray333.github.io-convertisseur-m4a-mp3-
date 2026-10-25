@@ -18,6 +18,7 @@ class Word:
     start: float
     end: float
     text: str
+    prob: float = 1.0  # confiance de Whisper
 
     @property
     def sentence_end(self) -> bool:
@@ -40,7 +41,8 @@ def to_words(raw: list) -> list[Word]:
             continue
         if out and start < out[-1].end:
             start = out[-1].end
-        out.append(Word(start, max(start + 0.02, end), text))
+        prob = float(item[3]) if len(item) > 3 and item[3] is not None else 1.0
+        out.append(Word(start, max(start + 0.02, end), text, prob))
     return out
 
 
@@ -119,7 +121,7 @@ def lines_from_words(raw_words: list, pause: float = 0.7, max_len: float = 12.0,
     lines = []
     for g in segment_words(words, pause, max_len, soft, min_fragment):
         lines.append(Line(start=round(g[0].start, 3), end=round(g[-1].end, 3), en=join_words(g),
-                          words=[[round(w.start, 3), round(w.end, 3), w.text] for w in g]))
+                          words=[[round(w.start, 3), round(w.end, 3), w.text, round(w.prob, 3)] for w in g]))
     return lines
 
 
@@ -134,9 +136,9 @@ def split_line(line: Line, at: float | None = None) -> tuple[Line, Line] | None:
         i = min(range(1, len(words)), key=lambda k: abs(words[k].start - at))
     a, b = words[:i], words[i:]
     first = Line(start=line.start, end=a[-1].end, en=join_words(a), person_id=line.person_id,
-                 words=[[w.start, w.end, w.text] for w in a])
+                 words=[[w.start, w.end, w.text, w.prob] for w in a])
     second = Line(start=b[0].start, end=line.end, en=join_words(b), person_id=line.person_id,
-                  words=[[w.start, w.end, w.text] for w in b])
+                  words=[[w.start, w.end, w.text, w.prob] for w in b])
     return first, second
 
 

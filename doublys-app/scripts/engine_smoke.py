@@ -213,6 +213,56 @@ def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: st
     return 0
 
 
+def series_test(device: str) -> int:
+    """Épisode 1 (4 personnes nommées, enregistrées dans une série) puis épisode 2 (autres phrases, deux des
+    mêmes voix) : les personnages doivent être reconnus avec leur nom."""
+    from doublys.config import settings
+    from doublys.core import engines, pipeline, series
+    from doublys.core import project as project_io
+
+    for eid in ("analysis", "whisper", "kokoro", "chatterbox"):
+        ensure(eid, device)
+    names = {"am_michael": "Chef", "bf_emma": "Emma", "bm_george": "George", "af_heart": "Lucie"}
+    work = Path(tempfile.mkdtemp(prefix="doublys-serie-"))
+    settings().set("projects_dir", str(work / "projets"))
+    series.delete("Série de test")
+    steps = ["extract", "separate", "transcribe", "segment", "speakers", "translate", "voices"]
+
+    def episode(lang: str, title: str):
+        (work / title).mkdir(parents=True, exist_ok=True)
+        video, truth = make_video(work / title, 0.0, lang)
+        pr = project_io.create_project(video, work / "projets", title)
+        pr.series = "Série de test"
+        for st in steps:
+            pipeline.run_step(pr, st, pipeline.Job(on_log=log))
+        voice_of = {}
+        for ln in pr.lines:
+            mid = (ln.start + ln.end) / 2
+            who = next((v for a, b, v in truth if a - 0.3 <= mid <= b + 0.3), None)
+            voice_of.setdefault(ln.person_id, who)
+        return pr, voice_of
+
+    ep1, v1 = episode("en4", "Episode 1")
+    for p in ep1.people:
+        p.name = names[v1[p.id]]
+    _s, n = series.save_from_project(ep1, "Série de test")
+    log(f"Épisode 1 : {n} personnages enregistrés")
+    ep2, v2 = episode("en", "Episode 2")
+    errors = []
+    for p in ep2.people:
+        expected = names.get(v2.get(p.id), "?")
+        log(f"Épisode 2 : {p.name} (attendu : {expected})")
+        if p.name != expected:
+            errors.append(f"{p.name} au lieu de {expected}")
+    engines.shutdown_all()
+    series.delete("Série de test")
+    if errors:
+        log("ÉCHEC : " + " ; ".join(errors))
+        return 1
+    log("SUCCÈS — personnages reconnus d'un épisode à l'autre")
+    return 0
+
+
 def single(eid: str, device: str) -> int:
     from doublys.core import audio, engines
     from doublys.core.engines.neural import LOG_LISTENERS
@@ -270,12 +320,15 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", choices=["analysis", "whisper", "kokoro", "chatterbox", "xtts"])
     ap.add_argument("--full", action="store_true")
+    ap.add_argument("--series", action="store_true", help="reconnaissance des personnages d'un épisode à l'autre")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--mode", default="fastclone_offline")
     ap.add_argument("--translator", default="opus_big")
     ap.add_argument("--minutes", type=float, default=0.0, help="durée de la vidéo de test (--full)")
     ap.add_argument("--lang", default="en", choices=sorted(DIALOGUES), help="langue de la vidéo de test (--full)")
     args = ap.parse_args()
+    if args.series:
+        return series_test(args.device)
     if args.full:
         return full(args.device, args.mode, args.translator, args.minutes, args.lang)
     if args.engine:

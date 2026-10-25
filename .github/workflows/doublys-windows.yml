@@ -213,7 +213,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [analysis, whisper, kokoro, chatterbox, full, full-ja]
+        test: [analysis, whisper, kokoro, chatterbox, full, full-ja, series]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -232,5 +232,6 @@ jobs:
         run: |
           if ("${{ matrix.test }}" -eq "full") { python scripts/engine_smoke.py --full --device cpu }
           elseif ("${{ matrix.test }}" -eq "full-ja") { python scripts/engine_smoke.py --full --lang ja --device cpu }
+          elseif ("${{ matrix.test }}" -eq "series") { python scripts/engine_smoke.py --series --device cpu }
           else { python scripts/engine_smoke.py --engine ${{ matrix.test }} --device cpu }
           if ($LASTEXITCODE -ne 0) { throw "Échec du test ${{ matrix.test }}" }

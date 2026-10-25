@@ -13,13 +13,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFrame, QGridLayout
                                QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QTableWidget, QTableWidgetItem)
 
 from ... import paths
-from ...core import ai, audio, engines, media, mixer, pipeline, refs, segment, timing
+from ...core import ai, audio, engines, media, mixer, pipeline, qc, refs, segment, timing
 from ...core import project as project_io
 from ...core.engines.neural import LOG_LISTENERS
 from ...core.models import LINE_STATES, STEP_LABELS, STEPS, Person
 from ...core.speakers import COLORS
 from ...core.textproc import format_duration
 from .. import icons, tasks, theme
+from ..timeline import TimelineView
 from ..videopreview import VideoPreview
 from ..widgets import Card, IconButton, button, card_title, format_eta, label
 from .base import Page
@@ -28,6 +29,9 @@ log = logging.getLogger(__name__)
 
 COLS = ["#", "Début", "Durée", "Personne", "Original", "Français", "Calage", "État"]
 C_NUM, C_START, C_LEN, C_PERSON, C_EN, C_FR, C_FIT, C_STATE = range(len(COLS))
+STEP_SHORT = {"extract": "Extraction", "separate": "Séparation", "transcribe": "Transcription",
+              "segment": "Répliques", "speakers": "Personnes", "translate": "Traduction", "voices": "Voix",
+              "dub": "Doublage", "mix": "Mixage"}
 STATE_KIND = {"ok": "success", "tempo": "success", "rate": "info", "long": "warning", "error": "danger", "": "muted"}
 
 
@@ -46,10 +50,8 @@ class StepRow(QFrame):
         self.dot = QLabel()
         self.dot.setFixedSize(16, 16)
         lay.addWidget(self.dot)
-        self.name = label(STEP_LABELS[step])
+        self.name = label(STEP_SHORT.get(step, STEP_LABELS[step]))
         lay.addWidget(self.name, 1)
-        self.info = label("", "Faint")
-        lay.addWidget(self.info)
         self.btn = IconButton("refresh", "Relancer cette étape", 26, 14)
         m = QMenu(self)
         m.addAction(icons.icon("refresh", theme.CURRENT.text, 16), "Relancer cette étape seule",
@@ -66,28 +68,35 @@ class StepRow(QFrame):
             state, ("clock", p.faint))
         self.dot.setPixmap(icons.pixmap(ic, color, 16))
         self.name.setStyleSheet("font-weight: 700;" if state == "run" else "")
-        self.info.setText(detail[:42])
-        self.info.setToolTip(detail)
+        self.setToolTip(f"{STEP_LABELS[self.step]}" + (f" : {detail}" if detail else ""))
 
 
 class DubbingPage(Page):
     name = "dubbing"
 
     def __init__(self, ctx, window):
-        super().__init__(ctx, "Doublage", "Une vidéo, un bouton : la version française se crée toute seule.")
+        super().__init__(ctx, "Doublage", "Une vidéo, un bouton : la version française se crée toute seule.",
+                         scroll=True)
         self.window_ = window
         self._rows: dict[str, int] = {}
         self._filling = False
         self._thumb_task = None
+        self.undo_btn = IconButton("chevron-left", "Annuler (Ctrl+Z)", 34, 18)
+        self.undo_btn.clicked.connect(ctx.undo)
+        self.redo_btn = IconButton("chevron-right", "Rétablir (Ctrl+Y)", 34, 18)
+        self.redo_btn.clicked.connect(ctx.redo)
+        self.header.add_action(self.undo_btn)
+        self.header.add_action(self.redo_btn)
+        ctx.history_changed.connect(self._history_buttons)
 
         top = QHBoxLayout()
         top.setSpacing(18)
         # vignette
         vcard = Card(margins=(14, 14, 14, 14), spacing=8)
-        self.thumb = VideoPreview(320, 180)
+        self.thumb = VideoPreview(256, 144)
         vcard.add(self.thumb)
         self.video_info = label("", "Hint", wrap=True)
-        self.video_info.setMaximumWidth(320)
+        self.video_info.setMaximumWidth(256)
         vcard.add(self.video_info)
         top.addWidget(vcard)
 
@@ -127,7 +136,7 @@ class DubbingPage(Page):
         for i, s in enumerate(STEPS):
             row = StepRow(self, s)
             self.step_rows[s] = row
-            grid.addWidget(row, i % 5, i // 5)
+            grid.addWidget(row, i // 3, i % 3)
         run.add(grid)
         top.addWidget(run, 1)
         self.body.addLayout(top)
@@ -137,10 +146,12 @@ class DubbingPage(Page):
         th = QHBoxLayout()
         th.addWidget(card_title("Répliques", "Double-cliquez sur le français pour le modifier ; la voix sera refaite.",
                                 "captions"), 1)
-        self.only_issues = QCheckBox("Seulement les répliques à revoir")
+        self.only_issues = QCheckBox("Seulement les répliques à vérifier")
         self.only_issues.toggled.connect(self._apply_filter)
         th.addWidget(self.only_issues, 0, Qt.AlignBottom)
         tc.add(th)
+        self.qc_label = label("", "Hint", wrap=True)
+        tc.add(self.qc_label)
         self.table = QTableWidget(0, len(COLS))
         self.table.setHorizontalHeaderLabels(COLS)
         self.table.verticalHeader().hide()
@@ -159,9 +170,12 @@ class DubbingPage(Page):
         self.table.itemChanged.connect(self._item_changed)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.doubleClicked.connect(self._double_clicked)
+        self.table.setMinimumHeight(330)
         tc.add(self.table)
         acts = QHBoxLayout()
         acts.setSpacing(6)
+        acts2 = QHBoxLayout()
+        acts2.setSpacing(6)
         self.actions = {}
         for key, text, ic, tip in [
             ("vo", "VO", "headphones", "Écouter la version originale"),
@@ -171,24 +185,39 @@ class DubbingPage(Page):
                                              "numéro)"),
             ("retranslate", "Retraduire", "languages", "Nouvelle traduction automatique"),
             ("shorten", "Raccourcir", "scissors", "DeepSeek propose une version plus courte qui tient dans le temps"),
-            ("redo", "Refaire la voix", "refresh", "Nouvelle prise de la voix française"),
+            ("redo", "Refaire", "refresh", "Nouvelle prise de la voix française"),
             ("merge", "Fusionner", "merge", "Fusionner avec la réplique suivante"),
             ("split", "Couper", "scissors", "Couper la réplique en deux"),
             ("delete", "Supprimer", "trash", "Supprimer les répliques choisies (non doublées)"),
         ]:
-            b = button(text, ic, "danger" if key == "delete" else "default", tooltip=tip)
+            compact = key in ("merge", "split", "delete")
+            b = button("" if compact else text, ic, "danger" if key == "delete" else "default",
+                       tooltip=f"{text} : {tip}" if compact else tip)
+            if compact:
+                b.setText("")
+                b.setAccessibleName(text)
             b.clicked.connect(lambda _=False, k=key: self.action(k))
-            acts.addWidget(b)
+            (acts if key in ("vo", "vf", "mix", "preview") else acts2).addWidget(b)
             self.actions[key] = b
         acts.addStretch(1)
+        self.ok_btn = button("", "check", tooltip="Vérifiée : ne plus signaler cette réplique au contrôle qualité")
+        self.ok_btn.clicked.connect(lambda: self.action("checked"))
+        acts2.addWidget(self.ok_btn)
+        acts2.addStretch(1)
         tc.add(acts)
+        tc.add(acts2)
+        self.timeline = TimelineView()
+        self.timeline.edited.connect(self._timing_edited)
+        self.timeline.selected.connect(self._select)
+        tc.add(self.timeline)
         self.body.addWidget(tc, 1)
 
         self.console = QPlainTextEdit()
         self.console.setObjectName("Console")
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(3000)
-        self.console.setFixedHeight(90)
+        self.console.setFixedHeight(64)
+        self.console.setToolTip("Journal du traitement")
         self.body.addWidget(self.console)
 
         r = ctx.runner
@@ -221,6 +250,8 @@ class DubbingPage(Page):
             self.thumb.clear()
         else:
             self.header.title.setText(f"Doublage — {pr.display_title}")
+            if pr.lines and pr.step_done("translate"):
+                qc.check(pr)  # projets créés avant le contrôle qualité
             v = pr.video
             self.video_info.setText(f"{Path(pr.source_video).name}\n{format_duration(v.duration)} · {v.width}×"
                                     f"{v.height} · {v.video_codec} / {v.audio_codec}")
@@ -381,6 +412,11 @@ class DubbingPage(Page):
             self.fill_steps(running=step)
 
     def _on_finished(self, ok: bool, msg: str, result) -> None:
+        if self.ctx.runner.title.startswith("File d'attente"):  # géré par la page File d'attente
+            self._update_buttons()
+            self.fill_steps()
+            self.status.setText("Prêt.")
+            return
         self._update_buttons()
         self.fill_steps()
         self.fill_table()
@@ -442,6 +478,8 @@ class DubbingPage(Page):
         self._filling = False
         self._apply_filter()
         self._update_buttons()
+        self.qc_label.setText(qc.summary(pr) if pr is not None and pr.lines else "")
+        self._update_timeline()
 
     def _fill_row(self, i: int, ln) -> None:
         pr = self.project
@@ -454,7 +492,10 @@ class DubbingPage(Page):
                 fit += f" · ×{ln.rate * ln.tempo:.2f}"
             if ln.expressive:
                 fit += " · ✦"
-        values += [fit, LINE_STATES.get(ln.state, ln.state)]
+        state = LINE_STATES.get(ln.state, ln.state)
+        if ln.issues and ln.state not in ("long", "error"):
+            state = "⚠ à vérifier"
+        values += [fit, state]
         self._filling = True
         for c, v in enumerate(values):
             it = QTableWidgetItem(v)
@@ -463,12 +504,13 @@ class DubbingPage(Page):
             if c == C_PERSON and person is not None:
                 it.setForeground(QColor(person.color))
             if c == C_STATE:
-                kind = STATE_KIND.get(ln.state, "muted")
+                kind = "warning" if ln.issues else STATE_KIND.get(ln.state, "muted")
                 color = {"success": theme.CURRENT.success, "warning": theme.CURRENT.warning,
                          "danger": theme.CURRENT.danger, "info": theme.CURRENT.info}.get(kind, theme.CURRENT.faint)
                 it.setForeground(QColor(color))
-                if ln.message:
-                    it.setToolTip(ln.message)
+                tips = [m for _c, m in ln.issues] or ([ln.message] if ln.message else [])
+                if tips:
+                    it.setToolTip("\n".join(tips))
             if c in (C_EN, C_FR):
                 it.setToolTip(v)
             self.table.setItem(i, c, it)
@@ -492,7 +534,7 @@ class DubbingPage(Page):
         for ln in pr.lines:
             i = self._rows.get(ln.id)
             if i is not None:
-                self.table.setRowHidden(i, only and ln.state not in ("long", "error", ""))
+                self.table.setRowHidden(i, only and not ln.issues and ln.state not in ("long", "error"))
 
     def selected_lines(self):
         pr = self.project
@@ -508,6 +550,7 @@ class DubbingPage(Page):
         text = item.text().strip()
         if text == ln.fr:
             return
+        self.ctx.checkpoint("modification du français")
         ln.fr = text
         ln.fr_edited = True
         ln.state, ln.message = "", "Texte modifié : voix à refaire"
@@ -529,6 +572,7 @@ class DubbingPage(Page):
             self.action("preview")
 
     def _selection_changed(self) -> None:
+        self._update_timeline()
         sel = self.selected_lines()
         if len(sel) != 1 or self.project is None:
             return
@@ -552,10 +596,20 @@ class DubbingPage(Page):
         if not sel or self.project is None:
             return
         m = QMenu(self)
-        for key in ("vo", "vf", "mix", "preview", "external", None, "retranslate", "shorten", "redo", None, "merge", "split",
+        for key in ("vo", "vf", "mix", "preview", "external", None, "checked", "deepseek", "retranslate", "shorten", "redo", None, "merge", "split",
                     "delete"):
             if key is None:
                 m.addSeparator()
+                continue
+            if key == "checked":
+                a = m.addAction(icons.icon("check", theme.CURRENT.text, 16), "Marquer comme vérifiée",
+                                lambda: self.action("checked"))
+                a.setEnabled(not self.ctx.runner.running)
+                continue
+            if key == "deepseek":
+                a = m.addAction(icons.icon("sparkles", theme.CURRENT.text, 16), "Retraduire avec DeepSeek",
+                                lambda: self.action("deepseek"))
+                a.setEnabled(not self.ctx.runner.running)
                 continue
             if key == "external":
                 a = m.addAction(icons.icon("external", theme.CURRENT.text, 16),
@@ -563,7 +617,7 @@ class DubbingPage(Page):
                 a.setEnabled(self.actions["preview"].isEnabled())
                 continue
             b = self.actions[key]
-            a = m.addAction(b.icon(), b.text(), lambda k=key: self.action(k))
+            a = m.addAction(b.icon(), b.accessibleName() or b.text(), lambda k=key: self.action(k))
             a.setEnabled(b.isEnabled())
         if not self.ctx.runner.running:
             sub = m.addMenu(icons.icon("users", theme.CURRENT.text, 16), "Attribuer à")
@@ -575,6 +629,7 @@ class DubbingPage(Page):
 
     def _assign(self, lines, person_id) -> None:
         pr = self.project
+        self.ctx.checkpoint("changement de personne")
         if person_id is None:
             n = len(pr.people)
             p = Person(name=f"P{n + 1}", color=COLORS[n % len(COLORS)])
@@ -683,9 +738,94 @@ class DubbingPage(Page):
         tasks.run(media.preview_clip, Path(pr.source_video), mix_path, out, max(0.0, ln.start - 2.0), 20.0,
                   on_done=done, on_error=lambda m, _t: self.ctx.toast(f"Aperçu impossible : {m}", "error"))
 
-    def _line_job(self, title: str, lines, fn, plan: list[str] | None = None) -> None:
+    def _act_checked(self, sel, ln) -> None:
+        self.ctx.checkpoint("réplique vérifiée")
+        for x in sel:
+            x.checked = True
+            x.issues = []
+        self.ctx.mark_dirty()
+        self.fill_table()
+
+    def _act_deepseek(self, sel, ln) -> None:
+        pr = self.project
+        try:
+            ai.client_from_settings()
+        except ai.AIError as exc:
+            raise RuntimeError(f"{exc}") from None
+        old = pr.settings.translator
+
+        def fn(job, ids):
+            pr.settings.translator = "deepseek"
+            try:
+                job.step = "translate"
+                pipeline.step_translate(pr, job, only=ids, force=True)
+            finally:
+                pr.settings.translator = old
+            job.step = "dub"
+            pipeline.step_dub(pr, job, only=ids)
+
+        self._line_job("Traduction DeepSeek", sel, fn, ["translate", "dub"])
+
+    def _history_buttons(self) -> None:
+        u, r = self.ctx.can_undo(), self.ctx.can_redo()
+        self.undo_btn.setEnabled(bool(u))
+        self.redo_btn.setEnabled(bool(r))
+        self.undo_btn.setToolTip(f"Annuler : {u} (Ctrl+Z)" if u else "Rien à annuler")
+        self.redo_btn.setToolTip(f"Rétablir : {r} (Ctrl+Y)" if r else "Rien à rétablir")
+
+    # -- éditeur de calage ---------------------------------------------------------------
+    def _update_timeline(self) -> None:
+        pr = self.project
+        sel = self.selected_lines() if pr is not None else []
+        if not sel:
+            self.timeline.clear()
+            return
+        ln = sel[0]
+        t0 = max(0.0, ln.start - 4.0)
+        t1 = max(ln.end, ln.start + ln.duration) + 5.0
+        peaks = None
+        try:
+            src, _src16 = pipeline.speech_source(pr)
+            if src.exists():
+                data, sr = refs.read_span(src, t0, t1)
+                peaks = audio.waveform_peaks(data, 600) if data.size else None
+        except Exception:
+            peaks = None
+        items = []
+        for x in pr.lines:
+            if x.end < t0 or x.start > t1:
+                continue
+            person = pr.person(x.person_id)
+            items.append((x.id, x.start, x.end, x.duration if x.audio else 0.0,
+                          person.color if person else theme.CURRENT.faint,
+                          f"{pr.lines.index(x) + 1} · {person.name if person else ''}"))
+        self.timeline.set_view(t0, t1, peaks, items, ln.id)
+
+    def _timing_edited(self, line_id: str, start: float, end: float) -> None:
+        pr = self.project
+        ln = pr.line(line_id) if pr is not None else None
+        if ln is None or self.ctx.runner.running:
+            self._update_timeline()
+            return
+        self.ctx.checkpoint("calage modifié")
+        ln.start, ln.end = start, end
+        ln.state, ln.message = "", "Calage modifié : voix à refaire"
+        self._dirty_audio()
+        self.fill_table()
+        self._select(line_id)
+        if ln.fr and ln.audio:  # la voix est recalée tout de suite
+
+            def fn(job, ids):
+                job.step = "dub"
+                pipeline.step_dub(pr, job, only=ids)
+
+            self._line_job("Nouveau calage", [ln], fn, checkpoint=False)
+
+    def _line_job(self, title: str, lines, fn, plan: list[str] | None = None, checkpoint: bool = True) -> None:
         """Traitement de quelques répliques ; le mixage sera refait par « Terminer la VF »."""
         ids = [x.id for x in lines]
+        if checkpoint:
+            self.ctx.checkpoint(title.lower())
 
         def work(job):
             fn(job, ids)
@@ -707,6 +847,7 @@ class DubbingPage(Page):
 
     def _act_redo(self, sel, ln) -> None:
         pr = self.project
+        self.ctx.checkpoint("nouvelle prise de voix")
         for x in sel:
             x.seed = (x.seed or 0) + 1
 
@@ -714,7 +855,7 @@ class DubbingPage(Page):
             job.step = "dub"
             pipeline.step_dub(pr, job, only=ids, force=True)
 
-        self._line_job("Nouvelle prise de voix", sel, fn)
+        self._line_job("Nouvelle prise de voix", sel, fn, checkpoint=False)
 
     def _act_shorten(self, sel, ln) -> None:
         pr = self.project
@@ -750,6 +891,7 @@ class DubbingPage(Page):
         other = sel[1] if len(sel) > 1 else (pr.lines[i + 1] if i + 1 < len(pr.lines) else None)
         if other is None:
             raise RuntimeError("Pas de réplique suivante à fusionner.")
+        self.ctx.checkpoint("fusion de répliques")
         merged = segment.merge_lines(ln, other)
         pr.lines = [x for x in pr.lines if x.id not in (ln.id, other.id)] + [merged]
         pr.lines.sort(key=lambda x: x.start)
@@ -763,6 +905,7 @@ class DubbingPage(Page):
         if parts is None:
             raise RuntimeError("Cette réplique est trop courte pour être coupée.")
         a, b = parts
+        self.ctx.checkpoint("coupure de réplique")
         i = pr.lines.index(ln)
         pr.lines[i:i + 1] = [a, b]
         self._dirty_audio()
@@ -777,6 +920,7 @@ class DubbingPage(Page):
                                 ) != QMessageBox.Yes:
             return
         ids = {x.id for x in sel}
+        self.ctx.checkpoint("suppression de répliques")
         pr.lines = [x for x in pr.lines if x.id not in ids]
         self._dirty_audio()
         self.fill_table()

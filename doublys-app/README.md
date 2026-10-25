@@ -25,6 +25,21 @@ Construite sur le moteur d'AudioLivre Studio (même dépôt, dossier `audiolivre
 | 9. Mixage | — | par blocs : fond + VF (option : voix d'origine laissée faible) |
 | 10. Export | FFmpeg | MP4 ou MKV, vidéo copiée sans réencodage, piste VF AAC 192 kb/s normalisée à −16 LUFS, VO en option, sous-titres FR/EN intégrés (mov_text ou srt) et fichiers `.srt`, incrustation en option (libx264, sinon libopenh264, sinon Media Foundation), piste VF seule en WAV/MP3, aperçu rapide sans normalisation |
 
+### Outils de travail
+
+- **Séries** (page Personnes) : nommez les personnages et choisissez leurs voix une fois ; dans les épisodes
+  suivants, ils sont **reconnus automatiquement** par leur empreinte vocale (nom, voix, extrait, glossaire repris).
+- **File d'attente** : glissez plusieurs vidéos (ou plusieurs épisodes d'une série) ; elles sont doublées l'une
+  après l'autre, la nuit par exemple, et la file reprend après un arrêt ou une coupure.
+- **Contrôle qualité** : les répliques à vérifier sont signalées (⚠) — mots mal reconnus par Whisper, traduction
+  douteuse ou absente, personne incertaine, voix mêlées ou bruit, réplique trop longue. Filtre « Seulement les
+  répliques à vérifier », bouton « Vérifiée », clic droit → « Retraduire avec DeepSeek ».
+- **Éditeur de calage** : sous le tableau, la forme d'onde de la voix d'origine ; glissez une réplique pour la
+  déplacer, tirez ses bords pour changer sa durée : la voix française est recalée aussitôt.
+- **Annuler / rétablir** (Ctrl+Z / Ctrl+Y) pour toutes les modifications (texte, découpage, personnes, réglages).
+- **Nuances de l'original** : la voix française reprend les montées et les mots appuyés de la phrase d'origine.
+- **Mise à jour en un clic**, **guide de démarrage** (F1) et **rapport de bug** (menu ⋯) à envoyer en cas de souci.
+
 ### Langues de départ
 
 Anglais, **japonais**, espagnol, allemand, italien, portugais, coréen, chinois, russe, arabe, néerlandais, turc,

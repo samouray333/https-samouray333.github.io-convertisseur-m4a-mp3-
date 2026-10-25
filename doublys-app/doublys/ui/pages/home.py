@@ -179,11 +179,11 @@ class HomePage(Page):
         left.addLayout(row)
         left.addStretch(1)
         hl.addLayout(left, 3)
-        drop = DropZone("Glissez une vidéo ici", "MP4, MKV, MOV, AVI, WEBM… (la vidéo reste à sa place)", "upload",
-                        180)
+        drop = DropZone("Glissez une vidéo ici", "MP4, MKV, MOV, AVI, WEBM… (la vidéo reste à sa place). Plusieurs "
+                        "vidéos : file d'attente.", "upload", 180)
         drop.setStyleSheet("#DropZone { background: rgba(255,255,255,0.12); border: 2px dashed "
                            "rgba(255,255,255,0.55); border-radius: 18px; }")
-        drop.files_dropped.connect(lambda files: window.open_any(files[0]))
+        drop.files_dropped.connect(window.open_files)
         drop.clicked.connect(window.choose_video)
         hl.addWidget(drop, 2)
         self.body.addWidget(hero)

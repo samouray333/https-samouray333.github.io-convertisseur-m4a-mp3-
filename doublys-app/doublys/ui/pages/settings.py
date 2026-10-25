@@ -119,6 +119,9 @@ class SettingsPage(Page):
         self.t_level = ToggleSwitch("Aligner le niveau de chaque réplique sur la voix d'origine")
         g.addWidget(self.t_level, r, 0, 1, 2)
         r += 1
+        self.t_dyn = ToggleSwitch("Reproduire les nuances de volume de la phrase d'origine (montées, mots appuyés)")
+        g.addWidget(self.t_dyn, r, 0, 1, 2)
+        r += 1
         self.t_expr = ToggleSwitch("Répliques fortes (cris, colère) plus expressives avec Chatterbox "
                                    "(≈ 25 s de calcul chacune, 25 au plus)")
         g.addWidget(self.t_expr, r, 0, 1, 2)
@@ -134,7 +137,7 @@ class SettingsPage(Page):
         dub.add(g)
         self.dub_card = dub
         self.body.addWidget(dub)
-        for w in (self.t_sep, self.t_keep, self.t_level, self.t_expr):
+        for w in (self.t_sep, self.t_keep, self.t_level, self.t_expr, self.t_dyn):
             w.toggled.connect(self._save_project)
         for w in (self.lang, self.whisper, self.translator):
             w.currentIndexChanged.connect(self._save_project)
@@ -335,12 +338,14 @@ class SettingsPage(Page):
         self.keep_db.setValue(st.original_voice_db)
         self.t_level.setChecked(st.match_level)
         self.t_expr.setChecked(st.expressive)
+        self.t_dyn.setChecked(st.dynamics)
         self._loading = False
 
     def _save_project(self, *_args) -> None:
         pr = self.ctx.project
         if pr is None or self._loading:
             return
+        snap = self.ctx._snapshot()
         st = pr.settings
         before = dict(vars(st))
         st.separate = self.t_sep.isChecked()
@@ -372,15 +377,17 @@ class SettingsPage(Page):
         st.original_voice_db = self.keep_db.value()
         st.match_level = self.t_level.isChecked()
         st.expressive = self.t_expr.isChecked()
+        st.dynamics = self.t_dyn.isChecked()
         changed = {k for k, v in vars(st).items() if before.get(k) != v}
         if not changed:
             return
+        self.ctx.push_undo("réglages du doublage", snap)
         # première étape touchée par le changement : elle et les suivantes seront refaites
         first = {"separate": "separate", "whisper_model": "transcribe", "source_language": "transcribe",
                  "detected_language": "transcribe", "glossary": "translate", "pause_split": "segment",
                  "max_line": "segment", "speaker_threshold": "speakers", "max_speakers": "speakers",
                  "translator": "translate", "chars_per_second": "translate", "max_rate": "dub",
-                 "match_level": "dub", "expressive": "dub", "keep_original_voice": "mix", "original_voice_db": "mix",
+                 "match_level": "dub", "expressive": "dub", "dynamics": "dub", "keep_original_voice": "mix", "original_voice_db": "mix",
                  "no_separation_duck_db": "mix"}
         from ...core.models import STEPS
 

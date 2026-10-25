@@ -106,8 +106,9 @@ def main(argv: list[str] | None = None) -> int:
             win.new_project_from_video(str(f))
     if settings().get("first_run", True):
         settings().set("first_run", False)
-        win.ctx.toast("Bienvenue dans Doublys ! Installez d'abord les moteurs (bouton « Installer tout ce qu'il "
-                      "faut »), puis glissez une vidéo anglaise sur l'accueil.", "info", 10000)
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(400, win.guide)
     return app.exec()
 
 

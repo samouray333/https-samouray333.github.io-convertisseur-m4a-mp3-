@@ -18,6 +18,7 @@ from typing import Callable
 
 from . import ai, audio, dubvoice, engines, media, mixer, refs, segment, speakers, subtitles, timing
 from . import project as project_io
+from . import qc
 from . import translate as local_translate
 from .engines import EngineError, ServiceBlocked
 from .engines.neural import WorkerDied
@@ -254,7 +255,15 @@ def step_speakers(project: Project, job: Job) -> str:
     before = {ln.id: ln.person_id for ln in project.lines}
     people = speakers.assign_people(project.lines, embeddings, s.speaker_threshold, s.max_speakers)
     project.people = speakers.keep_names(project.people, people, before, project.lines)
-    return f"{len(project.people)} personne(s)"
+    speakers.score_lines(project.lines, embeddings, project.people)
+    found = ""
+    if project.series:
+        from . import series as series_lib
+
+        matched = series_lib.apply_to_project(project)
+        if matched:
+            found = f", dont {matched} personnage(s) de la série « {project.series} » reconnu(s)"
+    return f"{len(project.people)} personne(s){found}"
 
 
 def glossary(project: Project) -> list[tuple[str, str]]:
@@ -332,11 +341,13 @@ def step_translate(project: Project, job: Job, only: list[str] | None = None, fo
     job.check()
     changed = 0
     for i, fr in result.items():
+        lines[i].checked = False
         if fr and fr != lines[i].fr:
             lines[i].fr = fr
             lines[i].fr_edited = False
             changed += 1
             job.line_changed(lines[i].id)
+    qc.check(project)
     return f"{len(result)} répliques traduites"
 
 
@@ -377,7 +388,7 @@ def step_voices(project: Project, job: Job, only: list[str] | None = None) -> st
 def _line_key(project: Project, line: Line, slot: float, vkey: str, expressive: bool = False) -> str:
     s = project.settings
     blob = json.dumps([line.fr.strip(), vkey, round(slot, 2), s.max_rate, s.max_tempo, line.seed, s.match_level,
-                       expressive], ensure_ascii=False)
+                       expressive, s.dynamics], ensure_ascii=False)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
 
 
@@ -430,10 +441,13 @@ def dub_line(project: Project, index: int, avail: list[float], keys: dict[str, s
     res = timing.fit(synth, avail[index], project.settings)
     data = audio.resample(res.data, res.sr, mixer.SR)
     gain = 0.0
-    if project.settings.match_level:
+    if project.settings.match_level or project.settings.dynamics:
         src, _ = speech_source(project)
         orig, osr = refs.read_span(src, line.start, line.end)
-        data, gain = timing.match_level(data, mixer.SR, timing.active_rms_db(orig, osr))
+        if project.settings.dynamics and not strong:
+            data = timing.transfer_dynamics(data, mixer.SR, orig, osr)
+        if project.settings.match_level:
+            data, gain = timing.match_level(data, mixer.SR, timing.active_rms_db(orig, osr))
     audio.write_audio(target, data, mixer.SR, subtype="PCM_16")
     line.audio = project_io.relative(project, target)
     line.audio_key = key
@@ -481,6 +495,7 @@ def step_dub(project: Project, job: Job, only: list[str] | None = None, force: b
         if job.save and made and made % 25 == 0:  # vidéo longue : rien n'est perdu en cas d'arrêt
             job.save()
         job.progress((n + 1) / max(1, len(idx)), f"Réplique {n + 1} sur {len(idx)}")
+    qc.check(project)
     msg = f"{made} répliques produites en {time.time() - t0:.0f} s"
     if long_:
         msg += f", {long_} trop longue(s) à raccourcir"
@@ -527,6 +542,8 @@ def run_step(project: Project, step: str, job: Job, save: Callable[[], None] | N
     detail = STEP_FUNCS[step](project, job)
     learn_speed(step, time.time() - t0, project.video.duration, resumed=job.resume)
     project.mark_step(step, True, detail=detail)
+    if step in ("segment", "speakers", "translate", "dub"):
+        qc.check(project)
     job.progress(1.0, detail)
     job.log(f"{STEP_LABELS[step]} : {detail}")
     if save:

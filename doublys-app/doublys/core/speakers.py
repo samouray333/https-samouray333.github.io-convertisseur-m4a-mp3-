@@ -136,3 +136,37 @@ def keep_names(old: list[Person], new: list[Person], lines_old: dict[str, str], 
             if src.reference_source == "file":
                 p.reference, p.reference_source = src.reference, "file"
     return new
+
+
+def centroids(lines: list[Line], embeddings: dict[str, list[float]]) -> dict[str, np.ndarray]:
+    """Empreinte moyenne (normée) de chaque personne, sur ses répliques assez longues."""
+    acc: dict[str, list] = {}
+    for ln in lines:
+        if ln.id in embeddings and ln.person_id and ln.length >= MIN_EMBED_SECONDS:
+            acc.setdefault(ln.person_id, []).append(embeddings[ln.id])
+    for ln in lines:  # personne sans réplique longue : on prend ce qu'il y a
+        if ln.id in embeddings and ln.person_id and ln.person_id not in acc:
+            acc.setdefault(ln.person_id, []).append(embeddings[ln.id])
+    out = {}
+    for pid, vs in acc.items():
+        c = np.asarray(vs, dtype=np.float64).mean(axis=0)
+        out[pid] = c / (np.linalg.norm(c) + 1e-9)
+    return out
+
+
+def score_lines(lines: list[Line], embeddings: dict[str, list[float]], people: list[Person]) -> None:
+    """Ressemblance de chaque réplique avec sa personne et écart avec la suivante (contrôle qualité) ; empreinte
+    moyenne de chaque personne (reconnaissance d'un épisode à l'autre)."""
+    cents = centroids(lines, embeddings)
+    for p in people:
+        if p.id in cents:
+            p.embedding = [round(float(v), 4) for v in cents[p.id]]
+    for ln in lines:
+        if ln.id not in embeddings or ln.person_id not in cents:
+            continue
+        v = np.asarray(embeddings[ln.id], dtype=np.float64)
+        v = v / (np.linalg.norm(v) + 1e-9)
+        own = float(cents[ln.person_id] @ v)
+        others = [float(c @ v) for pid, c in cents.items() if pid != ln.person_id]
+        ln.speaker_score = round(own, 3)
+        ln.speaker_margin = round(own - max(others), 3) if others else 1.0
