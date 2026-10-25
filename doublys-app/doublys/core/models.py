@@ -1,0 +1,314 @@
+"""Modèles de données : projet de doublage, répliques, personnes, réglages."""
+
+from __future__ import annotations
+
+import dataclasses
+import time
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+def new_id(prefix: str = "") -> str:
+    return prefix + uuid.uuid4().hex[:12]
+
+
+def now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _from_dict(cls, data: dict[str, Any] | None):
+    """Construit une dataclass en ignorant les clés inconnues (compatibilité ascendante)."""
+    data = data or {}
+    names = {f.name for f in dataclasses.fields(cls)}
+    return cls(**{k: v for k, v in data.items() if k in names})
+
+
+@dataclass
+class LexiconEntry:
+    pattern: str
+    replacement: str
+    regex: bool = False
+    case_sensitive: bool = False
+    whole_word: bool = True
+    enabled: bool = True
+    note: str = ""
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+
+@dataclass
+class VoiceProfile:
+    """Voix telle que la comprennent les moteurs (construite à la volée pour chaque personne)."""
+
+    name: str
+    engine: str  # edge | sapi | xtts | chatterbox | kokoro | fastclone | rvc
+    kind: str = "builtin"  # builtin | clone
+    engine_voice: str = ""
+    language: str = "fr"
+    gender: str = ""
+    description: str = ""
+    references: list[str] = field(default_factory=list)
+    params: dict[str, Any] = field(default_factory=dict)
+    color: str = "#FF6B4A"
+    favorite: bool = False
+    consent: bool = False
+    id: str = field(default_factory=lambda: new_id("v_"))
+    created: str = field(default_factory=now_iso)
+    dir: Path | None = field(default=None, compare=False, repr=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        d = dataclasses.asdict(self)
+        d.pop("dir", None)
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+    def reference_paths(self) -> list[Path]:
+        if not self.dir:
+            return [Path(r) for r in self.references]
+        return [(self.dir / r) if not Path(r).is_absolute() else Path(r) for r in self.references]
+
+    @property
+    def is_clone(self) -> bool:
+        return self.kind == "clone"
+
+
+# ---------------------------------------------------------------------------------------
+# Doublage
+# ---------------------------------------------------------------------------------------
+# mode de voix -> (libellé, moteur, clonage)
+VOICE_MODES: dict[str, tuple[str, str, bool]] = {
+    "fastclone_offline": ("Clonage rapide hors ligne (Kokoro + conversion)", "fastclone", True),
+    "fastclone_ms": ("Clonage rapide Microsoft (Henri/Denise + conversion)", "fastclone", True),
+    "xtts": ("XTTS-v2 (clonage fidèle, non commercial)", "xtts", True),
+    "chatterbox": ("Chatterbox (clonage expressif)", "chatterbox", True),
+    "rvc": ("Modèle RVC (.pth)", "rvc", True),
+    "edge": ("Voix Microsoft (sans clonage)", "edge", False),
+    "kokoro": ("Kokoro hors ligne (sans clonage)", "kokoro", False),
+    "sapi": ("Voix Windows (sans clonage)", "sapi", False),
+}
+DEFAULT_VOICE_MODE = "fastclone_offline"
+
+LINE_STATES = {
+    "": "à produire",
+    "ok": "calée",
+    "tempo": "accélérée",
+    "rate": "débit augmenté",
+    "long": "trop longue",
+    "error": "erreur",
+}
+
+STEPS = ["extract", "separate", "transcribe", "segment", "speakers", "translate", "voices", "dub", "mix"]
+STEP_LABELS = {
+    "extract": "Extraction du son",
+    "separate": "Séparation voix / fond",
+    "transcribe": "Transcription (Whisper)",
+    "segment": "Découpage en répliques",
+    "speakers": "Reconnaissance des personnes",
+    "translate": "Traduction",
+    "voices": "Voix des personnes",
+    "dub": "Voix françaises et calage",
+    "mix": "Mixage",
+}
+
+TRANSLATORS = {
+    "opus_big": ("Opus-MT grand modèle (hors ligne, recommandé)", "Helsinki-NLP/opus-mt-tc-big-en-fr"),
+    "opus": ("Opus-MT rapide (hors ligne)", "Helsinki-NLP/opus-mt-en-fr"),
+    "deepseek": ("DeepSeek (en ligne, tient compte du temps disponible)", ""),
+}
+WHISPER_MODELS = {"small": "small (rapide, défaut)", "medium": "medium (plus précis)",
+                  "large-v3-turbo": "large-v3-turbo (le plus précis)"}
+
+
+@dataclass
+class Line:
+    """Réplique : un morceau de phrase dit par une personne, à doubler dans son créneau."""
+
+    start: float
+    end: float
+    en: str = ""
+    fr: str = ""
+    person_id: str = ""
+    id: str = field(default_factory=lambda: new_id("l_"))
+    words: list[list] = field(default_factory=list)  # [[début, fin, mot], …] (pour couper)
+    fr_edited: bool = False  # texte français modifié à la main (pas retraduit automatiquement)
+    state: str = ""  # voir LINE_STATES
+    message: str = ""
+    audio: str = ""  # voix française calée (relatif au dossier de travail)
+    audio_key: str = ""  # empreinte des réglages qui ont produit ``audio``
+    duration: float = 0.0  # durée de la voix française calée
+    rate: float = 1.0  # débit demandé au moteur
+    tempo: float = 1.0  # accélération appliquée ensuite (atempo)
+    gain_db: float = 0.0
+    seed: int = 0
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+    @property
+    def length(self) -> float:
+        return max(0.0, self.end - self.start)
+
+
+@dataclass
+class Person:
+    name: str
+    id: str = field(default_factory=lambda: new_id("p_"))
+    color: str = "#FF6B4A"
+    gender: str = ""  # F | M | "" (estimé par la hauteur de la voix)
+    pitch_hz: float = 0.0
+    reference: str = ""  # extrait de référence (relatif au dossier de travail ou absolu)
+    reference_source: str = "auto"  # auto | file
+    reference_offset: int = 0  # « autre extrait » : décalage dans le choix des répliques
+    voice_mode: str = ""  # vide : mode par défaut du projet
+    base_voice: str = ""  # voix de base (Kokoro, Microsoft, Windows) ; vide : choisie selon le genre
+    params: dict[str, Any] = field(default_factory=dict)
+    rvc_model: str = ""
+    rvc_index: str = ""
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+
+@dataclass
+class DubSettings:
+    separate: bool = True  # sinon : VO baissée sous la VF
+    no_separation_duck_db: float = -18.0
+    whisper_model: str = "small"
+    source_language: str = "en"
+    pause_split: float = 0.7  # silence qui coupe une réplique (s)
+    max_line: float = 12.0  # durée maximale d'une réplique (s) ; coupure préférée après 10 s
+    min_fragment: float = 0.6  # fragments plus courts fusionnés avec leur voisin
+    speaker_threshold: float = 0.62  # distance cosinus maximale entre deux répliques d'une même personne
+    max_speakers: int = 0  # 0 = automatique
+    translator: str = "opus_big"
+    chars_per_second: float = 14.5
+    voice_mode: str = DEFAULT_VOICE_MODE
+    max_rate: float = 1.30  # débit maximal demandé au moteur
+    max_tempo: float = 1.12  # accélération maximale sans nouvelle synthèse
+    gap_before_next: float = 0.1
+    overhang: float = 1.0  # la VF peut dépasser la fin de la réplique d'origine de 1 s au plus
+    keep_original_voice: bool = False  # voix d'origine laissée faible sous la VF
+    original_voice_db: float = -20.0
+    match_level: bool = True  # niveau de la VF aligné sur la voix d'origine
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+
+@dataclass
+class ExportOptions:
+    container: str = "mp4"  # mp4 | mkv
+    keep_original_audio: bool = False
+    normalize: bool = True  # loudnorm -16 LUFS
+    audio_bitrate: str = "192k"
+    subtitles_fr: bool = True
+    subtitles_en: bool = False
+    srt_files: bool = True
+    burn_subtitles: bool = False
+    audio_only: str = ""  # "" | wav | mp3 : piste VF seule
+    output_dir: str = ""
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+
+@dataclass
+class VideoInfo:
+    duration: float = 0.0
+    width: int = 0
+    height: int = 0
+    fps: float = 0.0
+    video_codec: str = ""
+    audio_codec: str = ""
+    audio_streams: int = 0
+    size: int = 0
+    mtime: float = 0.0
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+
+@dataclass
+class Project:
+    title: str = ""
+    source_video: str = ""
+    video: VideoInfo = field(default_factory=VideoInfo)
+    settings: DubSettings = field(default_factory=DubSettings)
+    export: ExportOptions = field(default_factory=ExportOptions)
+    lines: list[Line] = field(default_factory=list)
+    people: list[Person] = field(default_factory=list)
+    steps: dict[str, dict] = field(default_factory=dict)  # étape -> {"done": True, "date": …}
+    last_export: str = ""
+    id: str = field(default_factory=lambda: new_id("prj_"))
+    created: str = field(default_factory=now_iso)
+    modified: str = field(default_factory=now_iso)
+    format_version: int = 1
+    path: Path | None = field(default=None, compare=False, repr=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        d = dataclasses.asdict(self)
+        d.pop("path", None)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Project":
+        p = cls(
+            title=d.get("title", ""),
+            source_video=d.get("source_video", ""),
+            video=VideoInfo.from_dict(d.get("video")),
+            settings=DubSettings.from_dict(d.get("settings")),
+            export=ExportOptions.from_dict(d.get("export")),
+            lines=[Line.from_dict(x) for x in d.get("lines", [])],
+            people=[Person.from_dict(x) for x in d.get("people", [])],
+            steps=dict(d.get("steps", {})),
+            last_export=d.get("last_export", ""),
+        )
+        for key in ("id", "created", "modified", "format_version"):
+            if key in d:
+                setattr(p, key, d[key])
+        return p
+
+    @property
+    def display_title(self) -> str:
+        return self.title or (self.path.stem if self.path else "") or "Projet sans titre"
+
+    def person(self, person_id: str) -> Person | None:
+        return next((p for p in self.people if p.id == person_id), None)
+
+    def line(self, line_id: str) -> Line | None:
+        return next((x for x in self.lines if x.id == line_id), None)
+
+    def step_done(self, step: str) -> bool:
+        return bool(self.steps.get(step, {}).get("done"))
+
+    def mark_step(self, step: str, done: bool = True, **info) -> None:
+        if done:
+            self.steps[step] = {"done": True, "date": now_iso(), **info}
+        else:
+            self.steps.pop(step, None)
+
+    def invalidate_from(self, step: str) -> None:
+        """Une étape refaite rend les suivantes caduques (leurs données sont gardées jusqu'au nouveau calcul)."""
+        if step in STEPS:
+            for s in STEPS[STEPS.index(step):]:
+                self.steps.pop(s, None)
+
+    def next_step(self) -> str | None:
+        for s in STEPS:
+            if s == "separate" and not self.settings.separate:
+                continue
+            if not self.step_done(s):
+                return s
+        return None
