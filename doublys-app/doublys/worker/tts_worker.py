@@ -730,6 +730,18 @@ def vad_regions(req):
             "duration": len(audio) / 16000}
 
 
+def fix_unknown(text: str, tok) -> str:
+    """Le vocabulaire d'Opus-MT n'a pas de « Ç » : le modèle écrit un jeton inconnu suivi de « a » (« Ça va »)."""
+    import re
+
+    unk = tok.unk_token or "<unk>"
+    text = re.sub(re.escape(unk) + r"\s*(?=a\b|a[ -'’])", "Ç", text)
+    text = re.sub(re.escape(unk) + r"\s*(?=A\b)", "Ç", text)
+    for t in {unk, tok.pad_token, tok.eos_token} - {None}:
+        text = text.replace(t, "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 class AnalysisBackend(Backend):
     """Environnement « analyse » du doublage : séparation des voix (Demucs), empreintes vocales (ECAPA,
     speechbrain) et traduction locale (Opus-MT, transformers). Chaque modèle est chargé à sa première utilisation."""
@@ -900,7 +912,7 @@ class AnalysisBackend(Backend):
                 enc = tok(todo, return_tensors="pt", padding=True, truncation=True, max_length=512).to(self.device)
                 with torch.inference_mode():
                     gen = model.generate(**enc, num_beams=beams, num_return_sequences=n_best, max_new_tokens=400)
-                dec = [d.strip() for d in tok.batch_decode(gen, skip_special_tokens=True)]
+                dec = [fix_unknown(d, tok) for d in tok.batch_decode(gen, skip_special_tokens=False)]
                 res = [dec[k * n_best:(k + 1) * n_best] for k in range(len(todo))]
             it = iter(res)
             for t in part:

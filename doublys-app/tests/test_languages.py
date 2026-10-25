@@ -46,3 +46,17 @@ def test_whisper_hallucination_filter():
     assert not tts_worker.is_hallucination(Seg("Go go go go go!"))
     assert not tts_worker.is_hallucination(Seg("いくぞ！いくぞ！"))
     assert not tts_worker.is_hallucination(Seg("Hello there, how are you?"))
+
+
+def test_opus_unknown_c_cedilla():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "doublys" / "worker"))
+    import tts_worker
+
+    class Tok:
+        unk_token, pad_token, eos_token = "<unk>", "<pad>", "</s>"
+
+    assert tts_worker.fix_unknown("<pad> <unk>a a l'air bizarre.</s>", Tok()) == "Ça a l'air bizarre."
+    assert tts_worker.fix_unknown("<pad> <unk>a va ?</s>", Tok()) == "Ça va ?"

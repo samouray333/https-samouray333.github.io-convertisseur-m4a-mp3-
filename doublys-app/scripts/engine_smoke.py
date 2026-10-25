@@ -25,8 +25,21 @@ DIALOGUE = [
     ("am_michael", "Perfect. Let's grab a coffee while you finish it. I think we both need one."),
     ("af_heart", "Good idea. And this time, you are paying!"),
 ]
+DIALOGUE4 = [  # quatre personnes : deux hommes, deux femmes (le cas difficile)
+    ("am_michael", "Alright team, listen up. We only have ten minutes before they arrive."),
+    ("bf_emma", "I've checked the doors on the east side. Everything is locked."),
+    ("bm_george", "Good. I will stay near the window and keep an eye on the street."),
+    ("af_heart", "And what about me? I don't want to wait here doing nothing."),
+    ("am_michael", "You take the radio. If anything moves, you call us immediately."),
+    ("bm_george", "Did anyone see where the captain went this morning?"),
+    ("bf_emma", "He left early. He said he had to meet someone downtown."),
+    ("af_heart", "That sounds strange. He never leaves without telling me."),
+    ("am_michael", "We will ask him later. Right now, everybody to your positions."),
+    ("bf_emma", "Understood. Good luck, everyone."),
+]
 DIALOGUES = {
     "en": (DIALOGUE, "en"),
+    "en4": (DIALOGUE4, "en"),
     "ja": ([
         ("am_michael", "おはよう。こんなに早く会えるとは思わなかった。"),
         ("af_heart", "眠れなかったの。嵐のせいで一晩中起きていたから。"),
@@ -69,7 +82,7 @@ def make_video(work: Path, minutes: float = 0.0, lang: str = "en") -> tuple[Path
     clips = []
     dialogue, kokoro_lang = DIALOGUES[lang]
     refs = {}
-    if lang != "en":
+    if kokoro_lang != "en":
         # Kokoro ne parle pas bien japonais (eSpeak) : Chatterbox multilingue lit le japonais avec le timbre
         # d'une voix Kokoro anglaise
         for voice in {v for v, _t in dialogue}:
@@ -80,7 +93,7 @@ def make_video(work: Path, minutes: float = 0.0, lang: str = "en") -> tuple[Path
         eng = get_engine("chatterbox")
     for i, (voice, text) in enumerate(dialogue):
         vp = (VoiceProfile(name=voice, engine="chatterbox", kind="clone", references=[str(refs[voice])])
-              if refs else VoiceProfile(name=voice, engine="kokoro", engine_voice=voice, language=lang))
+              if refs else VoiceProfile(name=voice, engine="kokoro", engine_voice=voice, language=kokoro_lang))
         out = eng.synthesize(text, vp, work / f"src{i}.wav", kokoro_lang)
         data, s0 = audio.read_audio(out)
         clips.append((voice, audio.resample(audio.trim_silence(data, s0), s0, sr)))
@@ -137,7 +150,7 @@ def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: st
     pr = project_io.create_project(video, work / "projets", "Test réel")
     pr.settings.voice_mode = mode
     pr.settings.translator = translator
-    pr.settings.source_language = lang
+    pr.settings.source_language = DIALOGUES[lang][1]
     if lang in ("ja", "zh", "ko"):
         pr.settings.whisper_model = "medium"
     timings = {}
@@ -171,8 +184,9 @@ def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: st
     kinds = [s.get("codec_type") for s in info.get("streams", [])]
     log(f"Fichiers : {[f.name for f in files]} ; flux : {kinds}")
     errors = []
-    if len(pr.people) != 2:
-        errors.append(f"{len(pr.people)} personnes trouvées au lieu de 2")
+    expected = len({v for _a, _b, v in truth})
+    if len(pr.people) != expected:
+        errors.append(f"{len(pr.people)} personnes trouvées au lieu de {expected}")
     # chaque réplique doit être attribuée à la bonne voix
     bad = 0
     for ln in pr.lines:
@@ -260,7 +274,7 @@ def main() -> int:
     ap.add_argument("--mode", default="fastclone_offline")
     ap.add_argument("--translator", default="opus_big")
     ap.add_argument("--minutes", type=float, default=0.0, help="durée de la vidéo de test (--full)")
-    ap.add_argument("--lang", default="en", choices=["en", "ja"], help="langue de la vidéo de test (--full)")
+    ap.add_argument("--lang", default="en", choices=sorted(DIALOGUES), help="langue de la vidéo de test (--full)")
     args = ap.parse_args()
     if args.full:
         return full(args.device, args.mode, args.translator, args.minutes, args.lang)
