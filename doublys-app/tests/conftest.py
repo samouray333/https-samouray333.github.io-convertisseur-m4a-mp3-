@@ -45,4 +45,31 @@ def test_video(tmp_path_factory):
 
 
 def pytest_sessionfinish(session, exitstatus):
+    # fenêtres de test détruites avant l'application Qt (sinon plantage à la fermeture de Python)
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            import time
+
+            from doublys.ui import tasks
+
+            deadline = time.time() + 10
+            while tasks.Task._running and time.time() < deadline:  # tâches de fond encore en cours
+                app.processEvents()
+                time.sleep(0.02)
+            for w in app.topLevelWidgets():
+                w.close()
+                w.deleteLater()
+            app.processEvents()
+            app.sendPostedEvents(None, 0)
+    except Exception:
+        pass
+    try:
+        from doublys.core.engines import shutdown_all
+
+        shutdown_all()
+    except Exception:
+        pass
     shutil.rmtree(_HOME, ignore_errors=True)
