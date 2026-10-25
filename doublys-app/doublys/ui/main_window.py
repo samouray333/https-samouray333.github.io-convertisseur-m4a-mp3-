@@ -330,7 +330,7 @@ class MainWindow(QMainWindow):
         if pr is None:
             self.setWindowTitle(APP_NAME)
             self.sidebar.proj_title.setText("Aucun projet")
-            self.sidebar.proj_info.setText("Glissez une vidéo anglaise sur l'accueil pour commencer.")
+            self.sidebar.proj_info.setText("Glissez une vidéo sur l'accueil pour commencer.")
             self.sidebar.save_btn.setEnabled(False)
             return
         star = "• " if self.ctx.dirty else ""
@@ -362,7 +362,7 @@ class MainWindow(QMainWindow):
 
     def choose_video(self) -> None:
         start = str(settings().get("last_video_dir") or Path.home())
-        path, _ = QFileDialog.getOpenFileName(self, "Choisir une vidéo anglaise à doubler", start,
+        path, _ = QFileDialog.getOpenFileName(self, "Choisir une vidéo à doubler", start,
                                               project_io.VIDEO_FILTER)
         if path:
             self.new_project_from_video(path)

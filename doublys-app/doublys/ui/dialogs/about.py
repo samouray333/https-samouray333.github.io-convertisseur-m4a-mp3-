@@ -59,7 +59,7 @@ class AboutDialog(QDialog):
         t = label(f"Doublys {__version__}")
         t.setStyleSheet("font-size: 18pt; font-weight: 800;")
         col.addWidget(t)
-        col.addWidget(label("Echo Matras · vos vidéos anglaises en version française.", "Muted"))
+        col.addWidget(label("Echo Matras · vos vidéos en version française.", "Muted"))
         top.addLayout(col, 1)
         lay.addLayout(top)
         info = (f"Python {sys.version.split()[0]} · {platform.system()} {platform.release()} · "

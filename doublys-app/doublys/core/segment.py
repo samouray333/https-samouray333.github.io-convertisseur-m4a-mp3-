@@ -7,8 +7,10 @@ from dataclasses import dataclass
 
 from .models import Line
 
-_SENT_END = re.compile(r"[.!?…]+[\"')\]»”’]*$")
-_SOFT_END = re.compile(r"[,;:—–-]+[\"')\]»”’]*$")
+_SENT_END = re.compile(r"[.!?…。！？]+[\"')\]»”’」』）]*$")
+_SOFT_END = re.compile(r"[,;:—–\-、，；：]+[\"')\]»”’」』）]*$")
+# écritures sans espaces entre les mots (japonais, chinois)
+_CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef\u3000-\u303f]")
 
 
 @dataclass
@@ -43,9 +45,17 @@ def to_words(raw: list) -> list[Word]:
 
 
 def join_words(words: list[Word]) -> str:
-    text = "".join(w.text if w.text.startswith((" ", "'", "’")) or i == 0 else " " + w.text
-                   for i, w in enumerate(words))
-    text = re.sub(r"\s+", " ", text).strip()
+    parts: list[str] = []
+    for i, w in enumerate(words):
+        t = w.text
+        if i == 0 or t.startswith((" ", "'", "’")):
+            parts.append(t)
+            continue
+        prev = parts[-1].rstrip()[-1:] if parts and parts[-1].strip() else ""
+        # pas d'espace entre deux mots japonais ou chinois
+        parts.append(t if (_CJK.match(t.strip()[:1] or " ") or _CJK.match(prev or " ")) else " " + t)
+    text = re.sub(r"\s+", " ", "".join(parts)).strip()
+    text = re.sub(r"(?<=[\u3040-\u30ff\u4e00-\u9fff、。！？])\s+(?=[\u3040-\u30ff\u4e00-\u9fff、。！？])", "", text)
     return re.sub(r"\s+([,.!?;:…])", r"\1", text)
 
 

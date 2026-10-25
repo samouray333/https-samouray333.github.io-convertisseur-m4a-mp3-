@@ -660,7 +660,8 @@ class WhisperBackend(Backend):
         size = req.get("model") or self.size
         if size != self.size:
             self._load(size)
-        lang = (req.get("language") or "en").split("-")[0]
+        lang = req.get("language")
+        lang = lang.split("-")[0] if lang and lang != "auto" else None  # None : détection automatique
         a = int(float(req.get("start", 0.0)) * 16000)
         b = int(float(req["end"]) * 16000) if req.get("end") else None
         try:  # WAV 16 kHz : seul le morceau demandé est lu (vidéos longues)
@@ -679,13 +680,42 @@ class WhisperBackend(Backend):
                                          batch_size=int(req.get("batch_size", 8)), word_timestamps=True,
                                          vad_filter=True, condition_on_previous_text=False)
         words, segs = [], []
+        dropped = 0
         for seg in segments:
+            if is_hallucination(seg):
+                dropped += 1
+                continue
             segs.append([round(seg.start + offset, 3), round(seg.end + offset, 3), seg.text.strip()])
             for w in seg.words or []:
                 words.append([round(w.start + offset, 3), round(w.end + offset, 3), w.word, round(float(w.probability), 3)])
             if total:
                 progress(seg.end / total, f"{len(words)} mots reconnus")
+        if dropped:
+            log(f"{dropped} passage(s) incompréhensible(s) ou répétitif(s) ignoré(s)")
         return {"words": words, "segments": segs, "duration": total, "language": info.language}
+
+
+def is_hallucination(seg) -> bool:
+    """Passage inventé par Whisper : texte qui tourne en boucle, ou bruit pris pour de la parole."""
+    import re
+    import zlib
+
+    text = (seg.text or "").strip()
+    if not text:
+        return True
+    ratio = getattr(seg, "compression_ratio", None)
+    if ratio is None and len(text) > 20:
+        raw = text.encode("utf-8")
+        ratio = len(raw) / max(1, len(zlib.compress(raw)))
+    if ratio is not None and ratio > 2.4:
+        return True
+    # même groupe de mots répété en boucle (un cri court comme « Go! Go! Go! » reste permis)
+    sep = r"[\s、,。.!！?？]*"
+    if re.search(rf"(.{{5,30}}?)(?:{sep}\1){{3,}}", text) or re.search(rf"(.{{1,4}}?)(?:{sep}\1){{7,}}", text):
+        return True
+    if getattr(seg, "no_speech_prob", 0.0) > 0.7 and getattr(seg, "avg_logprob", 0.0) < -1.0:
+        return True
+    return False
 
 
 def vad_regions(req):

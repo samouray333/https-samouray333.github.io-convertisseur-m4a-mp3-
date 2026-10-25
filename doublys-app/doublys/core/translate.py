@@ -19,8 +19,13 @@ VOUS_RE = re.compile(r"\b(vous|votre|vos|vôtre|vôtres)\b", re.IGNORECASE)
 CONVERSATION_GAP = 10.0  # au-delà, deux répliques voisines ne sont pas une conversation
 
 
+_CJK_SPLIT = re.compile(r"(?<=[。！？!?])(?=[^。！？!?」』）)\s])")
+
+
 def split_sentences(text: str) -> list[str]:
-    parts = [p.strip() for p in _SENT_SPLIT.split(text.strip()) if p.strip()]
+    parts = []
+    for chunk in _SENT_SPLIT.split(text.strip()):
+        parts += [p.strip() for p in _CJK_SPLIT.split(chunk) if p.strip()]
     return parts or ([text.strip()] if text.strip() else [])
 
 

@@ -1,6 +1,6 @@
 # 🎬 Doublys — Echo Matras
 
-**Vos vidéos anglaises en version française, créées sur votre ordinateur.**
+**Vos vidéos en version française (anglais, japonais, espagnol, allemand…), créées sur votre ordinateur.**
 Glissez une vidéo, cliquez sur **« Créer la VF automatiquement »** : Doublys isole les voix, écrit ce qui est dit,
 reconnaît qui parle, traduit, donne à chaque personne une voix française proche de la sienne et la cale sur le temps
 d'origine. La musique et les bruits sont gardés, la vidéo n'est pas réencodée.
@@ -24,6 +24,16 @@ Construite sur le moteur d'AudioLivre Studio (même dépôt, dossier `audiolivre
 | 8. Calage | FFmpeg atempo | créneau = début de la réplique → début de la suivante − 0,1 s (au plus 1 s après la fin d'origine). Trop long : accélération jusqu'à ×1,12 ; au-delà, nouvelle synthèse plus rapide (×1,30 au plus, réglable) puis accélération du reste ; sinon alerte « raccourcis le texte » et bouton **Raccourcir** (DeepSeek). Niveau aligné sur la voix d'origine |
 | 9. Mixage | — | par blocs : fond + VF (option : voix d'origine laissée faible) |
 | 10. Export | FFmpeg | MP4 ou MKV, vidéo copiée sans réencodage, piste VF AAC 192 kb/s normalisée à −16 LUFS, VO en option, sous-titres FR/EN intégrés (mov_text ou srt) et fichiers `.srt`, incrustation en option (libx264, sinon libopenh264, sinon Media Foundation), piste VF seule en WAV/MP3, aperçu rapide sans normalisation |
+
+### Langues de départ
+
+Anglais, **japonais**, espagnol, allemand, italien, portugais, coréen, chinois, russe, arabe, néerlandais, turc,
+polonais, ou **détection automatique** (Paramètres → Langue de la vidéo). Traduction locale directe vers le
+français quand Opus-MT en propose une, sinon en passant par l'anglais (chinois, portugais). Pour le japonais, le
+chinois et le coréen, Whisper « medium » est choisi automatiquement (bien plus précis) ; DeepSeek donne une
+traduction nettement meilleure pour ces langues. **Mots à ne pas traduire** (Paramètres) : noms de personnages,
+d'attaques, « 変身 = Henshin »… Les passages que Whisper invente en boucle sur de la musique ou du bruit sont
+écartés automatiquement.
 
 ### Pensé pour les vidéos longues (jusqu'à 1 h 30 et plus)
 

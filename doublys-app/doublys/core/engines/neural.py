@@ -314,7 +314,8 @@ ENGINE_INFOS["whisper"] = EngineInfo(
     name="Whisper — transcription",
     tagline="Reconnaissance vocale · Hors ligne",
     description=(
-        "Écoute la voix anglaise isolée et l'écrit mot à mot, avec la position exacte de chaque mot : c'est la "
+        "Écoute la voix isolée (anglais, japonais, espagnol…) et l'écrit mot à mot, avec la position exacte de "
+        "chaque mot : c'est la "
         "base des répliques à traduire. Modèle gratuit (OpenAI Whisper via faster-whisper, licence MIT), "
         "exécuté sur votre ordinateur. Modèle « small » par défaut ; « medium » et « large-v3-turbo » "
         "(Paramètres) sont plus précis mais plus lents."

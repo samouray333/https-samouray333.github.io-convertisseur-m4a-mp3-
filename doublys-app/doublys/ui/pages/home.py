@@ -149,11 +149,11 @@ class HomePage(Page):
         hl.setSpacing(24)
         left = QVBoxLayout()
         left.setSpacing(10)
-        kicker = label("DOUBLAGE VIDÉO ANGLAIS → FRANÇAIS · 100 % LOCAL")
+        kicker = label("DOUBLAGE VIDÉO EN FRANÇAIS · ANGLAIS, JAPONAIS, ESPAGNOL… · 100 % LOCAL")
         kicker.setStyleSheet("color: rgba(255,255,255,0.82); font-weight: 700; letter-spacing: 2px; font-size: 8.5pt;")
         title = label("Votre vidéo, en version française.")
         title.setStyleSheet("color: white; font-size: 25pt; font-weight: 800;")
-        sub = label("Glissez une vidéo anglaise : Doublys isole les voix, reconnaît qui parle, traduit, donne à "
+        sub = label("Glissez une vidéo (anglais, japonais, espagnol, allemand…) : Doublys isole les voix, reconnaît qui parle, traduit, donne à "
                     "chaque personne une voix française proche de la sienne et la cale sur le temps d'origine.",
                     wrap=True)
         sub.setStyleSheet("color: rgba(255,255,255,0.9); font-size: 11pt;")

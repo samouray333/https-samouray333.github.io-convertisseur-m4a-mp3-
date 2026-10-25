@@ -122,6 +122,30 @@ TRANSLATORS = {
     "opus": ("Opus-MT rapide (hors ligne)", "Helsinki-NLP/opus-mt-en-fr"),
     "deepseek": ("DeepSeek (en ligne, tient compte du temps disponible)", ""),
 }
+
+# langue de la vidéo -> (nom, code ISO 639-2 des pistes, traducteur direct vers le français, traducteur vers
+# l'anglais pour passer par l'anglais quand il n'y a pas de traducteur direct)
+LANGUAGES: dict[str, tuple[str, str, str, str]] = {
+    "en": ("Anglais", "eng", "", ""),
+    "ja": ("Japonais", "jpn", "Helsinki-NLP/opus-mt-ja-fr", "Helsinki-NLP/opus-mt-ja-en"),
+    "es": ("Espagnol", "spa", "Helsinki-NLP/opus-mt-es-fr", "Helsinki-NLP/opus-mt-es-en"),
+    "de": ("Allemand", "deu", "Helsinki-NLP/opus-mt-de-fr", "Helsinki-NLP/opus-mt-de-en"),
+    "it": ("Italien", "ita", "Helsinki-NLP/opus-mt-it-fr", "Helsinki-NLP/opus-mt-it-en"),
+    "pt": ("Portugais", "por", "", "Helsinki-NLP/opus-mt-mul-en"),
+    "ko": ("Coréen", "kor", "Helsinki-NLP/opus-mt-ko-fr", "Helsinki-NLP/opus-mt-ko-en"),
+    "zh": ("Chinois", "zho", "", "Helsinki-NLP/opus-mt-zh-en"),
+    "ru": ("Russe", "rus", "Helsinki-NLP/opus-mt-ru-fr", "Helsinki-NLP/opus-mt-ru-en"),
+    "ar": ("Arabe", "ara", "Helsinki-NLP/opus-mt-ar-fr", "Helsinki-NLP/opus-mt-ar-en"),
+    "nl": ("Néerlandais", "nld", "Helsinki-NLP/opus-mt-nl-fr", "Helsinki-NLP/opus-mt-nl-en"),
+    "tr": ("Turc", "tur", "Helsinki-NLP/opus-mt-tr-fr", "Helsinki-NLP/opus-mt-tr-en"),
+    "pl": ("Polonais", "pol", "Helsinki-NLP/opus-mt-pl-fr", "Helsinki-NLP/opus-mt-pl-en"),
+}
+AUTO_LANGUAGE = "auto"
+CJK_LANGUAGES = ("ja", "zh", "ko")  # Whisper « small » y fait trop d'erreurs : « medium » conseillé
+
+
+def language_name(code: str) -> str:
+    return LANGUAGES.get(code, (code or "langue d'origine",))[0]
 WHISPER_MODELS = {"small": "small (rapide, défaut)", "medium": "medium (plus précis)",
                   "large-v3-turbo": "large-v3-turbo (le plus précis)"}
 
@@ -185,7 +209,9 @@ class DubSettings:
     separate: bool = True  # sinon : VO baissée sous la VF
     no_separation_duck_db: float = -18.0
     whisper_model: str = "small"
-    source_language: str = "en"
+    source_language: str = "en"  # code de LANGUAGES ou « auto » (détectée par Whisper)
+    detected_language: str = ""  # langue trouvée par Whisper quand source_language vaut « auto »
+    glossary: list = field(default_factory=list)  # [[terme d'origine, rendu en français], …] (noms, attaques…)
     pause_split: float = 0.7  # silence qui coupe une réplique (s)
     max_line: float = 12.0  # durée maximale d'une réplique (s) ; coupure préférée après 10 s
     min_fragment: float = 0.6  # fragments plus courts fusionnés avec leur voisin
@@ -208,6 +234,13 @@ class DubSettings:
     @classmethod
     def from_dict(cls, d):
         return _from_dict(cls, d)
+
+    @property
+    def language(self) -> str:
+        """Langue réelle de la vidéo (« en » tant que la détection automatique n'a pas eu lieu)."""
+        if self.source_language == AUTO_LANGUAGE:
+            return self.detected_language or "en"
+        return self.source_language or "en"
 
 
 @dataclass

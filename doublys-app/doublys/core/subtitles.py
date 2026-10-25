@@ -1,4 +1,4 @@
-"""Sous-titres SRT (français et anglais) à partir des répliques."""
+"""Sous-titres SRT (français et langue d'origine) à partir des répliques."""
 
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ def srt_time(t: float) -> str:
 
 def wrap(text: str, width: int = 42) -> str:
     text = re.sub(r"\s+", " ", text or "").strip()
+    if " " not in text and len(text) > 22:  # japonais, chinois : coupure au caractère, deux lignes équilibrées
+        half = (len(text) + 1) // 2
+        return text[:half] + "\n" + text[half:]
     lines = textwrap.wrap(text, width) or [""]
     if len(lines) > 2:  # au plus deux lignes : on élargit
         lines = textwrap.wrap(text, max(width, len(text) // 2 + 6))

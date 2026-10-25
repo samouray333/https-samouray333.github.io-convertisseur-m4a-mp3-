@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QApplication, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout,
-                               QLineEdit, QSpinBox, QToolButton)
+                               QLineEdit, QPlainTextEdit, QSpinBox, QToolButton)
 
 from ... import __version__, paths
 from ...config import settings
 from ...core import ffmpeg
 from ...core.engines import installer
-from ...core.models import TRANSLATORS, WHISPER_MODELS
+from ...core.models import AUTO_LANGUAGE, CJK_LANGUAGES, LANGUAGES, TRANSLATORS, WHISPER_MODELS
 from ...core.secrets import protect, unprotect
 from .. import theme
 from ..widgets import Card, ToggleSwitch, button, card_title, label
@@ -58,6 +58,15 @@ class SettingsPage(Page):
         self.duck = _spin(-40, -6, 1, 0, " dB")
         g.addWidget(label("Sans séparation : voix d'origine baissée de", "Muted"), r, 0)
         g.addWidget(self.duck, r, 1)
+        r += 1
+        self.lang = QComboBox()
+        self.lang.addItem("Détection automatique", AUTO_LANGUAGE)
+        for k, (name, _iso, _d, _e) in LANGUAGES.items():
+            self.lang.addItem(name, k)
+        self.lang.setToolTip("Langue parlée dans la vidéo. Japonais, chinois, coréen : le modèle Whisper « medium » "
+                             "est choisi automatiquement (plus précis pour ces langues).")
+        g.addWidget(label("Langue de la vidéo", "Muted"), r, 0)
+        g.addWidget(self.lang, r, 1)
         r += 1
         self.whisper = QComboBox()
         for k, v in WHISPER_MODELS.items():
@@ -113,14 +122,26 @@ class SettingsPage(Page):
         self.t_expr = ToggleSwitch("Répliques fortes (cris, colère) plus expressives avec Chatterbox "
                                    "(≈ 25 s de calcul chacune, 25 au plus)")
         g.addWidget(self.t_expr, r, 0, 1, 2)
+        r += 1
+        self.glossary = QPlainTextEdit()
+        self.glossary.setPlaceholderText("Un terme par ligne. « terme » le garde tel quel ; « terme = rendu français » "
+                                         "impose une traduction.\nExemples :\n変身 = Henshin\nGokaiger\nRed Ranger = "
+                                         "Ranger Rouge")
+        self.glossary.setFixedHeight(96)
+        g.addWidget(label("Mots à ne pas traduire\n(noms, attaques…)", "Muted"), r, 0, Qt.AlignTop)
+        g.addWidget(self.glossary, r, 1)
         g.setColumnStretch(1, 1)
         dub.add(g)
         self.dub_card = dub
         self.body.addWidget(dub)
         for w in (self.t_sep, self.t_keep, self.t_level, self.t_expr):
             w.toggled.connect(self._save_project)
-        for w in (self.whisper, self.translator):
+        for w in (self.lang, self.whisper, self.translator):
             w.currentIndexChanged.connect(self._save_project)
+        self.glossary.textChanged.connect(self._glossary_timer_start)
+        self._gtimer = QTimer(self)
+        self._gtimer.setSingleShot(True)
+        self._gtimer.timeout.connect(self._save_project)
         for w in (self.duck, self.pause, self.max_line, self.threshold, self.max_rate, self.cps, self.keep_db):
             w.editingFinished.connect(self._save_project)
         self.max_spk.editingFinished.connect(self._save_project)
@@ -299,7 +320,10 @@ class SettingsPage(Page):
         self._loading = True
         self.t_sep.setChecked(st.separate)
         self.duck.setValue(st.no_separation_duck_db)
+        self.lang.setCurrentIndex(max(0, self.lang.findData(st.source_language)))
         self.whisper.setCurrentIndex(max(0, self.whisper.findData(st.whisper_model)))
+        self.glossary.setPlainText("\n".join(f"{a} = {b}" if b and b != a else a for a, b in
+                                             ((g[0], g[1] if len(g) > 1 else "") for g in st.glossary if g)))
         self.translator.setCurrentIndex(max(0, self.translator.findData(st.translator)))
         self.pause.setValue(st.pause_split)
         self.max_line.setValue(st.max_line)
@@ -321,7 +345,22 @@ class SettingsPage(Page):
         before = dict(vars(st))
         st.separate = self.t_sep.isChecked()
         st.no_separation_duck_db = self.duck.value()
+        lang = self.lang.currentData()
+        if lang != st.source_language:
+            st.source_language = lang
+            st.detected_language = ""
+            if lang in CJK_LANGUAGES and self.whisper.currentData() == "small":
+                self._loading = True
+                self.whisper.setCurrentIndex(self.whisper.findData("medium"))
+                self._loading = False
+                self.ctx.toast("Modèle Whisper « medium » choisi : bien plus précis pour cette langue.", "info", 5000)
         st.whisper_model = self.whisper.currentData()
+        terms = []
+        for row in self.glossary.toPlainText().splitlines():
+            if row.strip():
+                src, _sep, fr = row.partition("=")
+                terms.append([src.strip(), fr.strip() or src.strip()])
+        st.glossary = terms
         st.translator = self.translator.currentData()
         st.pause_split = self.pause.value()
         st.max_line = self.max_line.value()
@@ -337,7 +376,8 @@ class SettingsPage(Page):
         if not changed:
             return
         # première étape touchée par le changement : elle et les suivantes seront refaites
-        first = {"separate": "separate", "whisper_model": "transcribe", "pause_split": "segment",
+        first = {"separate": "separate", "whisper_model": "transcribe", "source_language": "transcribe",
+                 "detected_language": "transcribe", "glossary": "translate", "pause_split": "segment",
                  "max_line": "segment", "speaker_threshold": "speakers", "max_speakers": "speakers",
                  "translator": "translate", "chars_per_second": "translate", "max_rate": "dub",
                  "match_level": "dub", "expressive": "dub", "keep_original_voice": "mix", "original_voice_db": "mix",
@@ -351,6 +391,10 @@ class SettingsPage(Page):
                 step = "transcribe"
             pr.invalidate_from(step)
         self.ctx.mark_dirty()
+
+    def _glossary_timer_start(self) -> None:
+        if not self._loading:
+            self._gtimer.start(800)
 
     def on_show(self) -> None:
         self._load_project()

@@ -164,7 +164,7 @@ def client_from_settings() -> DeepSeekClient:
 # Traduction des répliques
 # ---------------------------------------------------------------------------------------
 SYSTEM_TRANSLATE = (
-    "Tu es adaptateur de doublage professionnel (version française d'une vidéo anglaise). On te donne des "
+    "Tu es adaptateur de doublage professionnel (version française d'une vidéo en {source}). On te donne des "
     "répliques numérotées, dans l'ordre, avec la personne qui parle et un nombre maximal de caractères. "
     "Traduis chaque réplique en français naturel, oral et fidèle au sens, en tenant compte des répliques "
     "voisines (contexte). Respecte impérativement la limite de caractères de chaque réplique (elle correspond au "
@@ -186,9 +186,13 @@ def _clean_fr(text) -> str:
 
 
 def translate_lines(items: list[dict], client: DeepSeekClient, progress: ProgressCb | None = None,
-                    cancel=None) -> list[str]:
-    """``items`` : [{"en": …, "person": "P1", "budget": 42}, …] → traductions (même ordre)."""
+                    cancel=None, source: str = "anglais", glossary: list | None = None) -> list[str]:
+    """``items`` : [{"en": texte d'origine, "person": "P1", "budget": 42}, …] → traductions (même ordre)."""
     out = [""] * len(items)
+    system = SYSTEM_TRANSLATE.replace("{source}", source)
+    if glossary:
+        system += (" Glossaire à respecter (terme d'origine → rendu français, à garder tel quel) : "
+                   + " ; ".join(f"{a} → {b}" for a, b in glossary) + ".")
     for b0 in range(0, len(items), BATCH_LINES):
         if cancel is not None and cancel.is_set():
             break
@@ -207,7 +211,7 @@ def translate_lines(items: list[dict], client: DeepSeekClient, progress: Progres
         if after:
             parts.append("Contexte suivant (ne pas traduire) :")
             parts += [f"- {items[i].get('person', '')}: {items[i]['en']}" for i in after]
-        data = client.chat_json(SYSTEM_TRANSLATE, "\n".join(parts), max_tokens=8000)
+        data = client.chat_json(system, "\n".join(parts), max_tokens=8000)
         got = {}
         for entry in data.get("lines", []) if isinstance(data.get("lines"), list) else []:
             try:
@@ -222,7 +226,7 @@ def translate_lines(items: list[dict], client: DeepSeekClient, progress: Progres
 
 
 def shorten_line(fr: str, en: str, budget: int, client: DeepSeekClient, before: str = "", after: str = "") -> str:
-    user = (f"Contexte avant : {before or '—'}\nContexte après : {after or '—'}\nOriginal anglais : {en}\n"
+    user = (f"Contexte avant : {before or '—'}\nContexte après : {after or '—'}\nOriginal : {en}\n"
             f"Réplique française actuelle ({len(fr)} caractères) : {fr}\nLimite : {budget} caractères.")
     data = client.chat_json(SYSTEM_SHORTEN, user, max_tokens=1000)
     text = _clean_fr(data.get("fr"))

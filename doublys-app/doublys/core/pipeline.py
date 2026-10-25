@@ -22,7 +22,8 @@ from . import translate as local_translate
 from .engines import EngineError, ServiceBlocked
 from .engines.neural import WorkerDied
 from .ffmpeg import Cancelled
-from .models import STEP_LABELS, STEPS, TRANSLATORS, Line, Project
+from .models import (AUTO_LANGUAGE, LANGUAGES, STEP_LABELS, STEPS, TRANSLATORS, Line, Project,
+                     language_name)
 
 log = logging.getLogger(__name__)
 
@@ -199,10 +200,15 @@ def step_transcribe(project: Project, job: Job) -> str:
             def prog(v, m, k=k):
                 job.progress((k + v) / len(chunks), f"{m} · morceau {k + 1} sur {len(chunks)}")
 
-            data = _guard(job, tool.transcribe_words, voice16, project.settings.source_language, model,
-                          on_progress=prog, start=a, end=b)
+            st = project.settings
+            lang = st.detected_language if st.source_language == AUTO_LANGUAGE else st.source_language
+            data = _guard(job, tool.transcribe_words, voice16, lang or None, model, on_progress=prog, start=a,
+                          end=b)
             data["key"] = key
             part.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        if project.settings.source_language == AUTO_LANGUAGE and not project.settings.detected_language:
+            project.settings.detected_language = str(data.get("language") or "en")
+            job.log(f"Langue détectée : {language_name(project.settings.detected_language)}")
         words += data.get("words", [])
         segs += data.get("segments", [])
         job.progress((k + 1) / len(chunks), f"{len(words)} mots reconnus")
@@ -210,7 +216,7 @@ def step_transcribe(project: Project, job: Job) -> str:
                                                   ensure_ascii=False), encoding="utf-8")
     if not words:
         raise StepError("Whisper n'a reconnu aucune parole dans cette vidéo.")
-    return f"{len(words)} mots reconnus"
+    return f"{len(words)} mots reconnus ({language_name(project.settings.language).lower()})"
 
 
 def load_transcript(project: Project) -> dict:
@@ -251,6 +257,27 @@ def step_speakers(project: Project, job: Job) -> str:
     return f"{len(project.people)} personne(s)"
 
 
+def glossary(project: Project) -> list[tuple[str, str]]:
+    """Termes à garder ou à rendre toujours de la même façon (noms, attaques, « Henshin »…)."""
+    out = []
+    for item in project.settings.glossary or []:
+        if isinstance(item, (list, tuple)) and item and str(item[0]).strip():
+            src = str(item[0]).strip()
+            out.append((src, str(item[1]).strip() if len(item) > 1 and str(item[1]).strip() else src))
+    return out
+
+
+def apply_glossary(text: str, terms: list[tuple[str, str]]) -> str:
+    import re
+
+    for src, fr in sorted(terms, key=lambda t: -len(t[0])):
+        if re.search(r"[A-Za-z]", src):
+            text = re.sub(rf"\b{re.escape(src)}\b", fr, text, flags=re.IGNORECASE)
+        else:  # japonais, chinois… : pas de limite de mot
+            text = text.replace(src, fr)
+    return text
+
+
 def step_translate(project: Project, job: Job, only: list[str] | None = None, force: bool = False) -> str:
     s = project.settings
     lines = sorted(project.lines, key=lambda x: x.start)
@@ -264,10 +291,11 @@ def step_translate(project: Project, job: Job, only: list[str] | None = None, fo
         client = ai.client_from_settings()
         items = [{"en": ln.en, "person": (project.person(ln.person_id).name if project.person(ln.person_id) else ""),
                   "budget": timing.char_budget(avail[i], s.chars_per_second)} for i, ln in enumerate(lines)]
+        extra = {"source": language_name(s.language).lower(), "glossary": glossary(project)}
         # tout le contexte est envoyé, seules les répliques demandées sont mises à jour
         if only is not None:
             sub = [items[i] for i in todo]
-            res = ai.translate_lines(sub, client, lambda m: job.progress(0.5, m), job.cancel)
+            res = ai.translate_lines(sub, client, lambda m: job.progress(0.5, m), job.cancel, **extra)
             result = dict(zip(todo, res))
         else:
             done = [0]
@@ -276,16 +304,28 @@ def step_translate(project: Project, job: Job, only: list[str] | None = None, fo
                 done[0] += 1
                 job.progress(min(0.99, done[0] * ai.BATCH_LINES / max(1, len(items))), msg)
 
-            res = ai.translate_lines(items, client, prog, job.cancel)
+            res = ai.translate_lines(items, client, prog, job.cancel, **extra)
             result = {i: res[i] for i in todo}
     else:
-        model = TRANSLATORS.get(s.translator, TRANSLATORS["opus_big"])[1]
+        to_fr = TRANSLATORS.get(s.translator if s.translator in ("opus", "opus_big") else "opus_big")[1]
+        lang = s.language
+        _name, _iso, direct, to_en = LANGUAGES.get(lang, ("", "", "", "Helsinki-NLP/opus-mt-mul-en"))
         tool = _tool("analysis")
         job.progress(0.0, "Chargement du traducteur…")
         budgets = [timing.char_budget(a, s.chars_per_second) for a in avail]
+        terms = glossary(project)
 
         def fn(sentences, n_best):
-            return _guard(job, tool.translate, sentences, model, on_progress=lambda v, m: job.progress(v, m),
+            sentences = [apply_glossary(x, terms) for x in sentences]
+            if lang == "en":
+                model, src = to_fr, sentences
+            elif direct:
+                model, src = direct, sentences
+            else:  # pas de traducteur direct : on passe par l'anglais
+                job.progress(0.0, f"Traduction {language_name(lang).lower()} → anglais…")
+                src = _guard(job, tool.translate, sentences, to_en, on_progress=lambda v, m: job.progress(v / 2, m))
+                model = to_fr
+            return _guard(job, tool.translate, src, model, on_progress=lambda v, m: job.progress(v, m),
                           n_best=n_best)
 
         result = local_translate.translate_lines(lines, budgets, fn, todo)
@@ -527,7 +567,7 @@ def export_files(project: Project, job: Job, out_dir: Path | None = None, previe
         if o.subtitles_fr or o.srt_files or o.burn_subtitles:
             srt_fr = subtitles.write_srt(project.lines, srt_dir / f"{base}.fr.srt", "fr")
         if o.subtitles_en or o.srt_files:
-            srt_en = subtitles.write_srt(project.lines, srt_dir / f"{base}.en.srt", "en")
+            srt_en = subtitles.write_srt(project.lines, srt_dir / f"{base}.{project.settings.language}.srt", "orig")
         if o.srt_files:
             files += [p for p in (srt_fr, srt_en) if p is not None]
     ext = ".mkv" if o.container == "mkv" else ".mp4"
@@ -537,6 +577,7 @@ def export_files(project: Project, job: Job, out_dir: Path | None = None, previe
                        srt_fr=None if preview else (srt_fr if (o.subtitles_fr or o.burn_subtitles) else None),
                        srt_en=None if preview else (srt_en if o.subtitles_en else None),
                        original_codec=project.video.audio_codec, normalize=False if preview else None,
+                       original_language=project.settings.language,
                        progress=lambda f: job.progress(f * (0.85 if o.audio_only and not preview else 1.0),
                                                        "Préparation de la vidéo"),
                        cancel=job.cancel)

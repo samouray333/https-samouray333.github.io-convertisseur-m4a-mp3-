@@ -25,6 +25,17 @@ DIALOGUE = [
     ("am_michael", "Perfect. Let's grab a coffee while you finish it. I think we both need one."),
     ("af_heart", "Good idea. And this time, you are paying!"),
 ]
+DIALOGUES = {
+    "en": (DIALOGUE, "en"),
+    "ja": ([
+        ("am_michael", "おはよう。こんなに早く会えるとは思わなかった。"),
+        ("af_heart", "眠れなかったの。嵐のせいで一晩中起きていたから。"),
+        ("am_michael", "会議の資料はできた？みんな数字を待っているよ。"),
+        ("af_heart", "もう少し。あと二十分で全員に送るね。"),
+        ("am_michael", "完璧だ。終わるまでコーヒーでも飲もう。"),
+        ("af_heart", "いいね。今度はあなたのおごりよ！"),
+    ], "ja"),
+}
 
 
 def log(msg: str) -> None:
@@ -42,7 +53,7 @@ def ensure(eid: str, device: str) -> None:
     log(f"{eid} installé en {time.time() - t0:.0f} s")
 
 
-def make_video(work: Path, minutes: float = 0.0) -> tuple[Path, list[tuple[float, float, str]]]:
+def make_video(work: Path, minutes: float = 0.0, lang: str = "en") -> tuple[Path, list[tuple[float, float, str]]]:
     """Vidéo de test : deux voix anglaises (Kokoro) sur une musique, image de mire.
 
     Avec ``minutes``, le dialogue est répété jusqu'à cette durée, avec des passages de musique seule (sans
@@ -56,9 +67,21 @@ def make_video(work: Path, minutes: float = 0.0) -> tuple[Path, list[tuple[float
     eng = get_engine("kokoro")
     sr = 44100
     clips = []
-    for i, (voice, text) in enumerate(DIALOGUE):
-        out = eng.synthesize(text, VoiceProfile(name=voice, engine="kokoro", engine_voice=voice, language="en"),
-                             work / f"en{i}.wav", "en")
+    dialogue, kokoro_lang = DIALOGUES[lang]
+    refs = {}
+    if lang != "en":
+        # Kokoro ne parle pas bien japonais (eSpeak) : Chatterbox multilingue lit le japonais avec le timbre
+        # d'une voix Kokoro anglaise
+        for voice in {v for v, _t in dialogue}:
+            refs[voice] = eng.synthesize("This is a reference recording, spoken calmly and clearly for several "
+                                         "seconds, so that the voice can be cloned properly.",
+                                         VoiceProfile(name=voice, engine="kokoro", engine_voice=voice),
+                                         work / f"ref-{voice}.wav", "en")
+        eng = get_engine("chatterbox")
+    for i, (voice, text) in enumerate(dialogue):
+        vp = (VoiceProfile(name=voice, engine="chatterbox", kind="clone", references=[str(refs[voice])])
+              if refs else VoiceProfile(name=voice, engine="kokoro", engine_voice=voice, language=lang))
+        out = eng.synthesize(text, vp, work / f"src{i}.wav", kokoro_lang)
         data, s0 = audio.read_audio(out)
         clips.append((voice, audio.resample(audio.trim_silence(data, s0), s0, sr)))
     parts, truth, t, rep = [audio.silence(1200, sr)], [], 1.2, 0
@@ -98,7 +121,7 @@ def make_video(work: Path, minutes: float = 0.0) -> tuple[Path, list[tuple[float
     return video, truth
 
 
-def full(device: str, mode: str, translator: str, minutes: float = 0.0) -> int:
+def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: str = "en") -> int:
     from doublys.config import settings
     from doublys.core import engines, ffmpeg, pipeline
     from doublys.core import project as project_io
@@ -108,12 +131,15 @@ def full(device: str, mode: str, translator: str, minutes: float = 0.0) -> int:
         ensure(eid, device)
     LOG_LISTENERS.append(lambda e, m: log(f"[{e}] {m}"))
     work = Path(tempfile.mkdtemp(prefix="doublys-full-"))
-    video, truth = make_video(work, minutes)
+    video, truth = make_video(work, minutes, lang)
     log(f"Vidéo de test : {video} ({ffmpeg.probe_duration(video):.1f} s)")
     settings().set("projects_dir", str(work / "projets"))
     pr = project_io.create_project(video, work / "projets", "Test réel")
     pr.settings.voice_mode = mode
     pr.settings.translator = translator
+    pr.settings.source_language = lang
+    if lang in ("ja", "zh", "ko"):
+        pr.settings.whisper_model = "medium"
     timings = {}
     last = {"step": ""}
 
@@ -234,9 +260,10 @@ def main() -> int:
     ap.add_argument("--mode", default="fastclone_offline")
     ap.add_argument("--translator", default="opus_big")
     ap.add_argument("--minutes", type=float, default=0.0, help="durée de la vidéo de test (--full)")
+    ap.add_argument("--lang", default="en", choices=["en", "ja"], help="langue de la vidéo de test (--full)")
     args = ap.parse_args()
     if args.full:
-        return full(args.device, args.mode, args.translator, args.minutes)
+        return full(args.device, args.mode, args.translator, args.minutes, args.lang)
     if args.engine:
         return single(args.engine, args.device)
     ap.error("--engine ou --full")

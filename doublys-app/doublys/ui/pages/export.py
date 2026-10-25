@@ -48,7 +48,7 @@ class ExportPage(Page):
         g.setColumnStretch(1, 1)
         fmt.add(g)
         self.t_norm = ToggleSwitch("Normaliser le volume de la VF (-16 LUFS, comme les plateformes de vidéo)")
-        self.t_vo = ToggleSwitch("Garder aussi la piste anglaise d'origine (choix de la langue dans le lecteur)")
+        self.t_vo = ToggleSwitch("Garder aussi la piste son d'origine (choix de la langue dans le lecteur)")
         for t in (self.t_norm, self.t_vo):
             t.toggled.connect(self._save)
             fmt.add(t)
@@ -57,8 +57,8 @@ class ExportPage(Page):
         sub = Card()
         sub.add(card_title("Sous-titres", "", "captions"))
         self.t_sfr = ToggleSwitch("Sous-titres français intégrés (désactivés par défaut dans le lecteur)")
-        self.t_sen = ToggleSwitch("Sous-titres anglais intégrés")
-        self.t_srt = ToggleSwitch("Fichiers .srt à côté de la vidéo (français et anglais)")
+        self.t_sen = ToggleSwitch("Sous-titres dans la langue d'origine intégrés")
+        self.t_srt = ToggleSwitch("Fichiers .srt à côté de la vidéo (français et langue d'origine)")
         self.t_burn = ToggleSwitch("Incruster les sous-titres français dans l'image (réencode la vidéo : plus long)")
         for t in (self.t_sfr, self.t_sen, self.t_srt, self.t_burn):
             t.toggled.connect(self._save)

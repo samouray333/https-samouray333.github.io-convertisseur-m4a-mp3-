@@ -26,7 +26,7 @@ from .base import Page
 
 log = logging.getLogger(__name__)
 
-COLS = ["#", "Début", "Durée", "Personne", "Anglais", "Français", "Calage", "État"]
+COLS = ["#", "Début", "Durée", "Personne", "Original", "Français", "Calage", "État"]
 C_NUM, C_START, C_LEN, C_PERSON, C_EN, C_FR, C_FIT, C_STATE = range(len(COLS))
 STATE_KIND = {"ok": "success", "tempo": "success", "rate": "info", "long": "warning", "error": "danger", "": "muted"}
 
@@ -164,7 +164,7 @@ class DubbingPage(Page):
         acts.setSpacing(6)
         self.actions = {}
         for key, text, ic, tip in [
-            ("vo", "VO", "headphones", "Écouter la voix d'origine"),
+            ("vo", "VO", "headphones", "Écouter la version originale"),
             ("vf", "VF", "volume", "Écouter la voix française seule"),
             ("mix", "Mixé", "wave", "Écouter le mélange final"),
             ("preview", "Aperçu", "film", "Voir la réplique avec l'image et le sous-titre, ici (double-clic sur le "
