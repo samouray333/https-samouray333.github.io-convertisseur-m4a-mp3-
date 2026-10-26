@@ -66,3 +66,37 @@ def test_theme_light(app):
     p = theme.apply(app, "light", "#10B981")
     assert not p.dark
     theme.apply(app, "dark")
+
+
+@needs_ffmpeg
+def test_subtitles_only_mode_and_color(app, tmp_path, test_video, fakes, monkeypatch):
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QColorDialog
+
+    from doublys.core import pipeline
+    from doublys.core import project as project_io
+    from doublys.ui.main_window import MainWindow
+
+    pr = project_io.create_project(test_video, tmp_path / "p", "Essai")
+    win = MainWindow()
+    win.ctx.set_project(pr)
+    page = win.pages["dubbing"]
+    win.show_page("dubbing")
+    app.processEvents()
+    page.result_mode.setCurrentIndex(1)
+    assert pr.settings.subtitles_only and page.auto_btn.text() == "Créer les sous-titres automatiquement"
+    pipeline.run_all(pr, pipeline.Job())
+    win.ctx.set_project(pr)
+    assert page.result_mode.currentIndex() == 1 and "sous-titres" in page.auto_btn.text()
+    win.show_page("export")
+    app.processEvents()
+    exp = win.pages["export"]
+    assert exp.export_btn.isEnabled() and exp.export_btn.text() == "Exporter la vidéo sous-titrée"
+    win.show_page("people")
+    app.processEvents()
+    monkeypatch.setattr(QColorDialog, "getColor", staticmethod(lambda *a, **k: QColor("#123abc")))
+    person = pr.people[0]
+    win.pages["people"].cards[0]._pick_color()
+    assert person.color == "#123ABC" and pr.step_done("translate")
+    win.ctx.dirty = False
+    win.close()

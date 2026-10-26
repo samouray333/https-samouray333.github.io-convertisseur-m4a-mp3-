@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from contextlib import contextmanager
+
+log = logging.getLogger(__name__)
 
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
@@ -29,4 +32,4 @@ def keep_awake():
 
                 ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
             except Exception:
-                pass
+                log.debug("Rétablissement de la mise en veille impossible", exc_info=True)

@@ -60,14 +60,19 @@ class ExportPage(Page):
         self.t_sen = ToggleSwitch("Sous-titres dans la langue d'origine intégrés")
         self.t_srt = ToggleSwitch("Fichiers .srt à côté de la vidéo (français et langue d'origine)")
         self.t_burn = ToggleSwitch("Incruster les sous-titres français dans l'image (réencode la vidéo : plus long)")
-        for t in (self.t_sfr, self.t_sen, self.t_srt, self.t_burn):
+        self.t_colors = ToggleSwitch("Une couleur par personne (couleurs choisies dans la page Personnes)")
+        for t in (self.t_sfr, self.t_sen, self.t_srt, self.t_burn, self.t_colors):
             t.toggled.connect(self._save)
             sub.add(t)
+        self.colors_info = label("Les couleurs s'affichent dans VLC, MPC-HC, mpv et dans les sous-titres incrustés ; "
+                                 "certains lecteurs (TV, Films et TV de Windows) affichent tout en blanc.", "Hint",
+                                 wrap=True)
+        sub.add(self.colors_info)
         self.enc_info = label("", "Hint", wrap=True)
         sub.add(self.enc_info)
         self.body.addWidget(sub)
 
-        aud = Card()
+        self.aud = aud = Card()
         aud.add(card_title("Piste VF seule", "Le son français complet (voix + fond), sans l'image.", "volume"))
         row = QHBoxLayout()
         self.audio_only = QComboBox()
@@ -139,6 +144,7 @@ class ExportPage(Page):
         self.t_sen.setChecked(o.subtitles_en)
         self.t_srt.setChecked(o.srt_files)
         self.t_burn.setChecked(o.burn_subtitles)
+        self.t_colors.setChecked(o.subtitle_colors)
         self.audio_only.setCurrentIndex(max(0, self.audio_only.findData(o.audio_only)))
         self._loading = False
 
@@ -156,6 +162,7 @@ class ExportPage(Page):
         o.subtitles_en = self.t_sen.isChecked()
         o.srt_files = self.t_srt.isChecked()
         o.burn_subtitles = self.t_burn.isChecked()
+        o.subtitle_colors = self.t_colors.isChecked()
         o.audio_only = self.audio_only.currentData() or ""
         self.ctx.mark_dirty()
 
@@ -169,17 +176,29 @@ class ExportPage(Page):
 
     def _enable(self) -> None:
         pr = self.ctx.project
-        ready = pr is not None and pr.step_done("mix")
+        only = pr is not None and pr.settings.subtitles_only
+        ready = pr is not None and pr.step_done("translate" if only else "mix")
         busy = self.ctx.runner.running
+        self.export_btn.setText("Exporter la vidéo sous-titrée" if only else "Exporter la vidéo doublée")
         self.export_btn.setEnabled(ready and not busy)
+        self.preview_btn.setVisible(not only)
         self.preview_btn.setEnabled(ready and not busy)
+        self.aud.setVisible(not only)
+        self.t_vo.setVisible(not only)
+        self.t_norm.setVisible(not only)
+        self.t_sfr.setVisible(not only)  # sous-titres seuls : toujours intégrés (affichés par défaut)
         self.open_btn.setEnabled(pr is not None)
         if pr is None:
             self.status.setText("Aucun projet.")
+        elif not ready and not busy and only:
+            self.status.setText("Les sous-titres ne sont pas encore prêts : lancez « Créer les sous-titres "
+                                "automatiquement » (page Doublage).")
         elif not ready and not busy:
             self.status.setText("La VF n'est pas encore mixée : lancez « Créer la VF automatiquement » (page Doublage).")
         elif not busy and pr.last_export:
             self.status.setText(f"Dernier export : {pr.last_export}")
+        elif not busy:
+            self.status.setText("")
 
     # -- export -----------------------------------------------------------------------
     def export(self) -> None:
@@ -217,7 +236,8 @@ class ExportPage(Page):
             return
         names = ", ".join(Path(f).name for f in result)
         self.status.setText(f"Exporté : {names}")
-        self.ctx.toast("Vidéo doublée exportée ✔", "success", 5000)
+        only = self.ctx.project is not None and self.ctx.project.settings.subtitles_only
+        self.ctx.toast("Vidéo sous-titrée exportée ✔" if only else "Vidéo doublée exportée ✔", "success", 5000)
         self.ctx.save()
 
     def _open_dir(self) -> None:

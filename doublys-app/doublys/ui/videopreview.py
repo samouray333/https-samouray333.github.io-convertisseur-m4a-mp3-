@@ -38,9 +38,9 @@ class VideoPreview(QLabel):
 
     # -- extrait animé ----------------------------------------------------------------
     def play(self, frames: list[Path], fps: float, t0: float, player, audio_t0: float,
-             subs: list[tuple[float, float, str]]) -> None:
+             subs: list[tuple]) -> None:
         """``t0`` : instant de la vidéo de la première image ; ``audio_t0`` : instant du fichier audio joué qui
-        correspond à ``t0`` ; ``subs`` : [(début, fin, texte)] en temps de la vidéo."""
+        correspond à ``t0`` ; ``subs`` : [(début, fin, texte[, couleur])] en temps de la vidéo."""
         self._frames = frames
         self._cache.clear()
         self._fps = fps
@@ -85,7 +85,9 @@ class VideoPreview(QLabel):
                 self._cache.clear()
             self._cache[idx] = pm
         t = self._t0 + idx / self._fps
-        text = next((s for a, b, s in self._subs if a <= t <= b), "")
+        sub = next((s for s in self._subs if s[0] <= t <= s[1]), None)
+        text = sub[2] if sub else ""
+        color = (sub[3] if sub and len(sub) > 3 else "") or "#FFFFFF"
         self._shown = idx
         if not text:
             self.setPixmap(pm)
@@ -103,7 +105,7 @@ class VideoPreview(QLabel):
         bg = QPainterPath()
         bg.addRoundedRect(bound.adjusted(-6, -3, 6, 3), 6, 6)
         painter.fillPath(bg, QColor(0, 0, 0, 160))
-        painter.setPen(QPen(QColor("#FFFFFF")))
+        painter.setPen(QPen(QColor(color)))
         painter.drawText(rect, flags, text)
         painter.end()
         self.setPixmap(out)

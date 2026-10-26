@@ -66,7 +66,11 @@ def project_summary(path: Path) -> tuple[str, str, Path | None]:
         people = data.get("people", [])
         dur = float(data.get("video", {}).get("duration", 0) or 0)
         steps = data.get("steps", {})
-        state = "VF prête" if steps.get("mix", {}).get("done") else ("en cours" if steps else "à doubler")
+        if data.get("settings", {}).get("subtitles_only"):
+            state = "sous-titres prêts" if steps.get("translate", {}).get("done") else (
+                "en cours" if steps else "à sous-titrer")
+        else:
+            state = "VF prête" if steps.get("mix", {}).get("done") else ("en cours" if steps else "à doubler")
         info = f"{format_duration(dur)} · {len(lines)} répliques · {len(people)} personne(s) · {state}"
     except Exception:
         pass

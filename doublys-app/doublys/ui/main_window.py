@@ -266,12 +266,18 @@ class MainWindow(QMainWindow):
 
             target = paths.temp_dir() / Path(url).name
             download(url, target, task.say, task.cancel_event)
+            task.say("Vérification de l'installateur…")
+            updates.verify_installer(target, rel)
             return target
 
         def done(path):
             from ..core import support
 
-            self.confirm_discard()
+            if not self.confirm_discard():
+                # l'enregistrement a échoué et l'utilisateur garde ses modifications : on n'installe pas
+                self.sidebar.update_btn.setEnabled(True)
+                self.sidebar.update_btn.setText(f"  Version {rel.get('version')} disponible")
+                return
             support.launch_installer(path)
             self.close()
 

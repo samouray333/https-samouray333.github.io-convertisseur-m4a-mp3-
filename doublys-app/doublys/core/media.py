@@ -71,12 +71,15 @@ def _subtitle_filter(srt_name: str) -> str:
     return f"subtitles={srt_name}:force_style='Fontsize=22'"
 
 
-def export_video(video: Path, vf_audio: Path, out: Path, opts: ExportOptions, duration: float = 0.0,
+def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOptions, duration: float = 0.0,
                  height: int = 1080, srt_fr: Path | None = None, srt_en: Path | None = None,
                  original_codec: str = "", progress: Progress | None = None,
                  cancel: threading.Event | None = None, normalize: bool | None = None,
                  original_language: str = "en") -> Path:
-    """Vidéo copiée sans réencodage + piste VF (AAC normalisée), VO en option, sous-titres intégrés."""
+    """Vidéo copiée sans réencodage + piste VF (AAC normalisée), VO en option, sous-titres intégrés.
+
+    ``vf_audio`` vide : sous-titres seuls (VOSTFR), le son d'origine est gardé et les sous-titres français sont
+    affichés par défaut."""
     from .models import LANGUAGES, language_name
 
     iso = LANGUAGES.get(original_language, ("", "und"))[1]
@@ -88,14 +91,16 @@ def export_video(video: Path, vf_audio: Path, out: Path, opts: ExportOptions, du
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
         cwd = None
-        args = ["-i", str(video), "-i", str(vf_audio)]
+        vostfr = vf_audio is None
+        args = ["-i", str(video)] + ([] if vostfr else ["-i", str(vf_audio)])
+        first_sub = 1 if vostfr else 2
         for p, _lang in subs:
             args += ["-i", str(p)]
-        args += ["-map", "0:v:0", "-map", "1:a:0"]
-        if opts.keep_original_audio:
+        args += ["-map", "0:v:0", "-map", "0:a:0" if vostfr else "1:a:0"]
+        if opts.keep_original_audio and not vostfr:
             args += ["-map", "0:a:0"]
         for k in range(len(subs)):
-            args += ["-map", f"{2 + k}:0"]
+            args += ["-map", f"{first_sub + k}:0"]
         args += ["-map_metadata", "0", "-map_chapters", "0"]
         video_args = ["-c:v", "copy"]
         if burn:
@@ -103,13 +108,18 @@ def export_video(video: Path, vf_audio: Path, out: Path, opts: ExportOptions, du
             shutil.copyfile(srt_fr, local)
             cwd = td
             video_args = ["-vf", _subtitle_filter("fr.srt"), *encoder_args(video_encoder(), height)]
-        a = ["-c:a:0", "aac", "-b:a:0", opts.audio_bitrate or "192k", "-ar:a:0", "48000"]
-        if norm:
-            a += ["-filter:a:0", LOUDNORM]
-        a += ["-metadata:s:a:0", "language=fre", "-metadata:s:a:0", "title=Français (VF)", "-disposition:a:0",
-              "default"]
-        if opts.keep_original_audio:
-            copy_ok = container == "mkv" or original_codec in ("aac", "mp3", "ac3", "eac3")
+        copy_ok = container == "mkv" or original_codec in ("aac", "mp3", "ac3", "eac3")
+        if vostfr:  # son d'origine copié tel quel (pas de normalisation : rien n'est mixé)
+            a = (["-c:a:0", "copy"] if copy_ok else ["-c:a:0", "aac", "-b:a:0", opts.audio_bitrate or "192k"])
+            a += ["-metadata:s:a:0", f"language={iso}", "-metadata:s:a:0", f"title={orig_name} (VO)",
+                  "-disposition:a:0", "default"]
+        else:
+            a = ["-c:a:0", "aac", "-b:a:0", opts.audio_bitrate or "192k", "-ar:a:0", "48000"]
+            if norm:
+                a += ["-filter:a:0", LOUDNORM]
+            a += ["-metadata:s:a:0", "language=fre", "-metadata:s:a:0", "title=Français (VF)", "-disposition:a:0",
+                  "default"]
+        if opts.keep_original_audio and not vostfr:
             a += (["-c:a:1", "copy"] if copy_ok else ["-c:a:1", "aac", "-b:a:1", "192k"])
             a += ["-metadata:s:a:1", f"language={iso}", "-metadata:s:a:1", f"title={orig_name} (VO)", "-disposition:a:1",
                   "0"]
@@ -117,7 +127,8 @@ def export_video(video: Path, vf_audio: Path, out: Path, opts: ExportOptions, du
         for k, (_p, lang) in enumerate(subs):
             s += [f"-c:s:{k}", "mov_text" if container == "mp4" else "srt", f"-metadata:s:s:{k}",
                   f"language={lang}", f"-metadata:s:s:{k}",
-                  f"title={'Français' if lang == 'fre' else orig_name}", f"-disposition:s:{k}", "0"]
+                  f"title={'Français' if lang == 'fre' else orig_name}", f"-disposition:s:{k}",
+                  "default" if vostfr and lang == "fre" else "0"]
         tail = ["-movflags", "+faststart"] if container == "mp4" else []
         cmd = args + video_args + a + s + tail + [str(out)]
         try:

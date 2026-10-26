@@ -23,7 +23,7 @@ from . import translate as local_translate
 from .engines import EngineError, ServiceBlocked
 from .engines.neural import WorkerDied
 from .ffmpeg import Cancelled
-from .models import (AUTO_LANGUAGE, LANGUAGES, STEP_LABELS, STEPS, TRANSLATORS, Line, Project,
+from .models import (AUTO_LANGUAGE, LANGUAGES, STEP_LABELS, TRANSLATORS, Line, Project,
                      language_name)
 
 log = logging.getLogger(__name__)
@@ -379,8 +379,11 @@ def step_voices(project: Project, job: Job, only: list[str] | None = None) -> st
         data, sr = audio.read_audio(ref)
         person.pitch_hz = round(refs.estimate_pitch(data, sr), 1)
         g = refs.gender_from_pitch(person.pitch_hz)
-        if g:
+        if g and not person.gender_locked:
             person.gender = g
+            if refs.gender_is_uncertain(person.pitch_hz):
+                job.log(f"{person.name} : voix à {person.pitch_hz:.0f} Hz, genre incertain "
+                        f"(« {'homme' if g == 'M' else 'femme'} » choisi) : à vérifier dans la page Personnes.")
         job.progress((k + 1) / max(1, len(people)), person.name)
     return f"{len(people)} voix préparée(s)"
 
@@ -552,7 +555,7 @@ def run_step(project: Project, step: str, job: Job, save: Callable[[], None] | N
 
 
 def steps_to_run(project: Project, start: str | None = None) -> list[str]:
-    seq = [s for s in STEPS if s != "separate" or project.settings.separate]
+    seq = project.active_steps()
     if start is not None:
         return seq[seq.index(start):] if start in seq else []
     return [s for s in seq if not project.step_done(s)]
@@ -568,38 +571,51 @@ def run_all(project: Project, job: Job, save: Callable[[], None] | None = None, 
 # Export
 # ---------------------------------------------------------------------------------------
 def export_files(project: Project, job: Job, out_dir: Path | None = None, preview: bool = False) -> list[Path]:
-    """Vidéo doublée (MP4/MKV), fichiers SRT, piste VF seule. ``preview`` : rapide, sans normalisation."""
-    mix_path = wf(project, MIX)
-    if not mix_path.exists() or not project.step_done("mix"):
-        raise StepError("Le mixage n'est pas fait : lancez « Créer la VF automatiquement » ou l'étape Mixage.")
+    """Vidéo doublée (MP4/MKV), fichiers SRT, piste VF seule. ``preview`` : rapide, sans normalisation.
+
+    En mode « sous-titres seuls » : vidéo avec le son d'origine et les sous-titres français (VOSTFR)."""
     o = project.export
+    vostfr = project.settings.subtitles_only
+    mix_path = wf(project, MIX)
+    if vostfr:
+        if not project.step_done("translate"):
+            raise StepError("La traduction n'est pas faite : lancez « Créer les sous-titres automatiquement ».")
+        if preview:
+            raise StepError("L'aperçu rapide sert à écouter la VF : il n'existe pas en mode « sous-titres seuls ».")
+    elif not mix_path.exists() or not project.step_done("mix"):
+        raise StepError("Le mixage n'est pas fait : lancez « Créer la VF automatiquement » ou l'étape Mixage.")
     job.step = "export"
     out_dir = Path(out_dir or project_io.default_export_dir(project))
     out_dir.mkdir(parents=True, exist_ok=True)
     base = project_io.safe_name(project.display_title)
     files: list[Path] = []
     srt_fr = srt_en = None
+    want_fr = o.subtitles_fr or o.burn_subtitles or vostfr  # sous-titres seuls : toujours dans la vidéo
     if not preview:
+        colors = subtitles.person_colors(project)
         srt_dir = out_dir if o.srt_files else project_io.work_dir(project)
-        if o.subtitles_fr or o.srt_files or o.burn_subtitles:
-            srt_fr = subtitles.write_srt(project.lines, srt_dir / f"{base}.fr.srt", "fr")
+        if want_fr or o.srt_files:
+            srt_fr = subtitles.write_srt(project.lines, srt_dir / f"{base}.fr.srt", "fr", colors)
         if o.subtitles_en or o.srt_files:
-            srt_en = subtitles.write_srt(project.lines, srt_dir / f"{base}.{project.settings.language}.srt", "orig")
+            srt_en = subtitles.write_srt(project.lines, srt_dir / f"{base}.{project.settings.language}.srt", "orig",
+                                         colors)
         if o.srt_files:
             files += [p for p in (srt_fr, srt_en) if p is not None]
     ext = ".mkv" if o.container == "mkv" else ".mp4"
-    target = (project_io.work_dir(project) / f"apercu{ext}") if preview else out_dir / f"{base} (VF){ext}"
-    media.export_video(Path(project.source_video), mix_path, target, o, project.video.duration,
+    suffix = "VOSTFR" if vostfr else "VF"
+    target = (project_io.work_dir(project) / f"apercu{ext}") if preview else out_dir / f"{base} ({suffix}){ext}"
+    media.export_video(Path(project.source_video), None if vostfr else mix_path, target, o, project.video.duration,
                        project.video.height or 1080,
-                       srt_fr=None if preview else (srt_fr if (o.subtitles_fr or o.burn_subtitles) else None),
+                       srt_fr=None if preview else (srt_fr if want_fr else None),
                        srt_en=None if preview else (srt_en if o.subtitles_en else None),
                        original_codec=project.video.audio_codec, normalize=False if preview else None,
                        original_language=project.settings.language,
-                       progress=lambda f: job.progress(f * (0.85 if o.audio_only and not preview else 1.0),
+                       progress=lambda f: job.progress(f * (0.85 if o.audio_only and not preview and not vostfr
+                                                            else 1.0),
                                                        "Préparation de la vidéo"),
                        cancel=job.cancel)
     files.insert(0, target)
-    if o.audio_only in ("wav", "mp3") and not preview:
+    if o.audio_only in ("wav", "mp3") and not preview and not vostfr:
         files.append(media.export_audio(mix_path, out_dir / f"{base} (VF).{o.audio_only}", o.normalize,
                                         project.video.duration, cancel=job.cancel))
     job.progress(1.0, "Export terminé")

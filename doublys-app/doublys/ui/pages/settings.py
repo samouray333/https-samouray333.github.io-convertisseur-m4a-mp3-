@@ -11,7 +11,7 @@ from ...config import settings
 from ...core import ffmpeg
 from ...core.engines import installer
 from ...core.models import AUTO_LANGUAGE, CJK_LANGUAGES, LANGUAGES, TRANSLATORS, WHISPER_MODELS
-from ...core.secrets import protect, unprotect
+from ...core.secrets import is_encrypted, protect, unprotect
 from .. import theme
 from ..widgets import Card, ToggleSwitch, button, card_title, label
 from .base import Page
@@ -448,12 +448,17 @@ class SettingsPage(Page):
         key = self.ai_key.text().strip()
         if not key:
             return
-        settings().set("ai_key", protect(key))
+        stored = protect(key)
+        settings().set("ai_key", stored)
         settings().set("ai_model", "")
         self.ai_model.clear()
         self.ai_key.clear()
         self.ai_key.setPlaceholderText("Clé enregistrée")
-        self.ctx.toast("Clé DeepSeek enregistrée.", "success")
+        if is_encrypted(stored):
+            self.ctx.toast("Clé DeepSeek enregistrée (chiffrée avec votre compte Windows).", "success")
+        else:
+            self.ctx.toast("Clé DeepSeek enregistrée, mais sans chiffrement (protection Windows indisponible).",
+                           "warning")
 
     def _test_ai(self) -> None:
         from ...core import ai

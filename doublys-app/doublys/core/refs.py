@@ -109,7 +109,16 @@ def estimate_pitch(data: np.ndarray, sr: int) -> float:
     return float(np.median(f0s))
 
 
+# Zone où voix d'homme aiguës, voix de femme graves, ados et enfants se recouvrent : l'estimation est fragile.
+UNCERTAIN_PITCH = (150.0, 185.0)
+
+
 def gender_from_pitch(f0: float) -> str:
+    """Meilleure estimation (M/F) ; voir ``gender_is_uncertain`` pour savoir s'il faut la faire vérifier."""
     if f0 <= 0:
         return ""
     return "M" if f0 < 165.0 else "F"
+
+
+def gender_is_uncertain(f0: float) -> bool:
+    return f0 > 0 and UNCERTAIN_PITCH[0] <= f0 <= UNCERTAIN_PITCH[1]

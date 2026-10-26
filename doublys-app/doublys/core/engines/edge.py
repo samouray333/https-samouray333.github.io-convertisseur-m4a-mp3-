@@ -93,7 +93,7 @@ def _remember_endpoint() -> None:
 
         settings().set("edge_endpoint", _endpoint["current"])
     except Exception:
-        pass
+        log.debug("Point d'accès Edge non mémorisé", exc_info=True)
 
 
 def _restore_endpoint() -> None:

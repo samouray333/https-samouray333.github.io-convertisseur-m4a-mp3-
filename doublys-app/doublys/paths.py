@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import sys
 from pathlib import Path
 
 from . import APP_ID
+
+log = logging.getLogger(__name__)
 
 IS_WINDOWS = sys.platform.startswith("win")
 
@@ -114,7 +117,7 @@ def documents_dir() -> Path:
             if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and buf.value:
                 return Path(buf.value)
         except Exception:
-            pass
+            log.debug("Dossier Documents introuvable via Windows", exc_info=True)
     for name in ("Documents", "Mes documents"):
         if (home / name).is_dir():
             return home / name

@@ -105,6 +105,7 @@ LINE_STATES = {
 }
 
 STEPS = ["extract", "separate", "transcribe", "segment", "speakers", "translate", "voices", "dub", "mix"]
+VOICE_STEPS = ("voices", "dub", "mix")  # inutiles en mode « sous-titres seuls »
 STEP_LABELS = {
     "extract": "Extraction du son",
     "separate": "Séparation voix / fond",
@@ -193,6 +194,7 @@ class Person:
     id: str = field(default_factory=lambda: new_id("p_"))
     color: str = "#FF6B4A"
     gender: str = ""  # F | M | "" (estimé par la hauteur de la voix)
+    gender_locked: bool = False  # choisi à la main : n'est plus réestimé
     pitch_hz: float = 0.0
     reference: str = ""  # extrait de référence (relatif au dossier de travail ou absolu)
     reference_source: str = "auto"  # auto | file
@@ -237,6 +239,7 @@ class DubSettings:
     expressive: bool = True  # répliques fortes (cris, colère) refaites avec Chatterbox expressif
     expressive_db: float = 6.0  # à partir de combien de dB au-dessus de la voix habituelle
     expressive_max: int = 25  # au plus N répliques par vidéo (environ 25 s de calcul chacune sans GPU)
+    subtitles_only: bool = False  # sous-titres français seulement : pas de voix française (VOSTFR)
 
     @classmethod
     def from_dict(cls, d):
@@ -260,6 +263,7 @@ class ExportOptions:
     subtitles_en: bool = False
     srt_files: bool = True
     burn_subtitles: bool = False
+    subtitle_colors: bool = True  # une couleur par personne (choisie dans la page Personnes)
     audio_only: str = ""  # "" | wav | mp3 : piste VF seule
     output_dir: str = ""
 
@@ -352,10 +356,15 @@ class Project:
             for s in STEPS[STEPS.index(step):]:
                 self.steps.pop(s, None)
 
+    def active_steps(self) -> list[str]:
+        """Étapes utiles : sans séparation si elle est désactivée, sans voix ni mixage pour les sous-titres seuls."""
+        skip = set() if self.settings.separate else {"separate"}
+        if self.settings.subtitles_only:
+            skip |= set(VOICE_STEPS)
+        return [s for s in STEPS if s not in skip]
+
     def next_step(self) -> str | None:
-        for s in STEPS:
-            if s == "separate" and not self.settings.separate:
-                continue
+        for s in self.active_steps():
             if not self.step_done(s):
                 return s
         return None

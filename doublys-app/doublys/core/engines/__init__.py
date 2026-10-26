@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 
 from .base import (NOT_INSTALLED, READY, UNAVAILABLE, BuiltinVoice, EngineError, EngineInfo, ParamSpec,
                    ServiceBlocked, TTSEngine, read_words, words_path)
+
+log = logging.getLogger(__name__)
 
 __all__ = ["all_engines", "get_engine", "get_tool", "register_tool", "all_tools", "shutdown_all", "register_engine", "TTSEngine",
            "EngineInfo", "EngineError", "ServiceBlocked", "read_words", "words_path", "BuiltinVoice", "ParamSpec", "READY", "NOT_INSTALLED", "UNAVAILABLE",
@@ -84,11 +87,11 @@ def shutdown_all() -> None:
         try:
             t.shutdown()
         except Exception:
-            pass
+            log.debug("Arrêt de l'outil impossible", exc_info=True)
     if _engines is None:
         return
     for e in list(_engines.values()):
         try:
             e.shutdown()
         except Exception:
-            pass
+            log.debug("Arrêt du moteur impossible", exc_info=True)

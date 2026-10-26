@@ -161,6 +161,7 @@ def apply_to_project(project: Project) -> int:
         person.rvc_model, person.rvc_index = c.rvc_model, c.rvc_index
         if c.gender:
             person.gender = c.gender
+            person.gender_locked = True  # genre validé dans un épisode précédent : on le garde
         ref = d / c.reference if c.reference else None
         if ref is not None and ref.exists() and project.path is not None:
             target = project_io.references_dir(project) / f"{person.id}-serie.wav"

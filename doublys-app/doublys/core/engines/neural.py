@@ -31,7 +31,7 @@ def emit_log(engine_id: str, line: str) -> None:
         try:
             cb(engine_id, line)
         except Exception:
-            pass
+            log.debug("Écouteur du journal en erreur", exc_info=True)
 
 
 class WorkerDied(EngineError):
@@ -440,7 +440,7 @@ class WorkerEngine(TTSEngine):
                 return [BuiltinVoice(id=d["id"], name=d.get("name", d["id"]), language=d.get("language", ""),
                                      gender=d.get("gender", "")) for d in data]
             except Exception:
-                pass
+                log.warning("Liste des voix illisible (%s) : liste par défaut utilisée", f, exc_info=True)
         if self.engine_id == "xtts":
             return [BuiltinVoice(id=n, name=n, language="multi") for n in XTTS_SPEAKERS]
         if self.engine_id == "kokoro":

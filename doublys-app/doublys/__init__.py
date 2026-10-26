@@ -1,6 +1,6 @@
 """Doublys (Echo Matras) — doublage automatique de vidéos de l'anglais vers le français."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 APP_NAME = "Doublys"
 APP_ID = "Doublys"
 ORG_NAME = "Echo Matras"

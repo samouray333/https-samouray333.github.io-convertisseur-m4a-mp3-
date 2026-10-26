@@ -7,14 +7,16 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox, QVBoxLayout
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (QColorDialog, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox,
+                               QVBoxLayout)
 
 from ... import paths
 from ...config import settings
 from ...core import audio, dubvoice, pipeline, refs
 from ...core import project as project_io
 from ...core.models import VOICE_MODES
-from .. import tasks
+from .. import icons, tasks
 from ..widgets import Avatar, Card, EmptyState, button, card_title, label
 from .base import Page
 
@@ -50,10 +52,16 @@ class PersonCard(Card):
         self.name.editingFinished.connect(self._rename)
         col.addWidget(self.name)
         g = {"M": "voix d'homme", "F": "voix de femme"}.get(person.gender, "genre inconnu")
+        if person.gender and not person.gender_locked and refs.gender_is_uncertain(person.pitch_hz):
+            g += " (incertain, à vérifier)"
         pitch = f" ({person.pitch_hz:.0f} Hz)" if person.pitch_hz else ""
         known = " · ★ personnage de la série" if person.character else ""
         col.addWidget(label(f"{len(mine)} répliques · {talk:.0f} s de parole · {g}{pitch}{known}", "Hint"))
         top.addLayout(col, 1)
+        self.color_btn = button("Couleur", tooltip="Couleur de ses sous-titres (et de sa pastille)")
+        self.color_btn.clicked.connect(self._pick_color)
+        self._show_color()
+        top.addWidget(self.color_btn, 0, Qt.AlignTop)
         self.add(top)
 
         grid = QGridLayout()
@@ -98,7 +106,7 @@ class PersonCard(Card):
 
         grid.addWidget(label("Genre", "Muted"), 4, 0)
         self.gender = QComboBox()
-        for k, v in (("", "Inconnu"), ("M", "Homme"), ("F", "Femme")):
+        for k, v in (("", "Automatique"), ("M", "Homme"), ("F", "Femme")):
             self.gender.addItem(v, k)
         self.gender.setCurrentIndex(max(0, self.gender.findData(person.gender)))
         self.gender.currentIndexChanged.connect(self._gender_changed)
@@ -145,6 +153,20 @@ class PersonCard(Card):
             self._changed(voice=False)
             self.page.ctx.people_changed.emit()
 
+    def _show_color(self) -> None:
+        self.color_btn.setIcon(icons.icon("captions", self.person.color, 18))
+
+    def _pick_color(self) -> None:
+        c = QColorDialog.getColor(QColor(self.person.color), self, f"Couleur des sous-titres de {self.person.name}")
+        if not c.isValid() or c.name().upper() == self.person.color.upper():
+            return
+        self.page.ctx.checkpoint("couleur")
+        self.person.color = c.name().upper()
+        self.avatar.set(self.person.name, self.person.color)
+        self._show_color()
+        self._changed(voice=False)
+        self.page.ctx.people_changed.emit()
+
     def _mode(self) -> str:
         return dubvoice.voice_mode(self.page.ctx.project, self.person)
 
@@ -177,6 +199,7 @@ class PersonCard(Card):
     def _gender_changed(self) -> None:
         self.page.ctx.checkpoint("genre")
         self.person.gender = self.gender.currentData() or ""
+        self.person.gender_locked = bool(self.person.gender)  # « automatique » : de nouveau estimé
         self._changed()
 
     def _pick_rvc(self) -> None:
@@ -237,7 +260,7 @@ class PersonCard(Card):
             self.person.reference = project_io.relative(pr, out)
             self.person.reference_source = "file"
             self.person.pitch_hz = round(f0, 1)
-            if refs.gender_from_pitch(f0):
+            if refs.gender_from_pitch(f0) and not self.person.gender_locked:
                 self.person.gender = refs.gender_from_pitch(f0)
             self._changed()
             self.page.refresh()

@@ -9,14 +9,15 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
-                               QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QTableWidget, QTableWidgetItem)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+                               QLabel, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QTableWidget,
+                               QTableWidgetItem)
 
 from ... import paths
-from ...core import ai, audio, engines, media, mixer, pipeline, qc, refs, segment, timing
+from ...core import ai, audio, engines, media, mixer, pipeline, qc, refs, segment, subtitles, timing
 from ...core import project as project_io
 from ...core.engines.neural import LOG_LISTENERS
-from ...core.models import LINE_STATES, STEP_LABELS, STEPS, Person
+from ...core.models import LINE_STATES, STEP_LABELS, STEPS, VOICE_STEPS, Person
 from ...core.speakers import COLORS
 from ...core.textproc import format_duration
 from .. import icons, tasks, theme
@@ -102,6 +103,17 @@ class DubbingPage(Page):
 
         # commande
         run = Card(spacing=10)
+        r0 = QHBoxLayout()
+        r0.addWidget(label("Résultat", "Muted"))
+        self.result_mode = QComboBox()
+        self.result_mode.addItem("Vidéo doublée en français (VF)", False)
+        self.result_mode.addItem("Sous-titres français seulement (voix d'origine gardée)", True)
+        self.result_mode.setToolTip("Sous-titres seuls : pas de voix française, beaucoup plus rapide. Une couleur "
+                                    "par personne, choisie dans la page Personnes.")
+        self.result_mode.currentIndexChanged.connect(self._mode_changed)
+        r0.addWidget(self.result_mode)
+        r0.addStretch(1)
+        run.add(r0)
         r1 = QHBoxLayout()
         self.auto_btn = button("Créer la VF automatiquement", "wand", "primary")
         self.auto_btn.setMinimumHeight(46)
@@ -256,6 +268,9 @@ class DubbingPage(Page):
             self.video_info.setText(f"{Path(pr.source_video).name}\n{format_duration(v.duration)} · {v.width}×"
                                     f"{v.height} · {v.video_codec} / {v.audio_codec}")
             self._project_thumbnail()
+        self.result_mode.blockSignals(True)
+        self.result_mode.setCurrentIndex(1 if pr is not None and pr.settings.subtitles_only else 0)
+        self.result_mode.blockSignals(False)
         self.fill_steps()
         self.fill_table()
         self._update_buttons()
@@ -290,6 +305,8 @@ class DubbingPage(Page):
                 continue
             if s == "separate" and not pr.settings.separate:
                 row.set_state("skip", "désactivée")
+            elif s in VOICE_STEPS and pr.settings.subtitles_only:
+                row.set_state("skip", "inutile pour les sous-titres seuls")
             elif s == running:
                 row.set_state("run", "en cours…")
             elif pr.step_done(s):
@@ -311,14 +328,22 @@ class DubbingPage(Page):
                                    QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         if self.project is not None and not running:
             nxt = self.project.next_step()
-            self.auto_btn.setText("Créer la VF automatiquement" if not self.project.steps else
-                                  ("Terminer la VF automatiquement" if nxt else "Refaire l'export de la VF"))
+            if self.project.settings.subtitles_only:
+                self.auto_btn.setText("Créer les sous-titres automatiquement" if not self.project.steps else
+                                      ("Terminer les sous-titres automatiquement" if nxt else
+                                       "Refaire l'export des sous-titres"))
+            else:
+                self.auto_btn.setText("Créer la VF automatiquement" if not self.project.steps else
+                                      ("Terminer la VF automatiquement" if nxt else "Refaire l'export de la VF"))
             todo = pipeline.steps_to_run(self.project) + ["export"]
             est = pipeline.estimate_seconds(self.project, todo)
             idle = self.status.text() in ("Prêt.", "") or self.status.text().startswith("Temps de calcul")
             if nxt and idle:
                 self.status.setText(f"Temps de calcul estimé sur cet ordinateur : environ {format_eta(est)} "
                                     "(l'ordinateur ne se mettra pas en veille ; vous pouvez arrêter et reprendre).")
+        self.result_mode.setEnabled(has and not running)
+        only = has and self.project.settings.subtitles_only
+        self.open_btn.setText("Ouvrir la vidéo sous-titrée" if only else "Ouvrir la vidéo doublée")
 
     def _start(self, title: str, plan: list[str], fn) -> None:
         if self.project is None:
@@ -354,7 +379,21 @@ class DubbingPage(Page):
             pipeline.run_all(pr, job, save=self._save)
             return pipeline.export_files(pr, job)
 
-        self._start("Création de la VF", plan, work)
+        self._start("Création des sous-titres" if pr.settings.subtitles_only else "Création de la VF", plan, work)
+
+    def _mode_changed(self) -> None:
+        pr = self.project
+        if pr is None:
+            return
+        only = bool(self.result_mode.currentData())
+        if only == pr.settings.subtitles_only:
+            return
+        self.ctx.checkpoint("résultat")
+        pr.settings.subtitles_only = only
+        self.ctx.mark_dirty()
+        self.open_btn.hide()
+        self.fill_steps()
+        self._update_buttons()
 
     def _missing_engines(self, steps: list[str]) -> list[str]:
         out = []
@@ -493,6 +532,8 @@ class DubbingPage(Page):
             if ln.expressive:
                 fit += " · ✦"
         state = LINE_STATES.get(ln.state, ln.state)
+        if not ln.state and self.project.settings.subtitles_only:
+            state = "sous-titrée"
         if ln.issues and ln.state not in ("long", "error"):
             state = "⚠ à vérifier"
         values += [fit, state]
@@ -673,6 +714,8 @@ class DubbingPage(Page):
         """Son mixé de [a, end] : (fichier, instant du fichier qui correspond à ``a``, fin de lecture)."""
         pr = self.project
         mix_path = pipeline.wf(pr, pipeline.MIX)
+        if pr.settings.subtitles_only:  # sous-titres seuls : on écoute la voix d'origine
+            return pipeline.wf(pr, pipeline.ORIGINAL), a, end
         if pr.step_done("mix") and mix_path.exists():
             return mix_path, a, end
         if not ln.audio:
@@ -707,7 +750,8 @@ class DubbingPage(Page):
         path, t0, stop = self._mix_audio(ln, a, end)
         frames_dir = Path(tempfile.mkdtemp(dir=paths.temp_dir()))
         fps = 12.0
-        subs = [(x.start, x.start + max(x.length, x.duration), x.fr) for x in pr.lines
+        colors = subtitles.person_colors(pr)
+        subs = [(x.start, x.start + max(x.length, x.duration), x.fr, colors.get(x.person_id, "")) for x in pr.lines
                 if x.fr and x.start < end and x.start + max(x.length, x.duration) > a]
         self.status.setText("Préparation de l'aperçu…")
 

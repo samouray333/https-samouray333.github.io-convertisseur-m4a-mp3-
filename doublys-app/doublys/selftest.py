@@ -337,6 +337,30 @@ def run_selftest(report_path: Path) -> int:
         v = next(s for s in ffmpeg.probe(files[0])["streams"] if s["codec_type"] == "video")
         return f"{files[0].name} ({v['codec_name']})"
 
+    @check("sous-titres seuls (VOSTFR, une couleur par personne)")
+    def _():
+        from .core import ffmpeg, pipeline
+        from .core import project as project_io
+
+        pr = project_io.create_project(holder["video"], work / "projets", "Autotest VOSTFR")
+        pr.settings.subtitles_only = True
+        steps = []
+        job = pipeline.Job(on_progress=lambda s, f, m: steps.append(s) if not steps or steps[-1] != s else None)
+        pipeline.run_all(pr, job)
+        assert not set(steps) & {"voices", "dub", "mix"}, steps
+        assert pr.next_step() is None and not any(ln.audio for ln in pr.lines)
+        files = pipeline.export_files(pr, pipeline.Job(), out_dir=work / "vostfr")
+        assert files[0].name == "Autotest VOSTFR (VOSTFR).mp4", files[0].name
+        streams = ffmpeg.probe(files[0])["streams"]
+        audio = [x for x in streams if x["codec_type"] == "audio"]
+        subs = [x for x in streams if x["codec_type"] == "subtitle"]
+        assert len(audio) == 1 and audio[0]["codec_name"] == pr.video.audio_codec, audio
+        assert len(subs) == 1 and subs[0].get("disposition", {}).get("default") == 1, subs
+        srt = next(f for f in files if f.name.endswith(".fr.srt")).read_text(encoding="utf-8")
+        colors = {p.color.upper() for p in pr.people}
+        assert all(f'<font color="{c}">' in srt for c in colors), srt[:300]
+        return f"{len(pr.lines)} répliques, {len(colors)} couleurs, {files[0].name}"
+
     @check("voix Windows (SAPI)", critical=False)
     def _():
         from .core.engines.sapi import SapiEngine

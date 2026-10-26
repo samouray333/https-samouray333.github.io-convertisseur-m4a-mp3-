@@ -135,6 +135,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "makensis a échoué" }
           Get-ChildItem dist\*.exe | Format-Table Name, Length
 
+      - name: Empreinte SHA-256 de l'installateur (vérifiée par la mise à jour intégrée)
+        shell: pwsh
+        working-directory: doublys-app/dist
+        run: |
+          Get-ChildItem Doublys-Setup-*.exe | ForEach-Object {
+            "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLower())  $($_.Name)" |
+              Out-File -Encoding ascii "$($_.FullName).sha256"
+          }
+          Get-Content *.sha256
+
       - name: Test de l'installateur (installation silencieuse, lancement, désinstallation)
         shell: pwsh
         env:
@@ -171,7 +181,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Doublys-Setup-${{ steps.ver.outputs.version }}
-          path: doublys-app/dist/Doublys-Setup-*.exe
+          path: |
+            doublys-app/dist/Doublys-Setup-*.exe
+            doublys-app/dist/Doublys-Setup-*.exe.sha256
           if-no-files-found: error
 
       - name: Version portable (artefact)
@@ -196,6 +208,7 @@ jobs:
           name: Doublys ${{ steps.ver.outputs.version }}
           files: |
             doublys-app/dist/Doublys-Setup-*.exe
+            doublys-app/dist/Doublys-Setup-*.exe.sha256
             doublys-app/dist/Doublys-Portable-*.zip
             doublys-app/dist/Doublys-Source-*.zip
           body: |

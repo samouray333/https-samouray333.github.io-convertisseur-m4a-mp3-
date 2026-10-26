@@ -79,6 +79,16 @@ Double-cliquez sur le numéro d'une réplique (ou bouton **Aperçu**) : l'image 
 Doublage, synchronisée avec le son français, avec le sous-titre de la réplique. Clic droit → « Ouvrir 20 s dans le
 lecteur de Windows » pour un extrait vidéo complet.
 
+### Sous-titres seuls (VOSTFR)
+
+Page Doublage, liste **Résultat** → « Sous-titres français seulement » : Doublys transcrit, reconnaît les personnes
+et traduit, mais ne crée aucune voix française (beaucoup plus rapide). L'export donne `<titre> (VOSTFR).mp4` avec le
+son d'origine et les sous-titres français affichés par défaut, plus les fichiers `.srt`.
+
+**Une couleur par personne** : bouton **Couleur** sur chaque carte de la page Personnes. Les couleurs sont gardées
+dans les `.srt` (VLC, MPC-HC, mpv), dans la piste intégrée et dans les sous-titres incrustés ; l'option se coupe dans
+la page Export (« Une couleur par personne »). Elle vaut aussi pour la VF doublée.
+
 ### Modes de voix (page Personnes)
 
 | Mode | Hors ligne | Remarques |
@@ -121,7 +131,8 @@ Sur un portable sans carte graphique, comptez quelques minutes de calcul par min
 3. Tableau des répliques : début, durée, personne, anglais, **français modifiable** (double-clic), calage, état.
    Boutons : écouter VO / VF / mixé, aperçu vidéo (20 s dans le lecteur de Windows), retraduire, raccourcir,
    refaire la voix, fusionner, couper, supprimer ; clic droit → « Attribuer à » une autre personne.
-4. **Personnes** → nom, extrait (écouter, autre extrait, fichier), mode de voix, voix de base, **Essai**.
+4. **Personnes** → nom, couleur des sous-titres, extrait (écouter, autre extrait, fichier), mode de voix, voix de
+   base, **Essai**.
 5. **Export** → MP4/MKV, pistes, sous-titres, piste VF seule, aperçu rapide.
 
 ### Fichiers d'un projet
