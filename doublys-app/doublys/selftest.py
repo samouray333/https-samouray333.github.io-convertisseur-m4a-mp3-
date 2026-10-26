@@ -317,8 +317,8 @@ def run_selftest(report_path: Path) -> int:
         pr.export.container = "mkv"
         pr.export.audio_only = ""
         files = pipeline.export_files(pr, pipeline.Job(), out_dir=work / "mkv")
-        kinds = [s["codec_type"] for s in ffmpeg.probe(files[0])["streams"]]
-        assert files[0].suffix == ".mkv" and kinds.count("subtitle") == 2, kinds
+        subs = [s["codec_name"] for s in ffmpeg.probe(files[0])["streams"] if s["codec_type"] == "subtitle"]
+        assert files[0].suffix == ".mkv" and subs == ["ass", "ass"], subs  # pistes ASS stylées
         prev = pipeline.export_files(pr, pipeline.Job(), preview=True)
         assert prev[0].exists() and ffmpeg.probe_duration(prev[0]) > DURATION - 1
         pr.export.container = "mp4"

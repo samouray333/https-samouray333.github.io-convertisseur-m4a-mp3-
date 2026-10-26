@@ -61,12 +61,12 @@ class ExportPage(Page):
         self.t_srt = ToggleSwitch("Fichiers .srt à côté de la vidéo (français et langue d'origine)")
         self.t_burn = ToggleSwitch("Incruster les sous-titres français dans l'image (réencode la vidéo : plus long)")
         self.t_colors = ToggleSwitch("Une couleur par personne (couleurs choisies dans la page Personnes)")
-        for t in (self.t_sfr, self.t_sen, self.t_srt, self.t_burn, self.t_colors):
+        self.t_ass = ToggleSwitch("Sous-titres ASS stylés (police, contour et couleurs garantis) : piste ASS dans "
+                                  "les MKV et incrustation")
+        for t in (self.t_sfr, self.t_sen, self.t_srt, self.t_burn, self.t_colors, self.t_ass):
             t.toggled.connect(self._save)
             sub.add(t)
-        self.colors_info = label("Les couleurs s'affichent dans VLC, MPC-HC, mpv et dans les sous-titres incrustés ; "
-                                 "certains lecteurs (TV, Films et TV de Windows) affichent tout en blanc.", "Hint",
-                                 wrap=True)
+        self.colors_info = label("", "Hint", wrap=True)
         sub.add(self.colors_info)
         self.enc_info = label("", "Hint", wrap=True)
         sub.add(self.enc_info)
@@ -145,8 +145,10 @@ class ExportPage(Page):
         self.t_srt.setChecked(o.srt_files)
         self.t_burn.setChecked(o.burn_subtitles)
         self.t_colors.setChecked(o.subtitle_colors)
+        self.t_ass.setChecked(o.ass_subtitles)
         self.audio_only.setCurrentIndex(max(0, self.audio_only.findData(o.audio_only)))
         self._loading = False
+        self._ass_hint()
 
     def _save(self, *_args) -> None:
         pr = self.ctx.project
@@ -163,8 +165,23 @@ class ExportPage(Page):
         o.srt_files = self.t_srt.isChecked()
         o.burn_subtitles = self.t_burn.isChecked()
         o.subtitle_colors = self.t_colors.isChecked()
+        o.ass_subtitles = self.t_ass.isChecked()
         o.audio_only = self.audio_only.currentData() or ""
+        self._ass_hint()
         self.ctx.mark_dirty()
+
+    def _ass_hint(self) -> None:
+        if self.t_ass.isChecked() and self.container.currentData() == "mkv":
+            text = ("MKV + ASS : la piste de sous-titres garde police, contour, couleurs et nom de chaque personne "
+                    "(VLC, MPC-HC, mpv, Kodi, Plex).")
+        elif self.t_ass.isChecked():
+            text = ("Le MP4 n'accepte que des sous-titres simples : choisissez MKV pour une piste ASS, ou incrustez "
+                    "les sous-titres (le style ASS est alors gravé dans l'image). En MP4, certains lecteurs affichent "
+                    "les couleurs en blanc.")
+        else:
+            text = ("Sous-titres simples : couleurs lues par VLC, MPC-HC et mpv ; certains lecteurs (TV, Films et TV "
+                    "de Windows) affichent tout en blanc.")
+        self.colors_info.setText(text)
 
     def _pick_dir(self) -> None:
         pr = self.ctx.project

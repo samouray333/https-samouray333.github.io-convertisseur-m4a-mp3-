@@ -601,6 +601,16 @@ def export_files(project: Project, job: Job, out_dir: Path | None = None, previe
                                          colors)
         if o.srt_files:
             files += [p for p in (srt_fr, srt_en) if p is not None]
+        # ASS stylé : piste ASS dans les MKV (le MP4 n'accepte que des sous-titres simples) et incrustation
+        if o.ass_subtitles and (o.container == "mkv" or o.burn_subtitles):
+            v, wd = project.video, project_io.work_dir(project)
+            if srt_fr is not None:
+                srt_fr = subtitles.write_ass(project.lines, project.people, wd / "sous-titres.fr.ass", "fr", colors,
+                                             v.width, v.height, project.display_title)
+            if srt_en is not None and o.container == "mkv":
+                srt_en = subtitles.write_ass(project.lines, project.people,
+                                             wd / f"sous-titres.{project.settings.language}.ass", "orig", colors,
+                                             v.width, v.height, project.display_title)
     ext = ".mkv" if o.container == "mkv" else ".mp4"
     suffix = "VOSTFR" if vostfr else "VF"
     target = (project_io.work_dir(project) / f"apercu{ext}") if preview else out_dir / f"{base} ({suffix}){ext}"

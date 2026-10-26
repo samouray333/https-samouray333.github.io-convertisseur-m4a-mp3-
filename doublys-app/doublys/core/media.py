@@ -67,8 +67,10 @@ def encoder_args(enc: str, height: int = 1080, fast: bool = False) -> list[str]:
     return ["-c:v", enc, "-b:v", bitrate, "-pix_fmt", "yuv420p"]
 
 
-def _subtitle_filter(srt_name: str) -> str:
-    return f"subtitles={srt_name}:force_style='Fontsize=22'"
+def _subtitle_filter(name: str) -> str:
+    if name.endswith(".ass"):  # styles du fichier ASS gardés tels quels
+        return f"subtitles={name}"
+    return f"subtitles={name}:force_style='Fontsize=22'"
 
 
 def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOptions, duration: float = 0.0,
@@ -104,10 +106,10 @@ def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOpti
         args += ["-map_metadata", "0", "-map_chapters", "0"]
         video_args = ["-c:v", "copy"]
         if burn:
-            local = Path(td) / "fr.srt"
+            local = Path(td) / f"fr{srt_fr.suffix.lower()}"
             shutil.copyfile(srt_fr, local)
             cwd = td
-            video_args = ["-vf", _subtitle_filter("fr.srt"), *encoder_args(video_encoder(), height)]
+            video_args = ["-vf", _subtitle_filter(local.name), *encoder_args(video_encoder(), height)]
         copy_ok = container == "mkv" or original_codec in ("aac", "mp3", "ac3", "eac3")
         if vostfr:  # son d'origine copié tel quel (pas de normalisation : rien n'est mixé)
             a = (["-c:a:0", "copy"] if copy_ok else ["-c:a:0", "aac", "-b:a:0", opts.audio_bitrate or "192k"])
@@ -124,8 +126,9 @@ def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOpti
             a += ["-metadata:s:a:1", f"language={iso}", "-metadata:s:a:1", f"title={orig_name} (VO)", "-disposition:a:1",
                   "0"]
         s = []
-        for k, (_p, lang) in enumerate(subs):
-            s += [f"-c:s:{k}", "mov_text" if container == "mp4" else "srt", f"-metadata:s:s:{k}",
+        for k, (sp, lang) in enumerate(subs):
+            codec = "mov_text" if container == "mp4" else ("ass" if sp.suffix.lower() == ".ass" else "srt")
+            s += [f"-c:s:{k}", codec, f"-metadata:s:s:{k}",
                   f"language={lang}", f"-metadata:s:s:{k}",
                   f"title={'Français' if lang == 'fre' else orig_name}", f"-disposition:s:{k}",
                   "default" if vostfr and lang == "fre" else "0"]

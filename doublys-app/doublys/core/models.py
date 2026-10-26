@@ -264,6 +264,7 @@ class ExportOptions:
     srt_files: bool = True
     burn_subtitles: bool = False
     subtitle_colors: bool = True  # une couleur par personne (choisie dans la page Personnes)
+    ass_subtitles: bool = True  # sous-titres ASS stylés : piste ASS dans les MKV et incrustation
     audio_only: str = ""  # "" | wav | mp3 : piste VF seule
     output_dir: str = ""
 

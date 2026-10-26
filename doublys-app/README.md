@@ -89,6 +89,10 @@ son d'origine et les sous-titres français affichés par défaut, plus les fichi
 dans les `.srt` (VLC, MPC-HC, mpv), dans la piste intégrée et dans les sous-titres incrustés ; l'option se coupe dans
 la page Export (« Une couleur par personne »). Elle vaut aussi pour la VF doublée.
 
+**Piste ASS stylée** (option « Sous-titres ASS stylés », activée par défaut) : en MKV, les sous-titres intégrés sont
+au format ASS, celui des séries et animés : police, contour, couleur et nom de chaque personne gardés (VLC, MPC-HC,
+mpv, Kodi, Plex). Les sous-titres incrustés utilisent le même style. Le MP4 n'accepte que des sous-titres simples.
+
 ### Modes de voix (page Personnes)
 
 | Mode | Hors ligne | Remarques |
