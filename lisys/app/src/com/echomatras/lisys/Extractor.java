@@ -51,8 +51,13 @@ public final class Extractor {
     }
 
     /** Erreur affichée telle quelle à l'utilisateur. */
-    public static final class UserError extends Exception {
+    public static class UserError extends Exception {
         public UserError(String msg) { super(msg); }
+    }
+
+    /** PDF sans texte (document scanné) : on peut le lire avec la reconnaissance de texte. */
+    public static final class NeedsOcr extends UserError {
+        public NeedsOcr(String msg) { super(msg); }
     }
 
     public interface Progress {
@@ -179,10 +184,29 @@ public final class Extractor {
             doc.close();
         }
         if (countChars(r.paragraphs) < 20) {
-            throw new UserError("Ce PDF ne contient pas de texte lisible (c'est probablement un document "
-                    + "scanné, donc une image).");
+            throw new NeedsOcr("Ce PDF ne contient pas de texte : c'est un document scanné (des images).");
         }
         return r;
+    }
+
+    /** Texte reconnu sur une photo : lignes recollées en paragraphes, mots coupés réparés. */
+    public static List<String> ocrParagraphs(String text) {
+        List<String> blocks = pdfBlocks(text.replace("\r", ""));
+        List<String> out = new ArrayList<String>();
+        for (String b : blocks) {
+            // Tesseract laisse parfois une ligne vide au milieu d'une phrase : on recolle.
+            if (!out.isEmpty()) {
+                String last = out.get(out.size() - 1);
+                if (!endsSentence(last) && b.length() > 0 && Character.isLowerCase(b.charAt(0))) {
+                    out.set(out.size() - 1, joinLines(last, b));
+                    continue;
+                }
+            }
+            out.add(b);
+        }
+        List<String> clean = new ArrayList<String>();
+        for (String p : out) addPara(clean, p);
+        return clean;
     }
 
     private static boolean endsSentence(String s) {

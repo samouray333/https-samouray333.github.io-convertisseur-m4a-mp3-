@@ -99,6 +99,10 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                     if ("bubble".equals(key) || "bubbleSize".equals(key) || "bubbleColor".equals(key)) {
                         hideBubble();
                         if (Prefs.bubble(ScreenReaderService.this)) showBubble();
+                    } else if ("volumeKeys".equals(key)) {
+                        applyKeyFilter();
+                    } else if (key != null && key.startsWith("caption")) {
+                        hideCaption(); // recréé avec les nouveaux réglages à la prochaine phrase
                     }
                 }
             };
@@ -112,6 +116,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         bound = bindService(new Intent(this, ReaderService.class), conn, Context.BIND_AUTO_CREATE);
         getSharedPreferences("reglages", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefsListener);
         if (Prefs.bubble(this)) showBubble();
+        applyKeyFilter();
         // Bouton d'accessibilité d'Android (barre de navigation ou geste) : même action que la bulle.
         try {
             buttonCallback = new AccessibilityButtonController.AccessibilityButtonCallback() {
@@ -124,7 +129,9 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        // Rien à faire en continu : on ne lit l'écran que quand on appuie sur le bouton.
+        // On ne lit l'écran que quand on appuie sur le bouton ; seules les notifications de messages
+        // sont suivies, et seulement si l'option « Annoncer les messages » est activée.
+        if (event.getEventType() == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) onNotification(event);
     }
 
     @Override
@@ -136,6 +143,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     public void onDestroy() {
         getSharedPreferences("reglages", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefsListener);
         stopFingerMode(false);
+        hideCaption();
         hideBubble();
         try {
             if (buttonCallback != null) getAccessibilityButtonController().unregisterAccessibilityButtonCallback(buttonCallback);
@@ -599,7 +607,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         fingerRoot.addView(fingerLayer, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         final TextView hint = new TextView(this);
-        hint.setText("✋ Glisse ton doigt sur le texte\nTouche la bulle pour quitter");
+        hint.setText("✋ Glisse ton doigt sur le texte\nDeux doigts pour faire défiler\nTouche la bulle pour quitter");
         hint.setTextColor(0xFF000000);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         hint.setTypeface(Typeface.DEFAULT_BOLD);
@@ -618,6 +626,8 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         fingerRoot.setOnTouchListener(new View.OnTouchListener() {
             @Override public boolean onTouch(View v, MotionEvent e) {
                 hint.setVisibility(View.GONE);
+                lastTouch = SystemClock.uptimeMillis();
+                if (handleTwoFingers(e)) return true;
                 int a = e.getActionMasked();
                 if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_MOVE) {
                     lastTouch = SystemClock.uptimeMillis();
@@ -837,17 +847,344 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         }
     }
 
+    // ------------------------------------------------------------------ bandeau en très gros texte (option)
+
+    private TextView caption;
+    private WindowManager.LayoutParams captionLp;
+    private final Runnable hideCaptionTask = new Runnable() {
+        @Override public void run() { hideCaption(); }
+    };
+
+    /** Le bandeau s'affiche quand Lisys lit hors de son écran de lecture (bulle, arrière-plan). */
+    private boolean captionWanted() {
+        return Prefs.caption(this) && reader != null && reader.isPlaying()
+                && (isScreenDoc() || !ReaderActivity.visible);
+    }
+
+    private void updateCaption(int para, int sent, int wordStart, int wordEnd) {
+        if (!captionWanted()) {
+            if (caption != null && (reader == null || !reader.isPlaying())) {
+                main.removeCallbacks(hideCaptionTask);
+                main.postDelayed(hideCaptionTask, 1500);
+            } else if (caption != null && !Prefs.caption(this)) {
+                hideCaption();
+            }
+            return;
+        }
+        main.removeCallbacks(hideCaptionTask);
+        List<String> paras = reader.paragraphs();
+        if (para < 0 || para >= paras.size()) return;
+        List<int[]> ss = reader.sentences(para);
+        if (sent < 0 || sent >= ss.size()) return;
+        int[] b = ss.get(sent);
+        String p = paras.get(para);
+        String sentence = p.substring(b[0], b[1]);
+        int lead = sentence.length() - sentence.replaceAll("^\\s+", "").length();
+        sentence = sentence.trim();
+        if (caption == null) showCaption();
+        if (caption == null) return;
+        int[] col = Ui.CAPTION_COLORS[Math.max(0, Math.min(Prefs.captionColors(this), Ui.CAPTION_COLORS.length - 1))];
+        android.text.SpannableString s = new android.text.SpannableString(sentence);
+        int ws = wordStart - b[0] - lead, we = wordEnd - b[0] - lead;
+        if (wordStart >= 0 && ws >= 0 && we <= sentence.length() && we > ws) {
+            s.setSpan(new android.text.style.BackgroundColorSpan(col[2]), ws, we, 0);
+            s.setSpan(new android.text.style.ForegroundColorSpan(col[3]), ws, we, 0);
+        }
+        caption.setText(s);
+        // Garde le mot lu visible si la phrase dépasse la hauteur du bandeau.
+        final int target = Math.max(0, ws);
+        caption.post(new Runnable() {
+            @Override public void run() {
+                if (caption == null || caption.getLayout() == null) return;
+                android.text.Layout l = caption.getLayout();
+                int line = l.getLineForOffset(Math.min(target, Math.max(0, caption.length() - 1)));
+                int y = l.getLineTop(line);
+                int h = caption.getHeight() - caption.getPaddingTop() - caption.getPaddingBottom();
+                int scroll = caption.getScrollY();
+                if (y < scroll || l.getLineBottom(line) > scroll + h) caption.scrollTo(0, Math.max(0, y - h / 3));
+                else if (target == 0) caption.scrollTo(0, 0);
+            }
+        });
+    }
+
+    private void showCaption() {
+        if (wm == null) return;
+        int[] col = Ui.CAPTION_COLORS[Math.max(0, Math.min(Prefs.captionColors(this), Ui.CAPTION_COLORS.length - 1))];
+        caption = new TextView(this);
+        caption.setTextSize(TypedValue.COMPLEX_UNIT_SP, Prefs.captionSize(this));
+        caption.setTypeface(Typeface.DEFAULT_BOLD);
+        caption.setTextColor(col[1]);
+        caption.setLineSpacing(0, 1.1f);
+        int p = Ui.dp(this, 16);
+        caption.setPadding(p, p, p, p);
+        GradientDrawable d = Ui.rounded(col[0], Ui.dp(this, 14));
+        d.setStroke(Ui.dp(this, 3), col[1]);
+        caption.setBackground(d);
+        caption.setMaxHeight(getResources().getDisplayMetrics().heightPixels * 2 / 5);
+        caption.setVerticalScrollBarEnabled(false);
+        caption.setMovementMethod(new android.text.method.ScrollingMovementMethod());
+        captionLp = new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+        captionLp.gravity = (Prefs.captionTop(this) ? Gravity.TOP : Gravity.BOTTOM) | Gravity.CENTER_HORIZONTAL;
+        captionLp.x = 0;
+        captionLp.y = Prefs.captionTop(this) ? Ui.dp(this, 32) : Ui.dp(this, 56);
+        caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        try {
+            wm.addView(caption, captionLp);
+        } catch (Exception e) {
+            caption = null;
+            return;
+        }
+        if (bubble != null) bringBubbleToFront();
+    }
+
+    private void hideCaption() {
+        main.removeCallbacks(hideCaptionTask);
+        if (caption != null) {
+            try { wm.removeView(caption); } catch (Exception ignored) {}
+            caption = null;
+        }
+    }
+
+    // ------------------------------------------------------------------ boutons de volume (option)
+
+    private long volDownAt;
+    private boolean volLongDone;
+    private boolean volSinglePending;
+    private final Runnable volLong = new Runnable() {
+        @Override public void run() {
+            volLongDone = true;
+            if (fingerRoot != null) stopFingerMode(true);
+            else startFingerMode();
+        }
+    };
+    private final Runnable volSingle = new Runnable() {
+        @Override public void run() {
+            // Un seul appui : c'était vraiment pour baisser le son.
+            volSinglePending = false;
+            android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+            am.adjustSuggestedStreamVolume(android.media.AudioManager.ADJUST_LOWER,
+                    android.media.AudioManager.USE_DEFAULT_STREAM_TYPE, android.media.AudioManager.FLAG_SHOW_UI);
+        }
+    };
+
+    /** Active ou non la réception des touches, selon l'option (sinon Android ne nous les envoie pas). */
+    private void applyKeyFilter() {
+        try {
+            android.accessibilityservice.AccessibilityServiceInfo info = getServiceInfo();
+            if (info == null) return;
+            int f = android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+            if (Prefs.volumeKeys(this)) info.flags |= f;
+            else info.flags &= ~f;
+            setServiceInfo(info);
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    protected boolean onKeyEvent(android.view.KeyEvent e) {
+        if (!Prefs.volumeKeys(this) || e.getKeyCode() != android.view.KeyEvent.KEYCODE_VOLUME_DOWN) return false;
+        android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am.getMode() != android.media.AudioManager.MODE_NORMAL) return false; // appel en cours : on ne touche à rien
+        if (e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+            if (e.getRepeatCount() == 0) {
+                volDownAt = SystemClock.uptimeMillis();
+                volLongDone = false;
+                main.postDelayed(volLong, 800);
+            }
+            return true;
+        }
+        if (e.getAction() == android.view.KeyEvent.ACTION_UP) {
+            main.removeCallbacks(volLong);
+            if (volLongDone) return true;
+            if (volSinglePending) {
+                // Double appui : lire l'écran (ou arrêter / quitter le mode doigt).
+                main.removeCallbacks(volSingle);
+                volSinglePending = false;
+                onBubbleTap();
+            } else {
+                volSinglePending = true;
+                main.postDelayed(volSingle, 400);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------ annonce des messages (option)
+
+    private static final String[] MESSAGING_APPS = {
+            "com.whatsapp", "com.whatsapp.w4b", "com.facebook.orca", "org.telegram.messenger",
+            "org.thoughtcrime.securesms", "com.google.android.apps.messaging", "com.samsung.android.messaging",
+            "com.android.mms", "com.google.android.gm", "com.microsoft.office.outlook",
+            "com.samsung.android.email.provider", "com.android.email", "com.instagram.android",
+            "com.snapchat.android", "com.viber.voip", "com.skype.raider", "com.discord"};
+    private String lastAnnounceKey;
+    private long lastAnnounceAt;
+
+    private void onNotification(AccessibilityEvent event) {
+        if (!Prefs.announce(this) || reader == null || !reader.isTtsReady()) return;
+        Parcelable data = event.getParcelableData();
+        if (!(data instanceof android.app.Notification)) return;
+        android.app.Notification n = (android.app.Notification) data;
+        String pkg = event.getPackageName() == null ? "" : event.getPackageName().toString();
+        if (pkg.equals(getPackageName())) return;
+        if ((n.flags & android.app.Notification.FLAG_GROUP_SUMMARY) != 0) return;
+        if ((n.flags & android.app.Notification.FLAG_ONGOING_EVENT) != 0) return;
+        boolean messaging = android.app.Notification.CATEGORY_MESSAGE.equals(n.category)
+                || android.app.Notification.CATEGORY_EMAIL.equals(n.category)
+                || (n.extras != null && n.extras.containsKey(android.app.Notification.EXTRA_MESSAGES));
+        for (String m : MESSAGING_APPS) if (m.equals(pkg)) messaging = true;
+        if (!messaging) return;
+        // Pas pendant un appel, ni en mode Ne pas déranger, ni pendant une lecture.
+        android.media.AudioManager am = (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am.getMode() != android.media.AudioManager.MODE_NORMAL) return;
+        android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm.getCurrentInterruptionFilter() > android.app.NotificationManager.INTERRUPTION_FILTER_ALL) return;
+        if (reader.isPlaying()) return;
+
+        CharSequence title = n.extras == null ? null : n.extras.getCharSequence(android.app.Notification.EXTRA_TITLE);
+        CharSequence text = n.extras == null ? null : n.extras.getCharSequence(android.app.Notification.EXTRA_TEXT);
+        if (n.extras != null) {
+            Parcelable[] msgs = n.extras.getParcelableArray(android.app.Notification.EXTRA_MESSAGES);
+            if (msgs != null && msgs.length > 0 && msgs[msgs.length - 1] instanceof Bundle) {
+                Bundle last = (Bundle) msgs[msgs.length - 1];
+                CharSequence t = last.getCharSequence("text");
+                if (t != null) text = t;
+                CharSequence who = last.getCharSequence("sender");
+                if (who != null && who.length() > 0) title = who;
+            }
+        }
+        if (title == null && text == null) return;
+        String key = pkg + "|" + title + "|" + text;
+        long now = SystemClock.uptimeMillis();
+        if (key.equals(lastAnnounceKey) && now - lastAnnounceAt < 30000) return;
+        lastAnnounceKey = key;
+        lastAnnounceAt = now;
+        String app = appLabel(pkg);
+        StringBuilder sb = new StringBuilder("Nouveau message");
+        if (title != null && title.length() > 0) sb.append(" de ").append(title);
+        if (app != null) sb.append(", ").append(app);
+        if (Prefs.announceContent(this) && text != null && text.length() > 0) {
+            String t = text.toString().replaceAll("\\s+", " ").trim();
+            if (t.length() > 300) t = t.substring(0, 300) + "…";
+            sb.append(". ").append(t);
+        }
+        try {
+            reader.tts().speak(sb.toString(), TextToSpeech.QUEUE_ADD, null, "annonce");
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String appLabel(String pkg) {
+        try {
+            PackageManager pm = getPackageManager();
+            return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------------ défilement à deux doigts (mode doigt)
+
+    private float twoFingerY = Float.NaN;
+    private boolean twoFingers;
+
+    /** Renvoie true si l'événement a été traité comme un geste à deux doigts. */
+    private boolean handleTwoFingers(MotionEvent e) {
+        int a = e.getActionMasked();
+        if (a == MotionEvent.ACTION_DOWN) { twoFingers = false; twoFingerY = Float.NaN; return false; }
+        if (e.getPointerCount() >= 2) {
+            float y = (e.getY(0) + e.getY(1)) / 2f;
+            if (!twoFingers || Float.isNaN(twoFingerY)) {
+                twoFingers = true;
+                twoFingerY = y;
+                return true;
+            }
+            float dy = y - twoFingerY;
+            if (Math.abs(dy) > Ui.dp(this, 80)) {
+                twoFingerY = y;
+                scrollScreen(dy < 0);
+            }
+            return true;
+        }
+        if (a == MotionEvent.ACTION_UP) { boolean was = twoFingers; twoFingers = false; twoFingerY = Float.NaN; return was; }
+        return twoFingers; // un doigt levé sur deux : on attend que tout soit relâché
+    }
+
+    /** Fait défiler la page sous le texte (doigts vers le haut = page suivante), puis relit l'écran. */
+    private void scrollScreen(boolean forward) {
+        AccessibilityNodeInfo target = null;
+        if (fingerItems != null && lastPara >= 0 && lastPara < fingerItems.size()) {
+            AccessibilityNodeInfo n = fingerItems.get(lastPara).node;
+            while (n != null && target == null) {
+                if (n.isScrollable()) target = n;
+                else n = n.getParent();
+            }
+        }
+        if (target == null) target = findScrollable(appRoot(), 0);
+        if (target == null) {
+            announce("Rien à faire défiler.");
+            return;
+        }
+        if (reader != null && reader.isPlaying()) reader.pause();
+        boolean ok = target.performAction(forward ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD);
+        if (fingerRoot != null) fingerRoot.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+        if (!ok) {
+            announce(forward ? "Fin de la page." : "Début de la page.");
+            return;
+        }
+        if (fingerLayer != null) fingerLayer.setRects(new ArrayList<RectF>());
+        // Après le défilement, on relit ce qui est affiché pour suivre le nouveau texte.
+        main.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (fingerRoot == null) return;
+                final String app = currentAppLabel();
+                collectAsync(new ItemsCallback() {
+                    @Override public void done(List<Item> items) {
+                        if (fingerRoot == null || items.isEmpty()) return;
+                        fingerItems = items;
+                        fingerDocId = saveDoc(items, app, 0);
+                        reader.load(fingerDocId, true);
+                        lastPara = lastSent = -1;
+                    }
+                });
+            }
+        }, 600);
+    }
+
+    private AccessibilityNodeInfo findScrollable(AccessibilityNodeInfo n, int depth) {
+        if (n == null || depth > 60) return null;
+        if (n.isScrollable() && n.isVisibleToUser()) return n;
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo r = findScrollable(n.getChild(i), depth + 1);
+            if (r != null) return r;
+        }
+        return null;
+    }
+
     // ------------------------------------------------------------------ rappels du lecteur
 
     @Override public void onPosition(int para, int sentence) {
+        updateCaption(para, sentence, -1, -1);
         // En mode doigt, le cadre jaune suit la lecture quand elle continue après la phrase touchée.
         if (fingerRoot != null && isScreenDoc()) highlight(para, sentence);
     }
-    @Override public void onWord(int para, int start, int end) {}
-    @Override public void onState(boolean playing) { updateBubbleState(); }
+    @Override public void onWord(int para, int start, int end) {
+        if (reader != null && caption != null) updateCaption(para, reader.sentence(), start, end);
+    }
+    @Override public void onState(boolean playing) {
+        updateBubbleState();
+        if (reader != null) updateCaption(reader.para(), reader.sentence(), -1, -1);
+    }
     @Override public void onTtsReady(boolean ok, String error) {
         if (!ok && error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show();
     }
-    @Override public void onFinished() { updateBubbleState(); }
+    @Override public void onFinished() { updateBubbleState(); hideCaption(); }
     @Override public void onDocumentChanged() {}
 }

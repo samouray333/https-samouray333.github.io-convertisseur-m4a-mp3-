@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.3 (versionCode 4)
+- Version : 1.4 (versionCode 5)
 - Package : `com.echomatras.lisys`
 - Android 8.0 (API 26) minimum, cible Android 14 (API 34)
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -15,10 +15,20 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - Navigateur intégré pour les sites qui demandent JavaScript ou une connexion. Le bouton « Lire cette page » lit toute la page, ou seulement la sélection.
 - Texte copié dans le presse-papiers, ou saisi à la main
 
+**Lire le papier (photo) et les documents scannés (nouveau en 1.4)**
+- Bouton « Lire une photo » : on photographie un courrier, une notice, une étiquette, et Lisys lit le texte. Un appui long sur le bouton permet de choisir une image dans la galerie. On peut aussi partager une image vers Lisys.
+- Les PDF scannés (des images) sont proposés à la reconnaissance de texte, page par page.
+- La reconnaissance se fait sur le téléphone, sans internet : Tesseract compilé en WebAssembly (`app/assets/ocr`, licence Apache 2.0, paquet npm tesseract-wasm 0.11), avec le modèle français `fra.traineddata` (tessdata_best_int). La photo est redressée automatiquement.
+
 **Bouton flottant : lire n'importe quelle appli ou site**
 - Un bouton 🔊 reste par-dessus toutes les applis (Chrome, Facebook, messages, mails…).
 - **Un appui** : Lisys lit à voix haute le texte affiché, sans quitter l'appli. Sur une page web, la lecture continue sur la suite de la page. Un deuxième appui arrête.
 - **Appui long** (la bulle devient ✋) : **lecture au doigt**. On glisse le doigt sur le texte et Lisys lit la phrase qui est dessous, entourée d'un cadre jaune. Quand on lève le doigt, la lecture continue. Touche la bulle pour quitter (ou arrêt automatique après 90 s sans rien).
+- En mode doigt, **deux doigts** vers le haut ou le bas font défiler la page, et Lisys relit l'écran.
+- Options à activer dans Réglages du bouton flottant (toutes désactivées par défaut) :
+  - **Bandeau en très gros texte** : quand Lisys lit hors de son écran (bulle, arrière-plan), la phrase lue s'affiche en très gros, avec le mot prononcé surligné. Taille, couleurs et position (haut ou bas) réglables.
+  - **Boutons de volume** : deux appuis rapides sur volume bas lisent l'écran, et un appui long (1 s) lance la lecture au doigt. Un seul appui baisse le son. Rien ne change pendant un appel.
+  - **Annonce des messages reçus** (SMS, WhatsApp, Messenger, Telegram, Signal, mails…) : « Nouveau message de Paul, WhatsApp », et le texte si on le souhaite. Rien n'est annoncé pendant un appel, en mode Ne pas déranger ou pendant une lecture.
 - **Bulle adaptée aux malvoyants** : 5 tailles (de 56 à 150 dp), 8 couleurs bien contrastées (jaune, noir sur jaune…), double bordure visible sur tous les fonds, vibration, annonces vocales (« Lecture au doigt »…) et actions TalkBack. Réglages : accueil > bouton flottant.
 - On peut le déplacer en le faisant glisser (il se range contre le bord). Le bouton d'accessibilité d'Android fait la même chose.
 - Pour l'activer : bouton « Lire les autres applis et sites » sur l'accueil, puis Paramètres > Accessibilité > « Lisys : bouton de lecture ». Sur Android 13 et plus, avec une APK installée depuis un fichier, il faut d'abord aller dans Infos appli > ⋮ > « Autoriser les paramètres restreints ».
@@ -61,6 +71,7 @@ Tes fichiers d'origine ne sont jamais modifiés.
 | `ReaderService.java` | Moteur de lecture en arrière-plan (synthèse vocale, notification, casque, focus audio) |
 | `ExportService.java` + `AacEncoder.java` | Création du fichier audio `.m4a` |
 | `WebActivity.java` | Navigateur intégré |
+| `OcrActivity.java`, `OcrEngine.java`, `PhotoProvider.java`, `assets/ocr/` | Lecture des photos et des PDF scannés (reconnaissance de texte hors ligne) |
 | `ScreenReaderService.java` + `res/xml/accessibility_config.xml` | Bouton flottant (service d'accessibilité) qui lit l'écran des autres applis |
 | `Extractor.java` | Extraction du texte : PDF, DOCX, ODT, EPUB, RTF, HTML, TXT |
 | `WebExtractor.java` | Téléchargement d'une page web et extraction de l'article |
@@ -98,6 +109,6 @@ Pour une nouvelle version : augmente `android:versionCode` (+1) et `android:vers
 - Mails et pages web (WebView) : Lisys réessaie automatiquement quelques fois si le contenu n'est pas encore prêt. En cas de souci, Réglages du bouton flottant > « Rapport de la dernière lecture » donne ce que Lisys a vu (à copier pour le dépannage).
 - Le bouton flottant lit le texte que l'appli fournit à Android. Les jeux, les vidéos et certaines applis qui affichent le texte comme une image n'en fournissent pas : il n'y a alors rien à lire.
 
-- Les PDF scannés (des images) ne contiennent pas de texte : il faudrait un module de reconnaissance de texte (OCR), pas encore inclus.
+- Reconnaissance de texte : l'écriture manuscrite est mal reconnue. Il faut une photo nette, à plat et bien éclairée.
 - L'ancien format Word `.doc` n'est pas pris en charge (il faut l'enregistrer en `.docx` ou en PDF).
 - La qualité de la voix dépend du moteur installé sur le téléphone. Les voix Google « haute qualité » se téléchargent dans Paramètres > Synthèse vocale.

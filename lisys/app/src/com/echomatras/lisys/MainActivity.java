@@ -113,6 +113,16 @@ public class MainActivity extends Activity {
         root.addView(open, fullWidth());
         root.addView(space(10));
 
+        Button photo = Ui.bigButton(this, "📷   Lire une photo (courrier, notice…)", pal.button, pal.buttonText);
+        photo.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { openOcr(OcrActivity.MODE_CAMERA, null); }
+        });
+        photo.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View v) { openOcr(OcrActivity.MODE_GALLERY, null); return true; }
+        });
+        root.addView(photo, fullWidth());
+        root.addView(space(10));
+
         Button web = Ui.bigButton(this, "🌐   Lire une page web", pal.button, pal.buttonText);
         web.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { askUrl(); }
@@ -224,11 +234,15 @@ public class MainActivity extends Activity {
         String sizeName = Ui.BUBBLE_SIZE_NAMES[1];
         for (int i = 0; i < Ui.BUBBLE_SIZES.length; i++) if (Ui.BUBBLE_SIZES[i] == size) sizeName = Ui.BUBBLE_SIZE_NAMES[i];
         int color = Math.max(0, Math.min(Prefs.bubbleColor(this), Ui.BUBBLE_COLOR_NAMES.length - 1));
+        String yes = "✅ activé", no = "désactivé";
         String[] items = {
                 "Taille de la bulle : " + sizeName,
                 "Couleur de la bulle : " + Ui.BUBBLE_COLOR_NAMES[color],
-                "Annonces vocales : " + (Prefs.bubbleVoice(this) ? "oui" : "non"),
+                "Annonces vocales de la bulle : " + (Prefs.bubbleVoice(this) ? "oui" : "non"),
                 shown ? "Masquer la bulle" : "Afficher la bulle",
+                "Bandeau en très gros texte : " + (Prefs.caption(this) ? yes : no),
+                "Boutons de volume : " + (Prefs.volumeKeys(this) ? yes : no),
+                "Annoncer les messages reçus : " + (Prefs.announce(this) ? yes : no),
                 "Comment ça marche ?",
                 "Rapport de la dernière lecture (dépannage)",
                 "Désactiver le bouton (réglages Android)"};
@@ -247,13 +261,120 @@ public class MainActivity extends Activity {
                                 Prefs.setBubble(MainActivity.this, !shown);
                                 bubbleSettings();
                                 break;
-                            case 4: bubbleHowTo(); break;
-                            case 5: showReport(); break;
+                            case 4: captionSettings(); break;
+                            case 5: volumeSettings(); break;
+                            case 6: announceSettings(); break;
+                            case 7: bubbleHowTo(); break;
+                            case 8: showReport(); break;
                             default: openAccessibilitySettings();
                         }
                     }
                 })
                 .setNegativeButton("Fermer", null)
+                .show();
+    }
+
+    /** Bandeau : la phrase lue s'affiche en très gros par-dessus les autres applis. */
+    private void captionSettings() {
+        final boolean on = Prefs.caption(this);
+        int size = Prefs.captionSize(this);
+        String sizeName = Ui.BUBBLE_SIZE_NAMES[1];
+        for (int i = 0; i < Ui.CAPTION_SIZES.length; i++) if (Ui.CAPTION_SIZES[i] == size) sizeName = Ui.BUBBLE_SIZE_NAMES[i];
+        int col = Math.max(0, Math.min(Prefs.captionColors(this), Ui.CAPTION_COLOR_NAMES.length - 1));
+        String[] items = {
+                on ? "Désactiver le bandeau" : "Activer le bandeau",
+                "Taille du texte : " + sizeName,
+                "Couleurs : " + Ui.CAPTION_COLOR_NAMES[col],
+                "Position : " + (Prefs.captionTop(this) ? "en haut de l'écran" : "en bas de l'écran")};
+        new AlertDialog.Builder(this)
+                .setTitle("Bandeau en très gros texte")
+                .setMessage(null)
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        final MainActivity a = MainActivity.this;
+                        if (w == 0) { Prefs.setCaption(a, !on); captionSettings(); }
+                        else if (w == 1) {
+                            int cur = 1;
+                            for (int i = 0; i < Ui.CAPTION_SIZES.length; i++) if (Ui.CAPTION_SIZES[i] == Prefs.captionSize(a)) cur = i;
+                            new AlertDialog.Builder(a).setTitle("Taille du texte du bandeau")
+                                    .setSingleChoiceItems(Ui.BUBBLE_SIZE_NAMES, cur, new DialogInterface.OnClickListener() {
+                                        @Override public void onClick(DialogInterface d2, int k) {
+                                            Prefs.setCaptionSize(a, Ui.CAPTION_SIZES[k]);
+                                            d2.dismiss();
+                                            captionSettings();
+                                        }
+                                    }).show();
+                        } else if (w == 2) {
+                            new AlertDialog.Builder(a).setTitle("Couleurs du bandeau")
+                                    .setSingleChoiceItems(Ui.CAPTION_COLOR_NAMES, Prefs.captionColors(a), new DialogInterface.OnClickListener() {
+                                        @Override public void onClick(DialogInterface d2, int k) {
+                                            Prefs.setCaptionColors(a, k);
+                                            d2.dismiss();
+                                            captionSettings();
+                                        }
+                                    }).show();
+                        } else {
+                            Prefs.setCaptionTop(a, !Prefs.captionTop(a));
+                            captionSettings();
+                        }
+                    }
+                })
+                .setNegativeButton("Retour", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
+                })
+                .show();
+        if (!on) {
+            Toast.makeText(this, "Quand la bulle lit un mail ou un site, la phrase lue s'affiche en très gros.",
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void volumeSettings() {
+        final boolean on = Prefs.volumeKeys(this);
+        new AlertDialog.Builder(this)
+                .setTitle("Boutons de volume")
+                .setMessage("Avec cette option, dans n'importe quelle appli :\n\n"
+                        + "• Deux appuis rapides sur VOLUME BAS : Lisys lit l'écran (ou arrête la lecture).\n"
+                        + "• Rester appuyé sur VOLUME BAS (1 seconde) : lecture au doigt (ou la quitter).\n"
+                        + "• Un seul appui baisse le son, comme d'habitude.\n\n"
+                        + "Pendant un appel, les boutons fonctionnent normalement.")
+                .setPositiveButton(on ? "Désactiver" : "Activer", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        Prefs.setVolumeKeys(MainActivity.this, !on);
+                        Toast.makeText(MainActivity.this, on ? "Boutons de volume : désactivé" : "Boutons de volume : activé",
+                                Toast.LENGTH_SHORT).show();
+                        bubbleSettings();
+                    }
+                })
+                .setNegativeButton("Retour", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
+                })
+                .show();
+    }
+
+    private void announceSettings() {
+        final boolean on = Prefs.announce(this);
+        final boolean content = Prefs.announceContent(this);
+        new AlertDialog.Builder(this)
+                .setTitle("Annoncer les messages reçus")
+                .setMessage("Lisys dit à voix haute qui t'écrit (SMS, WhatsApp, Messenger, Telegram, Signal, mails…)"
+                        + (content ? ", puis lit le message." : ".")
+                        + "\n\nRien n'est annoncé pendant un appel, en mode Ne pas déranger, ou pendant une lecture.")
+                .setPositiveButton(on ? "Désactiver" : "Activer", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        Prefs.setAnnounce(MainActivity.this, !on);
+                        bubbleSettings();
+                    }
+                })
+                .setNeutralButton(content ? "Dire seulement qui écrit" : "Lire aussi le message", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        Prefs.setAnnounceContent(MainActivity.this, !content);
+                        announceSettings();
+                    }
+                })
+                .setNegativeButton("Retour", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
+                })
                 .show();
     }
 
@@ -311,7 +432,8 @@ public class MainActivity extends Activity {
                         + "Un deuxième appui arrête.\n\n"
                         + "• Appui long (la bulle devient ✋) : lecture au doigt. Glisse le doigt sur le texte : "
                         + "Lisys lit la phrase qui est sous le doigt et l'entoure en jaune. Quand tu lèves le doigt, "
-                        + "la lecture continue. Touche la bulle pour quitter ce mode.\n\n"
+                        + "la lecture continue. Deux doigts vers le haut ou le bas : faire défiler la page. "
+                        + "Touche la bulle pour quitter ce mode.\n\n"
                         + "• Glisse la bulle pour la déplacer : elle se range contre le bord.\n\n"
                         + "Avec TalkBack, les deux actions sont dans le menu des actions de la bulle.")
                 .setPositiveButton("OK", null)
@@ -392,7 +514,7 @@ public class MainActivity extends Activity {
                 "application/vnd.oasis.opendocument.text",
                 "application/epub+zip",
                 "application/rtf", "text/rtf",
-                "text/*", "application/xhtml+xml", "application/octet-stream"});
+                "text/*", "image/*", "application/xhtml+xml", "application/octet-stream"});
         try {
             startActivityForResult(i, REQ_OPEN);
         } catch (Exception e) {
@@ -546,11 +668,18 @@ public class MainActivity extends Activity {
     }
 
     private void importUri(final Uri uri) {
+        String mime = null;
+        try { mime = getContentResolver().getType(uri); } catch (Exception ignored) {}
+        String ext = Extractor.extension(Extractor.displayName(this, uri));
+        if ((mime != null && mime.startsWith("image/")) || ext.matches("jpe?g|png|webp|heic|heif|bmp|gif")) {
+            openOcr(OcrActivity.MODE_IMAGE, uri);
+            return;
+        }
         runJob("Ouverture du document…", uri.toString(), new Job() {
             @Override public Extractor.Result run(Extractor.Progress p) throws Exception {
                 return Extractor.fromUri(MainActivity.this, uri, p);
             }
-        });
+        }, uri);
     }
 
     private void importUrl(String raw) {
@@ -576,12 +705,27 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void openOcr(String mode, Uri data) {
+        Intent i = new Intent(this, OcrActivity.class).putExtra(OcrActivity.EXTRA_MODE, mode);
+        if (data != null) {
+            i.setData(data);
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        }
+        startActivity(i);
+    }
+
     private void runJob(String message, final String source, final Job job) {
+        runJob(message, source, job, null);
+    }
+
+    /** ocrUri : document à proposer à la reconnaissance de texte si c'est un PDF scanné. */
+    private void runJob(String message, final String source, final Job job, final Uri ocrUri) {
         showBusy(message);
         new Thread(new Runnable() {
             @Override public void run() {
                 Extractor.Result r = null;
                 String error = null;
+                boolean scanned = false;
                 try {
                     r = job.run(new Extractor.Progress() {
                         @Override public void onProgress(final String m) {
@@ -589,6 +733,9 @@ public class MainActivity extends Activity {
                         }
                     });
                     if (r == null || r.paragraphs.isEmpty()) error = "Aucun texte lisible n'a été trouvé.";
+                } catch (Extractor.NeedsOcr e) {
+                    error = e.getMessage();
+                    scanned = true;
                 } catch (Extractor.UserError e) {
                     error = e.getMessage();
                 } catch (OutOfMemoryError e) {
@@ -599,11 +746,20 @@ public class MainActivity extends Activity {
                 }
                 final Library.Entry entry = error == null ? Library.add(MainActivity.this, r, source) : null;
                 final String err = error;
+                final boolean ocr = scanned && ocrUri != null;
                 main.post(new Runnable() {
                     @Override public void run() {
                         hideBusy();
                         if (isFinishing()) return;
-                        if (err != null) {
+                        if (ocr) {
+                            new AlertDialog.Builder(MainActivity.this).setTitle("Document scanné")
+                                    .setMessage(err + "\n\nLisys peut reconnaître le texte des pages, comme pour une photo. "
+                                            + "Compte quelques secondes par page.")
+                                    .setPositiveButton("Reconnaître le texte", new DialogInterface.OnClickListener() {
+                                        @Override public void onClick(DialogInterface d, int w) { openOcr(OcrActivity.MODE_PDF, ocrUri); }
+                                    })
+                                    .setNegativeButton("Annuler", null).show();
+                        } else if (err != null) {
                             new AlertDialog.Builder(MainActivity.this).setTitle("Oups").setMessage(err)
                                     .setPositiveButton("OK", null).show();
                         } else {

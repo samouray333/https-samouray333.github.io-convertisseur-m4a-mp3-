@@ -50,6 +50,23 @@ public final class Prefs {
     /** Annonce vocale des actions de la bulle (« Mode doigt », « Arrêt »…). */
     public static boolean bubbleVoice(Context c) { return sp(c).getBoolean("bubbleVoice", true); }
     public static void setBubbleVoice(Context c, boolean v) { sp(c).edit().putBoolean("bubbleVoice", v).apply(); }
+    /** Bandeau en très gros texte par-dessus les autres applis (désactivé par défaut). */
+    public static boolean caption(Context c) { return sp(c).getBoolean("caption", false); }
+    public static void setCaption(Context c, boolean v) { sp(c).edit().putBoolean("caption", v).apply(); }
+    public static int captionSize(Context c) { return sp(c).getInt("captionSize", 34); }
+    public static void setCaptionSize(Context c, int v) { sp(c).edit().putInt("captionSize", v).apply(); }
+    public static int captionColors(Context c) { return sp(c).getInt("captionColors", 0); }
+    public static void setCaptionColors(Context c, int v) { sp(c).edit().putInt("captionColors", v).apply(); }
+    public static boolean captionTop(Context c) { return sp(c).getBoolean("captionTop", false); }
+    public static void setCaptionTop(Context c, boolean v) { sp(c).edit().putBoolean("captionTop", v).apply(); }
+    /** Double appui sur volume bas = lire l'écran ; appui long = lecture au doigt (désactivé par défaut). */
+    public static boolean volumeKeys(Context c) { return sp(c).getBoolean("volumeKeys", false); }
+    public static void setVolumeKeys(Context c, boolean v) { sp(c).edit().putBoolean("volumeKeys", v).apply(); }
+    /** Annonce vocale des messages reçus (désactivée par défaut). */
+    public static boolean announce(Context c) { return sp(c).getBoolean("announce", false); }
+    public static void setAnnounce(Context c, boolean v) { sp(c).edit().putBoolean("announce", v).apply(); }
+    public static boolean announceContent(Context c) { return sp(c).getBoolean("announceContent", true); }
+    public static void setAnnounceContent(Context c, boolean v) { sp(c).edit().putBoolean("announceContent", v).apply(); }
     public static int bubbleX(Context c) { return sp(c).getInt("bubbleX", -1); }
     public static int bubbleY(Context c) { return sp(c).getInt("bubbleY", -1); }
     public static void setBubblePos(Context c, int x, int y) { sp(c).edit().putInt("bubbleX", x).putInt("bubbleY", y).apply(); }

@@ -34,6 +34,16 @@ final class Ui {
             {0xFF6A1B9A, 0xFFFFFFFF, 0xFFFFFFFF},
             {0xFF000000, 0xFFFFFF00, 0xFFFFFF00},
             {0xFFFFFFFF, 0xFF000000, 0xFF000000}};
+    /** Couleurs du bandeau : nom, puis fond, texte, fond du mot lu, mot lu. */
+    static final String[] CAPTION_COLOR_NAMES = {"Jaune sur noir", "Blanc sur noir", "Noir sur blanc", "Noir sur jaune", "Blanc sur bleu"};
+    static final int[][] CAPTION_COLORS = {
+            {0xF0000000, 0xFFFFFF00, 0xFFFFFFFF, 0xFF000000},
+            {0xF0000000, 0xFFFFFFFF, 0xFFFFFF00, 0xFF000000},
+            {0xF8FFFFFF, 0xFF000000, 0xFF1E3A8A, 0xFFFFFFFF},
+            {0xF8FFEB3B, 0xFF000000, 0xFF000000, 0xFFFFFF00},
+            {0xF01E3A8A, 0xFFFFFFFF, 0xFFFFFF00, 0xFF000000}};
+    static final int[] CAPTION_SIZES = {26, 34, 44, 56, 72};
+
     static final int[] BUBBLE_SIZES = {56, 76, 96, 120, 150};
     static final String[] BUBBLE_SIZE_NAMES = {"Petit", "Moyen", "Grand", "Très grand", "Géant"};
 

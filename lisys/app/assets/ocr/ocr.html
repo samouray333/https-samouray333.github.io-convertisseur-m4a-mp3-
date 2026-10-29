@@ -1,0 +1,68 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lisys OCR</title></head>
+<body>
+<script type="module">
+// Moteur de reconnaissance de texte de Lisys (Tesseract compilé en WebAssembly, 100 % hors ligne).
+import { createOCREngine, supportsFastBuild } from './lib.js';
+
+const bridge = window.LisysOcr || {
+  // Pour les tests dans un navigateur ordinaire.
+  progress(t, p) { window.__progress = p; },
+  result(t, text) { window.__result = text; },
+  error(t, e) { window.__error = e; },
+};
+let enginePromise = null;
+
+function engine() {
+  if (!enginePromise) {
+    enginePromise = (async () => {
+      const wasmUrl = supportsFastBuild() ? 'tesseract-core.wasm' : 'tesseract-core-fallback.wasm';
+      const wasm = await (await fetch(wasmUrl)).arrayBuffer();
+      const e = await createOCREngine({ wasmBinary: wasm });
+      const model = await (await fetch('fra.traineddata')).arrayBuffer();
+      e.loadModel(model);
+      return e;
+    })();
+  }
+  return enginePromise;
+}
+
+function toImageData(bitmap, rotation) {
+  const swap = rotation === 90 || rotation === 270;
+  const w = swap ? bitmap.height : bitmap.width;
+  const h = swap ? bitmap.width : bitmap.height;
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext('2d');
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+  return ctx.getImageData(0, 0, w, h);
+}
+
+// Appelé par l'appli : url = image à lire, token = numéro de la demande.
+window.ocrImage = async function (url, token) {
+  try {
+    const e = await engine();
+    bridge.progress(token, 3);
+    const blob = await (await fetch(url)).blob();
+    const bitmap = await createImageBitmap(blob);
+    e.loadImage(toImageData(bitmap, 0));
+    // Photo prise de travers (téléphone tourné) : on remet le texte droit.
+    try {
+      const o = e.getOrientation();
+      if (o && o.rotation && o.confidence > 0.5) {
+        e.loadImage(toImageData(bitmap, (360 - o.rotation) % 360));
+      }
+    } catch (err) { /* orientation inconnue : on garde l'image telle quelle */ }
+    bridge.progress(token, 8);
+    const text = e.getText((p) => bridge.progress(token, 8 + Math.round(p * 0.92)));
+    bridge.result(token, text);
+  } catch (err) {
+    bridge.error(token, String((err && err.message) || err));
+  }
+};
+
+engine().then(() => { window.ocrReady = true; if (window.LisysOcr) window.LisysOcr.ready(); },
+               (err) => bridge.error(0, String((err && err.message) || err)));
+</script>
+</body></html>

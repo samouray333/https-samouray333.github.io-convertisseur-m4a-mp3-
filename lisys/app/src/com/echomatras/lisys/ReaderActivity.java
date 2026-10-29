@@ -50,6 +50,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
 
     public static final String EXTRA_ID = "id";
     public static final String EXTRA_AUTOPLAY = "autoplay";
+    /** Écran de lecture affiché (le bandeau flottant est alors inutile). */
+    static volatile boolean visible;
     private static final int REQ_STORAGE = 5;
 
     private String docId;
@@ -137,6 +139,18 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
             docId = l.get(0).id;
         }
         Library.touch(this, docId);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        visible = true;
+    }
+
+    @Override
+    protected void onPause() {
+        visible = false;
+        super.onPause();
     }
 
     @Override
