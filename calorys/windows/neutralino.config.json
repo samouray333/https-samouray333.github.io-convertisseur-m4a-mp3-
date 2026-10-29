@@ -1,0 +1,41 @@
+{
+  "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
+  "applicationId": "com.qmtech.calorys",
+  "applicationName": "Calorys",
+  "author": "QMTech",
+  "description": "Compteur de calories et journal alimentaire hors ligne",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "port": 0,
+  "documentRoot": "/resources/",
+  "url": "/",
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "tokenSecurity": "one-time",
+  "injectGlobals": true,
+  "injectClientLibrary": false,
+  "logging": { "enabled": false, "writeToLogFile": false },
+  "nativeAllowList": ["app.*", "os.*", "filesystem.*", "events.*", "window.*"],
+  "modes": {
+    "window": {
+      "title": "Calorys",
+      "width": 1180,
+      "height": 820,
+      "minWidth": 380,
+      "minHeight": 600,
+      "center": true,
+      "resizable": true,
+      "icon": "/resources/img/icon-192.png",
+      "enableInspector": false,
+      "exitProcessOnClose": false
+    }
+  },
+  "cli": {
+    "binaryName": "Calorys",
+    "resourcesPath": "/resources/",
+    "extensionsPath": "/extensions/",
+    "clientLibrary": "/resources/js/vendor/neutralino.js",
+    "binaryVersion": "6.9.0",
+    "clientVersion": "6.9.0"
+  }
+}

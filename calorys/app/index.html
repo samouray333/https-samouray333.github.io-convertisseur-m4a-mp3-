@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f9f6e">
+  <meta name="description" content="Calorys : compteur de calories, journal alimentaire, jeûne intermittent et suivi du poids. 100 % hors ligne.">
+  <title>Calorys</title>
+  <link rel="icon" href="img/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="splash" class="splash"><img src="img/icon.svg" alt=""><span>Calorys</span></div>
+  <div class="shell">
+    <nav class="tabbar" id="tabbar" aria-label="Navigation principale">
+      <div class="brand"><img src="img/icon.svg" alt=""><span>Calorys</span></div>
+      <button data-tab="journal" class="active"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z M8 4v16 M11 9h5 M11 13h5"/></svg><span>Journal</span></button>
+      <button data-tab="fasting"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2 M10 2h4"/></svg><span>Jeûne</span></button>
+      <button data-tab="stats"><svg viewBox="0 0 24 24"><path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2"/></svg><span>Analyse</span></button>
+      <button data-tab="profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Profil</span></button>
+    </nav>
+    <main id="view" tabindex="-1"></main>
+  </div>
+  <div id="sheets"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="fileInput" accept=".json,application/json" hidden>
+  <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+
+  <script src="data/foods.js"></script>
+  <!--NEUTRALINO-->
+  <script src="js/platform.js"></script>
+  <script src="js/nutrition.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
