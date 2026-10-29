@@ -185,6 +185,13 @@
   }
 
   /* Activités : MET d'après le Compendium of Physical Activities (Ainsworth et al.). */
+  // Vitesse associée aux activités de marche et de course (pour estimer les pas).
+  const GAITS = {
+    'Marche tranquille': { kmh: 4 }, 'Marche rapide': { kmh: 5.6 },
+    'Marche sur tapis (4 km/h)': { kmh: 4 }, 'Marche sur tapis (5 km/h)': { kmh: 5 }, 'Marche sur tapis (5,5 km/h)': { kmh: 5.5 },
+    'Course sur tapis (8 km/h)': { kmh: 8, run: true }, 'Course à pied (8 km/h)': { kmh: 8, run: true },
+    'Course à pied (10 km/h)': { kmh: 10, run: true }, 'Course à pied (12 km/h)': { kmh: 12, run: true }
+  };
   const ACTIVITIES = [
     ['Marche tranquille', 3.0], ['Marche rapide', 4.3],
     ['Marche sur tapis (4 km/h)', 3.0], ['Marche sur tapis (5 km/h)', 3.5], ['Marche sur tapis (5,5 km/h)', 4.0],
@@ -196,9 +203,20 @@
     ['Football', 7.0], ['Basket-ball', 6.5], ['Tennis', 7.3], ['Badminton', 5.5], ['Rugby', 8.3], ['Handball', 8.0],
     ['Danse', 5.0], ['Escalade', 8.0], ['Rameur', 7.0], ['Elliptique', 5.0], ['Ski', 7.0], ['Jardinage', 3.8],
     ['Ménage', 3.3], ['Bricolage', 3.5], ['Montée d\'escaliers', 8.8]
-  ].map(([name, met]) => ({ name, met }));
+  ].map(([name, met]) => ({ name, met, gait: GAITS[name] || null }));
 
   function activityKcal(met, minutes, weight) { return Math.round(met * (weight || 70) * minutes / 60); }
+
+  /* Pas estimés pour la marche et la course : distance (vitesse × durée) / longueur de foulée.
+     Foulée de marche ≈ 41 % de la taille ; foulée de course ≈ 50 % de la taille à 8 km/h,
+     plus longue quand la vitesse augmente (cadence réaliste de 150 à 170 pas/min). */
+  function activitySteps(name, minutes, heightCm) {
+    const g = GAITS[name];
+    if (!g || !(minutes > 0)) return 0;
+    const h = (heightCm || 170) / 100;
+    const stride = g.run ? h * Math.min(0.75, 0.5 + (g.kmh - 8) * 0.045) : h * 0.414;
+    return Math.round(g.kmh * 1000 * minutes / 60 / stride / 10) * 10;
+  }
   function stepsKcal(steps, weight) { return Math.round(steps * 0.00057 * (weight || 70)); }
 
   /* Open Food Facts (en ligne, optionnel). Données ODbL. */
@@ -260,5 +278,5 @@
   }
 
   window.Nutrition = { NKEYS, NUTRIENTS, RDA, ACTIVITIES, ciqual, norm, search, portionsFor, forGrams, sumNutrients,
-    computeGoal, macroGoals, bmi, bmiLabel, activityKcal, stepsKcal, offByBarcode, offSearch, productImage, source: DB.source };
+    computeGoal, macroGoals, bmi, bmiLabel, activityKcal, activitySteps, stepsKcal, offByBarcode, offSearch, productImage, source: DB.source };
 })();

@@ -536,3 +536,4 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
   :root[data-vivid="1"] .tabbar button.active svg { background: var(--brand-soft); border-radius: 12px; padding: 3px 12px; width: 48px; height: 30px; box-sizing: border-box; }
 }
 :root[data-vivid="1"] .tabbar button.active { font-weight: 800; }
+.entries li.steps span.muted { white-space: normal; }

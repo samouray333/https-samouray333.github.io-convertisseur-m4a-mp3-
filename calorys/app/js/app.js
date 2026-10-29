@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.3.1';
+  const APP_VERSION = '1.3.2';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -447,8 +447,8 @@
     h += `<section class="card"><header class="meal-head"><span class="meal-ic act">${icon('run')}</span>
       <div class="grow"><h3>Séances et activités</h3><p class="muted">${kcal(t.burned)} kcal brûlées · ${kcal(burned)} rendues à l'objectif</p></div>
       <button class="add-btn" data-act="addActivity" aria-label="Ajouter une activité">${icon('plus')}</button></header>
-      <ul class="entries">${(d.acts || []).map(a => `<li data-act="editActivity" data-id="${a.id}"><div class="grow"><b>${esc(a.name)}</b><span class="muted">${a.min ? a.min + ' min' : 'saisie manuelle'}${a.rpe ? ' · RPE ' + a.rpe + '/10' : ''}${a.sweat ? ' · ≈ ' + fr(a.sweat / 1000, 1) + ' L de sueur' : ''}</span></div><span class="kc">${kcal(a.kcal)}</span></li>`).join('')}
-      <li class="steps"><div class="grow"><b>Pas</b><span class="muted">objectif ${S.profile.stepsGoal.toLocaleString('fr-FR')}${d.steps ? ' · ' + kcal(N.stepsKcal(d.steps, w)) + ' kcal' : ''}</span></div>
+      <ul class="entries">${(d.acts || []).map(a => `<li data-act="editActivity" data-id="${a.id}"><div class="grow"><b>${esc(a.name)}</b><span class="muted">${a.min ? a.min + ' min' : 'saisie manuelle'}${a.rpe ? ' · RPE ' + a.rpe + '/10' : ''}${a.sweat ? ' · ≈ ' + fr(a.sweat / 1000, 1) + ' L de sueur' : ''}${actSteps(a) ? ' · ≈ ' + actSteps(a).toLocaleString('fr-FR') + ' pas' : ''}</span></div><span class="kc">${kcal(a.kcal)}</span></li>`).join('')}
+      <li class="steps"><div class="grow"><b>Pas</b><span class="muted">${stepsLine(d, w)}</span></div>
       <input class="steps-input" inputmode="numeric" data-act="steps" value="${d.steps || ''}" placeholder="0" aria-label="Nombre de pas"></li></ul></section>`;
     const lastW = S.weights.length ? S.weights[S.weights.length - 1] : null;
     h += `<section class="card"><header class="meal-head"><span class="meal-ic weight">${icon('scale')}</span>
@@ -456,6 +456,17 @@
       <button class="add-btn" data-act="addWeight" aria-label="Ajouter une pesée">${icon('plus')}</button></header></section>`;
     h += `<p class="foot muted">Nutriments : ${esc(N.source)}</p>`;
     return h;
+  }
+  /* Pas estimés d'une activité de marche ou de course (taille actuelle du profil). */
+  const actSteps = a => (a.min ? N.activitySteps(a.name, a.min, S.profile.height) : 0);
+  function stepsLine(d, w) {
+    const est = (d.acts || []).reduce((n, a) => n + actSteps(a), 0);
+    const total = (d.steps || 0) + est, goal = S.profile.stepsGoal;
+    let t = (est ? total.toLocaleString('fr-FR') + ' / ' : 'objectif ') + goal.toLocaleString('fr-FR');
+    if (est) t += ' · dont ≈ ' + est.toLocaleString('fr-FR') + ' estimés (marche, course)';
+    if (d.steps) t += ' · ' + kcal(N.stepsKcal(d.steps, w)) + ' kcal';
+    if (total >= goal) t += ' · objectif atteint';
+    return t;
   }
   function cutCard(g) {
     const c = g.cut, p = S.profile;
@@ -841,7 +852,7 @@
         body = `<div class="grid2"><label class="field"><span>Durée (min)</span><input id="acMin" inputmode="numeric" value="${d.min}"></label>
           <label class="field"><span>Ou calories (kcal)</span><input id="acK" inputmode="numeric" value="${d.k || ''}" placeholder="auto"></label></div>
           <div class="search">${icon('search')}<input id="acQ" placeholder="Rechercher une activité" value="${esc(d.q || '')}"></div>
-          <ul class="res-list acts">${list.map(a => `<li><button class="res ${d.sel === a.name ? 'on' : ''}" data-act="pickAct" data-name="${esc(a.name)}"><b>${esc(a.name)}</b><span class="muted">${kcal(N.activityKcal(a.met, d.min || 0, w))} kcal</span></button></li>`).join('')}</ul>`;
+          <ul class="res-list acts">${list.map(a => `<li><button class="res ${d.sel === a.name ? 'on' : ''}" data-act="pickAct" data-name="${esc(a.name)}"><b>${esc(a.name)}</b><span class="muted">${kcal(N.activityKcal(a.met, d.min || 0, w))} kcal${a.gait ? ' · ≈ ' + N.activitySteps(a.name, d.min || 0, S.profile.height).toLocaleString('fr-FR') + ' pas' : ''}</span></button></li>`).join('')}</ul>`;
       }
       return sheetHead(existing ? 'Modifier l\'activité' : 'Ajouter une séance ou activité', 'Calcul selon ton poids (' + fr(w) + ' kg)') + tabs + body + `
         <div class="sheet-actions">${existing ? `<button class="btn ghost danger-text" data-act="delAct">${icon('trash')}Supprimer</button>` : ''}
