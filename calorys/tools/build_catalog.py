@@ -36,7 +36,7 @@ def main():
     with gzip.open(src, 'rt', encoding='utf-8') as fh:
         for line in fh:
             f = line.rstrip('\n').split('\t')
-            if len(f) != 16:
+            if len(f) != 17:
                 continue
             rows.append(f)
     rows.sort(key=lambda f: -int(f[15] or 0))
@@ -49,19 +49,19 @@ def main():
       CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT);
       CREATE TABLE food (id INTEGER PRIMARY KEY, code TEXT NOT NULL, name TEXT NOT NULL, brand TEXT,
         kcal REAL, p REAL, c REAL, f REAL, su REAL, sa REAL, fi REAL, sl REAL,
-        serving_g REAL, serving TEXT, nutriscore TEXT, qty TEXT);
+        serving_g REAL, serving TEXT, nutriscore TEXT, qty TEXT, img TEXT);
       CREATE VIRTUAL TABLE fts USING fts4(content="", s);
     ''')
     cur = db.cursor()
     for i, f in enumerate(rows, 1):
         code, name, brand = f[0], f[1], f[2]
-        cur.execute('INSERT INTO food VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        cur.execute('INSERT INTO food VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                     (i, code, name, brand or None, num(f[3]), num(f[4]), num(f[5]), num(f[6]), num(f[7]), num(f[8]),
-                     num(f[9]), num(f[10]), num(f[11]), f[12] or None, f[13] or None, f[14] or None))
+                     num(f[9]), num(f[10]), num(f[11]), f[12] or None, f[13] or None, f[14] or None, f[16] or None))
         cur.execute('INSERT INTO fts(docid, s) VALUES (?, ?)', (i, norm(name + ' ' + brand)))
     db.execute('CREATE INDEX ix_code ON food(code)')
     db.execute("INSERT INTO fts(fts) VALUES('optimize')")
-    meta = {'source': 'Open Food Facts (ODbL), export France', 'date': date, 'count': str(len(rows)), 'schema': '1'}
+    meta = {'source': 'Open Food Facts (ODbL), export France', 'date': date, 'count': str(len(rows)), 'schema': '2'}
     db.executemany('INSERT INTO meta VALUES (?,?)', meta.items())
     db.commit()
     db.execute('VACUUM')

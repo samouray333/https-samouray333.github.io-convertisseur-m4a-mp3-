@@ -200,7 +200,27 @@
   function stepsKcal(steps, weight) { return Math.round(steps * 0.00057 * (weight || 70)); }
 
   /* Open Food Facts (en ligne, optionnel). Données ODbL. */
-  const OFF_FIELDS = 'code,product_name,product_name_fr,brands,nutriments,serving_quantity,serving_size,quantity';
+  const OFF_FIELDS = 'code,product_name,product_name_fr,brands,nutriments,serving_quantity,serving_size,quantity,image_small_url,nutriscore_grade';
+  const IMG_HOST = 'https://images.openfoodfacts.org/images/products/';
+  /* Dossier d'image d'Open Food Facts : code sur 13 chiffres découpé 3/3/3/reste. */
+  function imgFolder(code) {
+    if (code.length <= 8) return code;
+    const c = code.padStart(13, '0');
+    return c.slice(0, 3) + '/' + c.slice(3, 6) + '/' + c.slice(6, 9) + '/' + c.slice(9);
+  }
+  /* URL de la photo d'un produit (100, 200 ou 400 px). */
+  function productImage(food, size) {
+    if (!food || !food.img || !food.barcode) return null;
+    const rel = food.img.includes('/') ? food.img : imgFolder(food.barcode) + '/front_' + food.img;
+    const sz = '.' + (size || 200) + '.jpg';
+    return { src: IMG_HOST + rel + sz };
+  }
+  function imgRefFromUrl(code, url) {
+    if (!url || url.indexOf(IMG_HOST) !== 0 || !/\.(100|200|400)\.jpg$/.test(url)) return '';
+    const rest = url.slice(IMG_HOST.length).replace(/\.(100|200|400)\.jpg$/, '');
+    const i = rest.lastIndexOf('/'), folder = rest.slice(0, i), file = rest.slice(i + 1);
+    return folder === imgFolder(code) && file.indexOf('front_') === 0 ? file.slice(6) : rest;
+  }
   function fromOff(p, code) {
     const n = p.nutriments || {};
     const g = k => (n[k] == null || n[k] === '' ? null : Number(n[k]));
@@ -214,8 +234,10 @@
     const portions = [];
     const sq = Number(p.serving_quantity);
     if (sq > 0) portions.push({ l: 'portion' + (p.serving_size ? ' (' + p.serving_size + ')' : ''), g: sq });
-    return { key: 'o:' + (code || p.code), name, brand: (p.brands || '').split(',')[0].trim(), barcode: code || p.code,
-      per100, portions, src: 'off' };
+    const bc = String(code || p.code);
+    const ns = String(p.nutriscore_grade || '').toLowerCase();
+    return { key: 'o:' + bc, name, brand: (p.brands || '').split(',')[0].trim(), barcode: bc,
+      per100, portions, src: 'off', img: imgRefFromUrl(bc, p.image_small_url), nutriscore: /^[a-e]$/.test(ns) ? ns : '' };
   }
 
   async function offByBarcode(code) {
@@ -236,5 +258,5 @@
   }
 
   window.Nutrition = { NKEYS, NUTRIENTS, RDA, ACTIVITIES, ciqual, norm, search, portionsFor, forGrams, sumNutrients,
-    computeGoal, macroGoals, bmi, bmiLabel, activityKcal, stepsKcal, offByBarcode, offSearch, source: DB.source };
+    computeGoal, macroGoals, bmi, bmiLabel, activityKcal, stepsKcal, offByBarcode, offSearch, productImage, source: DB.source };
 })();

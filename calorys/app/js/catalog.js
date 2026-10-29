@@ -14,7 +14,7 @@
   ];
   // Version web (GitHub Pages) : le catalogue est publié juste à côté de l'appli.
   if (!native && !isNeu && /^https?:$/.test(location.protocol)) SOURCES.unshift(new URL('../catalog/', location.href).href);
-  const COLS = 'code, name, brand, kcal, p, c, f, su, sa, fi, sl, serving_g, serving, nutriscore, qty';
+  const COLS = 'food.*';
 
   let state = 'none';      // none | downloading | ready | error
   let progress = 0, message = '', outdated = false, sessionOnly = false;
@@ -45,7 +45,7 @@
     const portions = [];
     if (r.serving_g) portions.push({ l: 'portion' + (r.serving ? ' (' + r.serving + ')' : ''), g: n(r.serving_g) });
     return { key: 'o:' + r.code, barcode: r.code, name: r.name, brand: r.brand || '', per100, portions,
-      nutriscore: r.nutriscore || '', qty: r.qty || '', src: 'off' };
+      nutriscore: r.nutriscore || '', qty: r.qty || '', img: r.img || '', src: 'off' };
   }
 
   async function search(q, limit) {
@@ -259,6 +259,7 @@
         try { flag = localStorage.getItem('calorys.catalog'); } catch (e) { /* ignore */ }
         if (isNeu) { try { await Neutralino.filesystem.getStats(await neuPath()); state = 'ready'; } catch (e) { state = 'none'; } }
         else if (flag) state = 'ready';
+        if (state === 'ready') outdated = flag !== M.version;
         // Préchargement en arrière-plan : la première recherche est ensuite immédiate.
         if (state === 'ready') setTimeout(() => open().catch(() => { state = 'none'; emit(); }), 1500);
       }

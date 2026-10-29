@@ -477,3 +477,19 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
 .quick-actions { grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .qa { font-size: 11px; padding: 10px 2px; }
 @media (max-width: 380px) { .quick-actions { grid-template-columns: repeat(3, 1fr); } }
+/* Synchronisation */
+.sync-choice { width: 100%; display: flex; align-items: center; gap: 14px; text-align: left; }
+.sync-choice > .ic:first-child { color: var(--brand); width: 26px; height: 26px; }
+.sync-choice .chev { color: var(--muted); }
+.sync-host { display: grid; gap: 12px; }
+.sync-big { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.sync-big span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+.sync-big b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.sync-big b.code { font-size: 32px; letter-spacing: 4px; color: var(--brand); font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.sync-status { font-weight: 600; margin: 0; }
+.center-link { display: block; margin: 18px auto 0; text-align: center; }
+/* Photos des produits */
+.pimg { width: 40px; height: 40px; border-radius: 10px; object-fit: contain; background: #fff; border: 1px solid var(--line); flex: none; }
+.res-list li .pimg { margin-left: 10px; }
+.entries li .pimg { width: 36px; height: 36px; }
+.pimg-big { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #fff; border-radius: 16px; border: 1px solid var(--line); margin-bottom: 12px; padding: 8px; }

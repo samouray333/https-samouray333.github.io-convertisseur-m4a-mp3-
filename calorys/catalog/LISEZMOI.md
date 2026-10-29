@@ -3,7 +3,7 @@
 Base SQLite (index plein texte FTS4) des produits alimentaires vendus en France, tirée de l'export
 officiel d'Open Food Facts (`fr.openfoodfacts.org.products.csv.zst`, bucket S3 `openfoodfacts-ds`).
 
-- Produits : 892 632 (export du 28/10/2026), valeurs nutritionnelles complètes et cohérentes.
+- Produits : 894 337 (export du 28/10/2026), valeurs nutritionnelles complètes et cohérentes, référence de la photo (95 % des produits).
 - Fichiers : `catalog-AAAA-MM-JJ.db.gz.NN` (morceaux gzip à recoller dans l'ordre), `catalog.json` (tailles et SHA-256).
 - Construction : `tools/filter_off.py` puis `tools/build_catalog.py` (voir le README principal).
 

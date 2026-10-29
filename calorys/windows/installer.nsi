@@ -11,6 +11,12 @@ Unicode true
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Calorys"
 !define WEBVIEW2_GUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
+!ifdef SIGN
+  ; Signature du désinstalleur généré et de l'installeur final (voir sign.sh).
+  !uninstfinalize '"${SIGN}" "%1"'
+  !finalize '"${SIGN}" "%1"'
+!endif
+
 Name "${APPNAME}"
 OutFile "${OUTFILE}"
 InstallDir "$LOCALAPPDATA\Programs\${APPNAME}"
@@ -97,6 +103,10 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\${APPNAME}\Désinstaller ${APPNAME}.lnk"
   RMDir "$SMPROGRAMS\${APPNAME}"
   Delete "$DESKTOP\${APPNAME}.lnk"
+  ; Rappels : tâches planifiées, nom des notifications et lien calorys://
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-ScheduledTask -TaskName $\'Calorys Rappel *$\' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$$false"'
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\QMTech.Calorys"
+  DeleteRegKey HKCU "Software\Classes\calorys"
   DeleteRegKey HKCU "${UNINSTKEY}"
   DeleteRegKey HKCU "Software\${COMPANY}\${APPNAME}"
   ; Les données (journal) restent dans %APPDATA%\Calorys : une réinstallation les retrouve.

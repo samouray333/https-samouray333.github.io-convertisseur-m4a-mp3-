@@ -4,7 +4,7 @@
   "applicationName": "Calorys",
   "author": "QMTech",
   "description": "Compteur de calories et journal alimentaire hors ligne",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "defaultMode": "window",
   "port": 0,
   "documentRoot": "/resources/",

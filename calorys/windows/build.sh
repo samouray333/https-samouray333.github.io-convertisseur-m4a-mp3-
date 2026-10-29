@@ -3,6 +3,8 @@
 # Prérequis : neu (npm i -g @neutralinojs/neu), makensis, zip ; wine + rcedit pour l'icône de l'exe (facultatif).
 #   NEU_ZIP   archive neutralinojs-v6.9.0.zip (binaires officiels, GitHub releases)
 #   RCEDIT    chemin de rcedit-x64.exe (facultatif)
+#   SIGN_PFX  certificat de signature de code .pfx (facultatif) + SIGN_PASS : signe l'exe,
+#             le désinstalleur et l'installeur (voir sign.sh)
 set -euo pipefail
 cd "$(dirname "$0")"
 NEU_ZIP=${NEU_ZIP:?indique NEU_ZIP}
@@ -32,8 +34,15 @@ if [ -n "${RCEDIT:-}" ] && command -v wine > /dev/null; then
     --set-version-string LegalCopyright QMTech --set-file-version "$VERSION" --set-product-version "$VERSION" 2>/dev/null
 fi
 
+SIGNDEF=()
+if [ -n "${SIGN_PFX:-}" ]; then
+  echo "> Signature de l'exe"
+  ./sign.sh "$B/dist/Calorys.exe"
+  SIGNDEF=(-DSIGN="$(pwd)/sign.sh")
+fi
+
 echo "> Installeur NSIS"
-makensis -V2 -WX -DVERSION="$VERSION" -DOUTFILE="$B/Calorys-Setup-$VERSION.exe" -NOCD installer.nsi > /dev/null
+makensis -V2 -WX -DVERSION="$VERSION" -DOUTFILE="$B/Calorys-Setup-$VERSION.exe" "${SIGNDEF[@]}" -NOCD installer.nsi > /dev/null
 # makensis résout File relativement au script : on le lance depuis le dossier windows/ avec dist dans build/.
 echo "> Version portable"
 rm -f "$B/Calorys-Portable-$VERSION.zip"

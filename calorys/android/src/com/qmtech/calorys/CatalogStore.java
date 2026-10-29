@@ -31,7 +31,7 @@ public class CatalogStore {
     public interface Listener { void onProgress(String state, double progress, String message); }
 
     private static final String PREFS = "catalog";
-    private static final String COLS = "code, name, brand, kcal, p, c, f, su, sa, fi, sl, serving_g, serving, nutriscore, qty";
+    private static final String COLS = "food.*";
     private final Context ctx;
     private SQLiteDatabase db;
     private volatile boolean installing = false;
@@ -96,7 +96,6 @@ public class CatalogStore {
             if (t == Cursor.FIELD_TYPE_FLOAT || t == Cursor.FIELD_TYPE_INTEGER) o.put(names[i], c.getDouble(i));
             else o.put(names[i], c.getString(i));
         }
-        o.put("code", c.getString(0));
         return o;
     }
 
@@ -181,7 +180,7 @@ public class CatalogStore {
                 c = (HttpURLConnection) u.openConnection();
                 c.setConnectTimeout(20000);
                 c.setReadTimeout(30000);
-                c.setRequestProperty("User-Agent", "Calorys/1.1 (QMTech; Android)");
+                c.setRequestProperty("User-Agent", "Calorys/1.2 (QMTech; Android)");
                 if (c.getResponseCode() != 200) { last = new Exception("HTTP " + c.getResponseCode()); continue; }
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
                 InputStream in = new BufferedInputStream(c.getInputStream(), 1 << 16);

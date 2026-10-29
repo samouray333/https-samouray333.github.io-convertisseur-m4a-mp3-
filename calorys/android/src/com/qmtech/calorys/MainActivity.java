@@ -66,6 +66,7 @@ public class MainActivity extends Activity {
     private Uri cameraOutput;
     private PermissionRequest pendingPermission;
     private CatalogStore catalog;
+    private SyncServer sync;
 
     private static final Map<String, String> MIME = new HashMap<>();
     static {
@@ -84,6 +85,13 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         catalog = new CatalogStore(this);
+        sync = new SyncServer(new SyncServer.Bridge() {
+            @Override
+            public void receive(final String body) {
+                final String js = "window.__calorysSyncReceive && window.__calorysSyncReceive(" + JSONObject.quote(body) + ")";
+                runOnUiThread(new Runnable() { @Override public void run() { web.evaluateJavascript(js, null); } });
+            }
+        });
         root = new FrameLayout(this);
         boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         root.setBackgroundColor(night ? Color.parseColor("#0D1310") : Color.parseColor("#F4F7F5"));
@@ -101,6 +109,8 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
         s.setTextZoom(100);
+        // Synchronisation : l'appli (origine https locale) contacte un autre téléphone en http sur le Wi-Fi.
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -262,6 +272,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (sync != null) sync.stop();
         if (web != null) web.destroy();
         super.onDestroy();
     }
@@ -415,6 +426,35 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void catalogRemove() { catalog.remove(); }
+
+        /* ---- Synchronisation sur le Wi-Fi local ---- */
+        @JavascriptInterface
+        public String syncStart(int port) {
+            try {
+                int p = sync.start(port);
+                org.json.JSONArray ips = new org.json.JSONArray();
+                for (String a : SyncServer.addresses()) ips.put(a);
+                runOnUiThread(new Runnable() { @Override public void run() { getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
+                return new JSONObject().put("port", p).put("ips", ips).toString();
+            } catch (Exception e) {
+                return "{\"error\":" + JSONObject.quote("Impossible d'ouvrir la synchronisation : " + e.getMessage()) + "}";
+            }
+        }
+
+        @JavascriptInterface
+        public void syncOffer(String blob) { sync.setOffer(blob); }
+
+        @JavascriptInterface
+        public void syncResult(String json) { sync.setResult(json); }
+
+        @JavascriptInterface
+        public void syncStop() {
+            sync.stop();
+            runOnUiThread(new Runnable() { @Override public void run() { getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
+        }
+
+        @JavascriptInterface
+        public String deviceName() { return (Build.MANUFACTURER + " " + Build.MODEL).trim(); }
 
         /* ---- Rappels ---- */
         @JavascriptInterface

@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -131,7 +131,10 @@
   let S = defaults();
   const ui = { tab: 'journal', date: today(), statsRange: 7, ob: null, obStep: 0 };
   let saveTimer = null;
-  function save() { goalsMemo = null; gameMemo = null; clearTimeout(saveTimer); saveTimer = setTimeout(() => P.save(S), 250); }
+  function save() {
+    goalsMemo = null; gameMemo = null; clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { Sync.stamp(S); P.save(S); if (Sync.hosting) Sync.hostOffer(); }, 250);
+  }
 
   function emptyDay() { return { meals: { breakfast: [], lunch: [], dinner: [], snack: [] }, water: 0, acts: [], steps: 0 }; }
   function dayGet(k) { return S.days[k] || emptyDay(); }
@@ -424,7 +427,7 @@
         ${!list.length && yest ? `<button class="chip" data-act="copyMeal" data-meal="${m.id}" title="Reprendre le repas de la veille">${icon('copy')}Comme hier</button>` : ''}
         <button class="add-btn" data-act="addFood" data-meal="${m.id}" aria-label="Ajouter au ${m.label}">${icon('plus')}</button></header>`;
       if (list.length) {
-        h += '<ul class="entries">' + list.map(e => `<li data-act="editEntry" data-meal="${m.id}" data-id="${e.id}">
+        h += '<ul class="entries">' + list.map(e => `<li data-act="editEntry" data-meal="${m.id}" data-id="${e.id}">${e.key && e.key.startsWith('o:') ? pimg(foodByKey(e.key), 100) : ''}
           <div class="grow"><b>${esc(e.name)}</b><span class="muted">${entryQty(e)}${e.brand ? ' · ' + esc(e.brand) : ''}</span></div>
           <span class="kc">${kcal(e.n.e)}</span></li>`).join('') + '</ul>';
       }
@@ -497,10 +500,16 @@
       }
     });
   }
+  /* Photo du produit (en ligne, Open Food Facts), masquée sans connexion. */
+  function pimg(f, size, cls) {
+    const u = N.productImage(f, size);
+    if (!u) return '';
+    return `<img class="${cls || 'pimg'}" src="${u.src}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`;
+  }
   function resultRow(f, s) {
     const plus = s.data.mode === 'log' ? `<button class="add-btn sm" data-act="quickLog" data-key="${esc(f.key)}" aria-label="Ajouter directement">${icon('plus')}</button>` : '';
     const ns = f.nutriscore ? `<i class="ns ns-${f.nutriscore}" title="Nutri-Score ${f.nutriscore.toUpperCase()}">${f.nutriscore.toUpperCase()}</i>` : '';
-    return `<li><button class="res" data-act="openFood" data-key="${esc(f.key)}"><b>${esc(f.name)}</b><span class="muted">${ns}${esc(foodSub(f))}</span></button>${plus}</li>`;
+    return `<li>${pimg(f, 100)}<button class="res" data-act="openFood" data-key="${esc(f.key)}"><b>${esc(f.name)}</b><span class="muted">${ns}${esc(foodSub(f))}</span></button>${plus}</li>`;
   }
   /* Bloc "produits de marque" : catalogue hors ligne s'il est installé, sinon invitation à l'installer. */
   function catalogBlock(s, q) {
@@ -571,6 +580,7 @@
         .map(k => `<tr class="${N.NUTRIENTS[k].sub ? 'sub' : ''}"><td>${N.NUTRIENTS[k].label}</td><td>${fr(n[k], 2)} ${N.NUTRIENTS[k].unit}</td><td class="muted">${N.RDA[k] ? r0(n[k] / N.RDA[k] * 100) + ' %' : ''}</td></tr>`).join('');
       const tot = (n.p || 0) * 4 + (n.c || 0) * 4 + (n.f || 0) * 9 || 1;
       return sheetHead(esc(food.name), (food.nutriscore ? `<i class="ns ns-${food.nutriscore}">Nutri-Score ${food.nutriscore.toUpperCase()}</i> ` : '') + esc(foodSub(food)) + (food.qty ? ' · ' + esc(food.qty) : '')) + `
+        ${pimg(food, 400, 'pimg-big')}
         <div class="food-hero">
           <div class="food-kcal"><b>${kcal(n.e)}</b><span>kcal</span></div>
           <div class="food-macros">
@@ -969,6 +979,7 @@
         ${row('catalog', 'box', 'Catalogue produits hors ligne', { ready: 'installé', downloading: Math.round(CAT.status().progress * 100) + ' %', error: 'erreur', none: 'non installé' }[CAT.status().state])}
         ${row('gemini', 'sparkle', 'Analyse photo (Gemini)', S.settings.geminiKey ? 'activée' : 'à configurer')}
         ${row('reminders', 'bell', 'Rappels', S.settings.reminders.on ? 'activés' : 'désactivés')}
+        ${row('sync', 'share', 'Synchroniser mes appareils', lastSyncText())}
         ${row('progress', 'belt', 'Ma progression', S.settings.game ? 'ceinture ' + game().belt.label.toLowerCase() : 'désactivée')}
         <li><label class="menu-select">${icon('trophy')}<span class="grow">Gamification (ceintures, défis)</span><input type="checkbox" class="toggle" data-act="gameToggleIn" ${S.settings.game ? 'checked' : ''}></label></li>
         <li><label class="menu-select">${icon('info')}<span class="grow">Thème</span><select data-act="theme">
@@ -1094,7 +1105,8 @@
     const nav = (next, label) => `<div class="ob-nav">${st ? '<button class="btn ghost" data-act="obBack">Retour</button>' : ''}<button class="btn grow" data-act="${next || 'obNext'}">${label || 'Continuer'}</button></div>`;
     let body = '';
     if (st === 0) body = `<div class="ob-hero"><img src="img/icon.svg" alt=""><h1>Bienvenue sur Calorys</h1><p>Compte tes calories, suis tes repas, ton eau, ton poids et ton jeûne. Tout reste sur ton appareil, même sans connexion.</p></div>
-      <label class="field"><span>Ton prénom (facultatif)</span><input id="ob_name" value="${esc(o.name)}"></label>` + nav(null, 'Commencer');
+      <label class="field"><span>Ton prénom (facultatif)</span><input id="ob_name" value="${esc(o.name)}"></label>` + nav(null, 'Commencer') +
+      (P.kind !== 'web' || location.protocol === 'http:' ? `<button class="link center-link" data-act="syncFirst">Déjà utilisateur sur un autre appareil ? Récupérer mes données</button>` : '');
     if (st === 1) body = `<h2>Parle-nous de toi</h2><p class="muted">Pour calculer tes besoins énergétiques.</p>
       <div class="seg wide">${[['m', 'Homme'], ['f', 'Femme']].map(([v, l]) => `<button class="${o.sex === v ? 'on' : ''}" data-act="obSet" data-k="sex" data-v="${v}">${l}</button>`).join('')}</div>
       <div class="grid3"><label class="field"><span>Âge</span><input id="ob_age" inputmode="numeric" value="${o.age}"></label>
@@ -1400,11 +1412,15 @@ Règles:
     if (window.CalorysNative && window.CalorysNative.setReminders) {
       try { window.CalorysNative.setReminders(JSON.stringify({ daily: remindersPlan(), fastEnd })); } catch (e) { /* ignore */ }
     }
+    // Windows : tâches planifiées, les rappels arrivent même appli fermée.
+    if (window.WinReminders && WinReminders.available) {
+      WinReminders.apply(remindersPlan(), fastEnd).then(ok => { ui.winTasks = ok; }).catch(() => { ui.winTasks = false; });
+    }
   }
   /* Windows et navigateur : rappels envoyés tant que l'appli est ouverte. */
   let lastTick = '';
   setInterval(() => {
-    if (window.CalorysNative || !S.settings.reminders.on) return;
+    if (window.CalorysNative || ui.winTasks || !S.settings.reminders.on) return;
     const now = new Date(), hm = pad2(now.getHours()) + ':' + pad2(now.getMinutes()), stamp = today() + ' ' + hm;
     if (stamp === lastTick) return;
     lastTick = stamp;
@@ -1424,7 +1440,7 @@ Règles:
     openSheet(s => {
       const r = s.data.r;
       const t = (id, v) => `<input type="time" id="${id}" value="${v}">`;
-      return sheetHead('Rappels', P.kind === 'android' ? 'Notifications du téléphone' : 'Notifications tant que Calorys est ouvert') + `<div class="form">
+      return sheetHead('Rappels', P.kind === 'android' ? 'Notifications du téléphone' : P.kind === 'windows' ? 'Notifications Windows, même appli fermée' : 'Notifications tant que Calorys est ouvert') + `<div class="form">
         <label class="switch"><input type="checkbox" id="rOn" ${r.on ? 'checked' : ''}><span>Activer les rappels</span></label>
         <label class="switch"><input type="checkbox" id="rMeals" ${r.meals ? 'checked' : ''}><span>Repas</span></label>
         <div class="grid3"><label class="field"><span>Petit-déj</span>${t('rB', r.breakfast)}</label><label class="field"><span>Déjeuner</span>${t('rL', r.lunch)}</label><label class="field"><span>Dîner</span>${t('rD', r.dinner)}</label></div>
@@ -1436,6 +1452,61 @@ Règles:
     }, { data: { r: Object.assign({}, S.settings.reminders) } });
   }
 
+  /* ---------- Synchronisation entre appareils ---------- */
+  const MEAL_IDS = MEALS.map(m => m.id);
+  function deviceName() {
+    if (window.CalorysNative && window.CalorysNative.deviceName) { try { return window.CalorysNative.deviceName(); } catch (e) { /* ignore */ } }
+    return P.kind === 'windows' ? 'PC ' + (window.NL_OS || 'Windows') : 'Navigateur';
+  }
+  function lastSyncText() {
+    const peers = Object.values((S.sync || {}).peers || {});
+    if (!peers.length) return 'jamais';
+    const last = peers.sort((a, b) => b.at - a.at)[0];
+    return last.name + ', ' + new Date(last.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+  function openSync(opts) {
+    opts = opts || {};
+    const canHost = !!(window.CalorysNative && window.CalorysNative.syncStart);
+    const canClient = P.kind !== 'web' || location.protocol === 'http:';
+    let last = {};
+    try { last = JSON.parse(localStorage.getItem('calorys.syncLast') || '{}'); } catch (e) { /* ignore */ }
+    openSheet(s => {
+      const d = s.data;
+      if (d.host) {
+        return sheetHead('Synchronisation ouverte', 'Laisse cet écran affiché pendant la synchronisation') + `<div class="sync-host">
+          <p class="muted">Sur l'autre appareil : Profil > Synchroniser mes appareils > Se connecter, puis saisis :</p>
+          <div class="sync-big"><span>Adresse</span><b>${d.host.ips.length ? d.host.ips.map(ip => esc(ip + ':' + d.host.port)).join('<br>') : 'Pas de Wi-Fi détecté'}</b></div>
+          <div class="sync-big"><span>Code</span><b class="code">${esc(d.host.code)}</b></div>
+          <p class="sync-status ${d.status ? d.status.cls : ''}">${d.status ? esc(d.status.text) : 'En attente de l\'autre appareil…'}</p>
+          <p class="muted small">Les deux appareils doivent être sur le même Wi-Fi. Les données sont chiffrées avec ce code. L'accès se ferme tout seul après 10 minutes.</p></div>
+          <div class="sheet-actions"><button class="btn grow" data-act="syncStop">${icon('check')}Terminer</button></div>`;
+      }
+      return sheetHead('Synchroniser mes appareils', 'Dernière synchronisation : ' + lastSyncText()) + `<div class="prose">
+        <p>Retrouve ton journal, tes pesées, tes recettes et ton profil sur ton téléphone et ton PC. Sans compte ni serveur : les appareils se parlent directement sur ton Wi-Fi, en chiffré.</p></div>
+        ${canHost ? `<button class="card sync-choice" data-act="syncHost">${icon('share')}<span><b>Ce téléphone sert d'hôte</b><br><span class="muted">Affiche une adresse et un code à saisir sur l'autre appareil</span></span>${icon('chevR', 'chev')}</button>` : ''}
+        ${canClient ? `<h4 class="sec">Se connecter à un téléphone</h4><div class="form">
+          <label class="field"><span>Adresse affichée sur le téléphone</span><input id="syAddr" inputmode="url" placeholder="192.168.1.20:8787" value="${esc(last.addr || '')}"></label>
+          <label class="field"><span>Code</span><input id="syCode" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-1234"></label>
+          <label class="field"><span>Mode</span><select id="syMode"><option value="merge" ${opts.replace ? '' : 'selected'}>Fusionner les deux appareils (conseillé)</option>
+            <option value="replace" ${opts.replace ? 'selected' : ''}>Remplacer les données de cet appareil par celles du téléphone</option></select></label></div>
+          ${d.error ? `<p class="warn-text">${esc(d.error)}</p>` : ''}
+          <div class="sheet-actions"><button class="btn grow" data-act="syncGo" ${d.busy ? 'disabled' : ''}>${icon('share')}${d.busy ? 'Synchronisation…' : 'Synchroniser'}</button></div>`
+        : '<p class="muted">Dans le navigateur, la synchronisation n\'est pas possible : utilise l\'appli Android ou Windows.</p>'}`;
+    }, { data: {}, onClose: () => { if (Sync.hosting) Sync.hostStop(); } });
+  }
+  function hostEvent(kind, data) {
+    const s = sheets.find(x => x.data.host);
+    if (kind === 'apply') {
+      // Fusion avec l'état actuel du téléphone (il a pu changer depuis l'envoi).
+      Sync.implode(S, Sync.merge(Sync.payload(S), data), MEAL_IDS);
+      P.save(S); render();
+      return;
+    }
+    if (!s) return;
+    if (kind === 'done') { s.data.status = { cls: 'ok-text', text: 'Synchronisé avec ' + data.peer + ' (' + data.changed + ' élément(s) mis à jour). Tu peux fermer.' }; P.vibrate(30); }
+    if (kind === 'error') s.data.status = { cls: 'warn-text', text: 'Échec : ' + data.message };
+    s.refresh();
+  }
   /* ---------- Export / sauvegarde ---------- */
   const csvNum = v => (v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ','));
   const csvTxt = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
@@ -1473,6 +1544,7 @@ Règles:
     if (!(await confirmBox(`Restaurer cette sauvegarde (${n} jour(s) de journal${data.exportedAt ? ', du ' + new Date(data.exportedAt).toLocaleDateString('fr-FR') : ''}) ? Les données actuelles seront remplacées.`, 'Restaurer', true))) return;
     delete data.app; delete data.appVersion; delete data.exportedAt;
     S = migrate(data);
+    Sync.init(S); Sync.stamp(S);
     P.save(S); await P.flush();
     applyTheme(); render(); toast('Sauvegarde restaurée.');
   }
@@ -1747,7 +1819,7 @@ Règles:
     openFolder: () => P.openFolder(),
     reset: async () => {
       if (!(await confirmBox('Effacer définitivement toutes tes données (journal, poids, aliments, recettes) ? Pense à faire une sauvegarde avant.', 'Tout effacer', true))) return;
-      S = defaults(); ui.ob = null; ui.obStep = 0; ui.tab = 'journal';
+      S = defaults(); ui.ob = null; ui.obStep = 0; ui.tab = 'journal'; Sync.init(S);
       P.save(S); await P.flush(); render();
     },
     obNext: () => { readOb(); ui.obStep++; render(); window.scrollTo(0, 0); },
@@ -1874,7 +1946,29 @@ Règles:
       if (r.on && P.kind === 'web' && 'Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } }
       syncReminders(); render(); toast(r.on ? 'Rappels activés' : 'Rappels désactivés');
     },
-    gameToggle: () => { S.settings.game = !S.settings.game; save(); render(); }
+    gameToggle: () => { S.settings.game = !S.settings.game; save(); render(); },
+    sync: () => openSync(),
+    syncFirst: () => openSync({ replace: true }),
+    syncHost: async () => {
+      const s = topSheet();
+      try { s.data.host = await Sync.hostStart(S, deviceName(), hostEvent); s.data.status = null; }
+      catch (e) { s.data.error = e.message; }
+      s.refresh();
+    },
+    syncStop: () => { Sync.hostStop(); closeSheet(); render(); },
+    syncGo: async () => {
+      const s = topSheet(), addr = $('#syAddr', s.el).value, code = $('#syCode', s.el).value, mode = $('#syMode', s.el).value;
+      if (code.replace(/[^A-Za-z0-9]/g, '').length !== 8) { s.data.error = 'Le code fait 8 caractères (ex. K7P2-9QXM).'; s.refresh(); return; }
+      if (mode === 'replace' && Object.keys(S.days).length && !(await confirmBox('Remplacer toutes les données de cet appareil par celles du téléphone ?', 'Remplacer', true))) return;
+      s.data.busy = true; s.data.error = null; s.refresh();
+      try {
+        const r = await Sync.connect(S, addr, code, mode, MEAL_IDS, deviceName());
+        try { localStorage.setItem('calorys.syncLast', JSON.stringify({ addr })); } catch (e) { /* ignore */ }
+        P.save(S); await P.flush();
+        closeSheet(s); applyTheme(); render(); syncReminders();
+        toast('Synchronisé avec ' + r.peer + ' : ' + r.received + ' reçu(s), ' + r.sent + ' envoyé(s)');
+      } catch (e) { s.data.busy = false; s.data.error = e.message; s.refresh(); }
+    }
   });
   function undoLast(meal) {
     const d = dayMut(ui.date);
@@ -1957,6 +2051,7 @@ Règles:
   async function boot() {
     try { await P.init(); } catch (e) { console.error(e); }
     try { S = migrate(await P.load()); } catch (e) { console.error(e); S = defaults(); }
+    Sync.init(S);
     ui._lastToday = today();
     applyTheme();
     CAT.onChange(() => {
