@@ -1,0 +1,20 @@
+{
+ "version": "2026-10-28",
+ "count": 892632,
+ "dbSize": 139911168,
+ "dbSha256": "5dfd6103708cbe0b519997e6cd3c994dd09db6cb7a963b5cf607cafece25a510",
+ "gzSize": 62490080,
+ "parts": [
+  {
+   "name": "catalog-2026-10-28.db.gz.00",
+   "size": 47185920,
+   "sha256": "ad242920439733767509a6f10d4263be2d9cb75e338af2118d9dd120ce5b6282"
+  },
+  {
+   "name": "catalog-2026-10-28.db.gz.01",
+   "size": 15304160,
+   "sha256": "2965d1f37f8664699fddb6152a189bf1da6eb40fac5cb45dc32ecb57f248fde4"
+  }
+ ],
+ "source": "Open Food Facts (ODbL), export France"
+}

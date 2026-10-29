@@ -41,7 +41,8 @@
     opts = opts || {};
     const H = 220, pad = { l: 44, r: 12, t: 14, b: 26 };
     if (!points.length) return '';
-    const ys = points.map(p => p.y).concat(target ? [target] : []);
+    const trend = opts.trend || null;
+    const ys = points.map(p => p.y).concat(target ? [target] : [], trend ? trend.map(p => p.y) : []);
     let lo = Math.min(...ys), hi = Math.max(...ys);
     const span = Math.max(hi - lo, 2);
     lo -= span * 0.15; hi += span * 0.15;
@@ -55,8 +56,16 @@
     if (target) s += `<line class="goal" x1="${pad.l}" x2="${W - pad.r}" y1="${Y(target)}" y2="${Y(target)}"/><text class="goal-label" x="${W - pad.r}" y="${Y(target) - 5}" text-anchor="end">objectif ${String(target).replace('.', ',')}</text>`;
     const d = points.map((p, i) => (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.y).toFixed(1)).join(' ');
     const area = d + ` L${X(points[points.length - 1].x).toFixed(1)} ${pad.t + ih} L${X(x0).toFixed(1)} ${pad.t + ih} Z`;
-    s += `<path class="area" d="${area}"/><path class="line" d="${d}"/>`;
-    points.forEach(p => { s += `<circle class="dot" cx="${X(p.x)}" cy="${Y(p.y)}" r="4"><title>${p.title || p.y}</title></circle>`; });
+    if (trend && trend.length) {
+      // Pesées brutes en points discrets, tendance lissée (moyenne mobile exponentielle) en trait plein.
+      const td = trend.map((p, i) => (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.y).toFixed(1)).join(' ');
+      const ta = td + ` L${X(trend[trend.length - 1].x).toFixed(1)} ${pad.t + ih} L${X(trend[0].x).toFixed(1)} ${pad.t + ih} Z`;
+      s += `<path class="area" d="${ta}"/><path class="raw" d="${d}"/><path class="line" d="${td}"/>`;
+      points.forEach(p => { s += `<circle class="dot raw-dot" cx="${X(p.x)}" cy="${Y(p.y)}" r="3"><title>${p.title || p.y}</title></circle>`; });
+    } else {
+      s += `<path class="area" d="${area}"/><path class="line" d="${d}"/>`;
+      points.forEach(p => { s += `<circle class="dot" cx="${X(p.x)}" cy="${Y(p.y)}" r="4"><title>${p.title || p.y}</title></circle>`; });
+    }
     const lab = [points[0], points[Math.floor(points.length / 2)], points[points.length - 1]];
     const seen = new Set();
     lab.forEach(p => { if (seen.has(p.x)) return; seen.add(p.x); s += `<text class="axis" x="${X(p.x)}" y="${H - 8}" text-anchor="middle">${new Date(p.x).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</text>`; });

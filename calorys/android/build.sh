@@ -22,7 +22,7 @@ rm -rf "$OUT" && mkdir -p "$OUT"/{gen,classes,assets/www}
 
 echo "> Copie de l'appli web"
 cp -r ../app/. "$OUT/assets/www/"
-rm -f "$OUT/assets/www/sw.js" "$OUT/assets/www/js/vendor/neutralino.js"
+rm -f "$OUT/assets/www/sw.js" "$OUT/assets/www/js/vendor/neutralino.js" "$OUT/assets/www/js/vendor/sql-wasm.js" "$OUT/assets/www/js/vendor/sql-wasm.wasm"
 
 echo "> Ressources (aapt2)"
 aapt2 compile --dir res -o "$OUT/res.zip"

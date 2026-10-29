@@ -17,6 +17,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.VibrationEffect;
+import android.print.PrintAttributes;
+import android.print.PrintManager;
 import android.os.Vibrator;
 import android.provider.MediaStore;
 import android.view.View;
@@ -33,6 +35,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+
+import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -54,12 +58,14 @@ public class MainActivity extends Activity {
     static final String START_URL = "https://" + HOST + "/index.html";
     static final int REQ_FILE = 10;
     static final int REQ_CAMERA_PERM = 11;
+    static final int REQ_NOTIF_PERM = 12;
 
     private FrameLayout root;
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
     private Uri cameraOutput;
     private PermissionRequest pendingPermission;
+    private CatalogStore catalog;
 
     private static final Map<String, String> MIME = new HashMap<>();
     static {
@@ -77,6 +83,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        catalog = new CatalogStore(this);
         root = new FrameLayout(this);
         boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         root.setBackgroundColor(night ? Color.parseColor("#0D1310") : Color.parseColor("#F4F7F5"));
@@ -381,6 +388,54 @@ public class MainActivity extends Activity {
                         getWindow().setStatusBarColor(c);
                         getWindow().setNavigationBarColor(c);
                     }
+                }
+            });
+        }
+
+        /* ---- Catalogue hors ligne ---- */
+        @JavascriptInterface
+        public String catalogStatus() { return catalog.status(); }
+
+        @JavascriptInterface
+        public void catalogInstall(String manifest, String sources) {
+            catalog.install(manifest, sources, new CatalogStore.Listener() {
+                @Override
+                public void onProgress(final String state, final double progress, final String message) {
+                    final String js = "window.__calorysCatalog && window.__calorysCatalog(" + JSONObject.quote(state) + "," + progress + "," + JSONObject.quote(message == null ? "" : message) + ")";
+                    runOnUiThread(new Runnable() { @Override public void run() { web.evaluateJavascript(js, null); } });
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String catalogSearch(String match, int limit) { return catalog.search(match, limit); }
+
+        @JavascriptInterface
+        public String catalogBarcode(String code) { return catalog.barcode(code); }
+
+        @JavascriptInterface
+        public void catalogRemove() { catalog.remove(); }
+
+        /* ---- Rappels ---- */
+        @JavascriptInterface
+        public void setReminders(final String json) {
+            ReminderReceiver.schedule(MainActivity.this, json);
+            boolean any = json != null && (json.contains("\"id\"") || json.matches(".*\"fastEnd\":[1-9].*"));
+            if (any && Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                runOnUiThread(new Runnable() { @Override public void run() { requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF_PERM); } });
+            }
+        }
+
+        /* ---- Impression / PDF du rapport ---- */
+        @JavascriptInterface
+        public void printPage(final String name) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    PrintManager pm = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+                    if (pm == null) return;
+                    String n = safeName(name);
+                    pm.print(n, web.createPrintDocumentAdapter(n), new PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4).build());
                 }
             });
         }
