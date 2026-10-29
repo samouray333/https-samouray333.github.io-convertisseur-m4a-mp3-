@@ -56,6 +56,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         void onState(boolean playing);
         void onTtsReady(boolean ok, String error);
         void onFinished();
+        void onDocumentChanged();
     }
 
     public final class LocalBinder extends Binder {
@@ -250,8 +251,11 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
     // ------------------------------------------------------------------ document
 
     /** Charge un document de la bibliothèque (ne fait rien si c'est déjà celui en cours). */
-    public void load(String id) {
-        if (id.equals(docId)) return;
+    public void load(String id) { load(id, false); }
+
+    /** force = recharger même si c'est le document en cours (texte de l'écran qui a changé). */
+    public void load(String id, boolean force) {
+        if (id.equals(docId) && !force) return;
         if (playing) pause();
         savePosition(true);
         Library.Entry e = Library.get(this, id);
@@ -267,6 +271,15 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
             sent = Math.max(0, Math.min(e.sentence, sentences(para).size() - 1));
         }
         updateMetadata();
+        if (force) for (Listener l : copyListeners()) l.onDocumentChanged();
+    }
+
+    /** Lecture immédiate d'un document depuis un paragraphe (utilisé par le bouton flottant). */
+    public void playFrom(String id, int p) {
+        if (playing) pause();
+        load(id, true);
+        seek(p, 0);
+        play();
     }
 
     public String docId() { return docId; }

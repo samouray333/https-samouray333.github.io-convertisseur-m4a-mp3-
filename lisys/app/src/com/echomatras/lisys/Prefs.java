@@ -38,6 +38,13 @@ public final class Prefs {
     public static boolean followWord(Context c) { return sp(c).getBoolean("followWord", true); }
     public static void setFollowWord(Context c, boolean v) { sp(c).edit().putBoolean("followWord", v).apply(); }
 
+    /** Bulle flottante affichée par le service d'accessibilité. */
+    public static boolean bubble(Context c) { return sp(c).getBoolean("bubble", true); }
+    public static void setBubble(Context c, boolean v) { sp(c).edit().putBoolean("bubble", v).apply(); }
+    public static int bubbleX(Context c) { return sp(c).getInt("bubbleX", -1); }
+    public static int bubbleY(Context c) { return sp(c).getInt("bubbleY", -1); }
+    public static void setBubblePos(Context c, int x, int y) { sp(c).edit().putInt("bubbleX", x).putInt("bubbleY", y).apply(); }
+
     public static String lastUrl(Context c) { return sp(c).getString("lastUrl", ""); }
     public static void setLastUrl(Context c, String v) { sp(c).edit().putString("lastUrl", v).apply(); }
 }

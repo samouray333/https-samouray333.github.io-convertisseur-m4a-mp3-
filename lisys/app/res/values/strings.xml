@@ -3,4 +3,6 @@
     <string name="app_name">Lisys</string>
     <string name="read_with">Lire avec Lisys</string>
     <string name="read_selection">Lire avec Lisys</string>
+    <string name="a11y_label">Lisys : bouton de lecture</string>
+    <string name="a11y_description">Affiche un bouton flottant Lisys par-dessus toutes les applis. Un appui lit à voix haute le texte affiché à l\'écran (site web, appli, message). Un appui long permet de toucher l\'endroit où commencer. Lisys lit le contenu de l\'écran seulement quand tu appuies sur le bouton, et rien n\'est envoyé sur internet.</string>
 </resources>

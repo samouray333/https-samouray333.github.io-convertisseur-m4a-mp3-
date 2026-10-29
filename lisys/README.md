@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.0 (versionCode 1)
+- Version : 1.1 (versionCode 2)
 - Package : `com.echomatras.lisys`
 - Android 8.0 (API 26) minimum, cible Android 14 (API 34)
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -14,6 +14,14 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - Pages web : l'appli garde l'article et retire les menus, publicités, bandeaux cookies et commentaires
 - Navigateur intégré pour les sites qui demandent JavaScript ou une connexion. Le bouton « Lire cette page » lit toute la page, ou seulement la sélection.
 - Texte copié dans le presse-papiers, ou saisi à la main
+
+**Bouton flottant : lire n'importe quelle appli ou site (nouveau en 1.1)**
+- Un bouton 🔊 reste par-dessus toutes les applis (Chrome, Facebook, messages, mails…).
+- **Un appui** : Lisys lit à voix haute le texte affiché, sans quitter l'appli. Sur une page web, la lecture continue sur la suite de la page. Un deuxième appui arrête.
+- **Appui long** : tu touches ensuite l'endroit où commencer la lecture.
+- On peut le déplacer en le faisant glisser (il se range contre le bord). Le bouton d'accessibilité d'Android fait la même chose.
+- Pour l'activer : bouton « Lire les autres applis et sites » sur l'accueil, puis Paramètres > Accessibilité > « Lisys : bouton de lecture ». Sur Android 13 et plus, avec une APK installée depuis un fichier, il faut d'abord aller dans Infos appli > ⋮ > « Autoriser les paramètres restreints ».
+- Lisys lit le contenu de l'écran seulement quand on appuie sur le bouton, et rien n'est envoyé sur internet.
 
 **Pour envoyer du texte vers Lisys depuis les autres applis**
 - Sélectionne du texte dans n'importe quelle appli, puis choisis **« Lire avec Lisys »** dans le menu
@@ -52,6 +60,7 @@ Tes fichiers d'origine ne sont jamais modifiés.
 | `ReaderService.java` | Moteur de lecture en arrière-plan (synthèse vocale, notification, casque, focus audio) |
 | `ExportService.java` + `AacEncoder.java` | Création du fichier audio `.m4a` |
 | `WebActivity.java` | Navigateur intégré |
+| `ScreenReaderService.java` + `res/xml/accessibility_config.xml` | Bouton flottant (service d'accessibilité) qui lit l'écran des autres applis |
 | `Extractor.java` | Extraction du texte : PDF, DOCX, ODT, EPUB, RTF, HTML, TXT |
 | `WebExtractor.java` | Téléchargement d'une page web et extraction de l'article |
 | `Sentences.java` | Découpage en phrases |
@@ -84,6 +93,8 @@ Il a besoin de la clé de signature dans `signing/` (`lisys-release.jks` et `sig
 Pour une nouvelle version : augmente `android:versionCode` (+1) et `android:versionName` dans `app/AndroidManifest.xml`, puis relance `./build.sh`.
 
 ## Limites connues
+
+- Le bouton flottant lit le texte que l'appli fournit à Android. Les jeux, les vidéos et certaines applis qui affichent le texte comme une image n'en fournissent pas : il n'y a alors rien à lire.
 
 - Les PDF scannés (des images) ne contiennent pas de texte : il faudrait un module de reconnaissance de texte (OCR), pas encore inclus.
 - L'ancien format Word `.doc` n'est pas pris en charge (il faut l'enregistrer en `.docx` ou en PDF).

@@ -556,6 +556,23 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     }
 
     @Override
+    public void onDocumentChanged() {
+        if (svc == null) return;
+        docId = svc.docId();
+        paras = svc.paragraphs();
+        curPara = svc.para();
+        curSent = svc.sentence();
+        wordStart = wordEnd = -1;
+        Library.Entry e = Library.get(this, docId);
+        titleView.setText(e != null ? e.title : "");
+        seek.setMax(Math.max(0, paras.size() - 1));
+        adapter.notifyDataSetChanged();
+        jumpTo(curPara);
+        updateProgress();
+        updateBig();
+    }
+
+    @Override
     public void onFinished() {
         Toast.makeText(this, "Fin du document", Toast.LENGTH_SHORT).show();
     }

@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     private Ui.Palette pal;
     private ListView list;
     private TextView empty;
+    private Button bubbleBtn;
     private RecentAdapter adapter;
     private AlertDialog busy;
     private TextView busyText;
@@ -124,6 +125,13 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { readClipboard(); }
         });
         root.addView(clip, fullWidth());
+        root.addView(space(10));
+
+        bubbleBtn = Ui.bigButton(this, "", pal.surface, pal.text);
+        bubbleBtn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { showBubbleHelp(); }
+        });
+        root.addView(bubbleBtn, fullWidth());
 
         root.addView(space(20));
         root.addView(Ui.label(this, "Reprendre la lecture", 18, pal.text, true));
@@ -171,6 +179,65 @@ public class MainActivity extends Activity {
         adapter.items = Library.list(this);
         adapter.notifyDataSetChanged();
         empty.setVisibility(adapter.items.isEmpty() ? View.VISIBLE : View.GONE);
+        bubbleBtn.setText(ScreenReaderService.isEnabled(this)
+                ? "✅   Bouton flottant activé" : "🔊   Lire les autres applis et sites");
+    }
+
+    // ------------------------------------------------------------------ bouton flottant
+
+    private void showBubbleHelp() {
+        if (ScreenReaderService.isEnabled(this)) {
+            final boolean shown = Prefs.bubble(this);
+            new AlertDialog.Builder(this)
+                    .setTitle("Bouton flottant Lisys")
+                    .setMessage("Le bouton 🔊 reste par-dessus toutes les applis.\n\n"
+                            + "• Un appui : Lisys lit le texte affiché (page web, appli, message…). Un deuxième appui arrête.\n"
+                            + "• Appui long : touche ensuite l'endroit où commencer la lecture.\n"
+                            + "• Glisse-le pour le déplacer.\n\n"
+                            + "Le bouton d'accessibilité d'Android (barre du bas) fait la même chose.")
+                    .setPositiveButton(shown ? "Masquer la bulle" : "Afficher la bulle", new DialogInterface.OnClickListener() {
+                        @Override public void onClick(DialogInterface d, int w) { Prefs.setBubble(MainActivity.this, !shown); }
+                    })
+                    .setNeutralButton("Désactiver", new DialogInterface.OnClickListener() {
+                        @Override public void onClick(DialogInterface d, int w) { openAccessibilitySettings(); }
+                    })
+                    .setNegativeButton("Fermer", null)
+                    .show();
+            return;
+        }
+        String restricted = Build.VERSION.SDK_INT >= 33
+                ? "\n\nSi Android affiche « Paramètre restreint » (appli installée depuis un fichier APK) : "
+                + "appuie sur « Infos appli », puis sur ⋮ en haut à droite, puis « Autoriser les paramètres restreints », "
+                + "et recommence." : "";
+        new AlertDialog.Builder(this)
+                .setTitle("Lire les autres applis et les sites")
+                .setMessage("Lisys peut afficher un bouton flottant 🔊 par-dessus toutes les applis : "
+                        + "un appui, et Lisys lit à voix haute ce qui est à l'écran.\n\n"
+                        + "Pour l'activer :\n1. Appuie sur « Activer »\n2. Choisis « Lisys : bouton de lecture » "
+                        + "(parfois dans « Applis installées » ou « Services téléchargés »)\n3. Active-le et accepte.\n\n"
+                        + "Lisys ne lit l'écran que quand tu appuies sur le bouton, et rien n'est envoyé sur internet."
+                        + restricted)
+                .setPositiveButton("Activer", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { openAccessibilitySettings(); }
+                })
+                .setNeutralButton(Build.VERSION.SDK_INT >= 33 ? "Infos appli" : null, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        try {
+                            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:" + getPackageName())));
+                        } catch (Exception ignored) {}
+                    }
+                })
+                .setNegativeButton("Plus tard", null)
+                .show();
+    }
+
+    private void openAccessibilitySettings() {
+        try {
+            startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        } catch (Exception e) {
+            Toast.makeText(this, "Ouvre Paramètres > Accessibilité.", Toast.LENGTH_LONG).show();
+        }
     }
 
     private final class RecentAdapter extends BaseAdapter {
@@ -499,6 +566,7 @@ public class MainActivity extends Activity {
     private void showSettings() {
         String[] items = {
                 "Thème : " + Ui.themeName(Prefs.theme(this)),
+                "Bouton flottant (lire les autres applis)",
                 "Réglages de la synthèse vocale d'Android",
                 "Installer d'autres voix",
                 "Vider la liste des documents",
@@ -511,9 +579,10 @@ public class MainActivity extends Activity {
                             case 0: chooseTheme(MainActivity.this, new Runnable() {
                                 @Override public void run() { build(); refresh(); }
                             }); break;
-                            case 1: openTtsSettings(MainActivity.this); break;
-                            case 2: installVoices(MainActivity.this); break;
-                            case 3: confirmClear(); break;
+                            case 1: showBubbleHelp(); break;
+                            case 2: openTtsSettings(MainActivity.this); break;
+                            case 3: installVoices(MainActivity.this); break;
+                            case 4: confirmClear(); break;
                             default: about();
                         }
                     }
@@ -570,7 +639,7 @@ public class MainActivity extends Activity {
         t.setPadding(p, p, p, 0);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         t.setText("Lisys " + v + " · Echo Matras\n\n"
-                + "Lecture à voix haute de PDF, Word (.docx), OpenOffice (.odt), livres EPUB, RTF, HTML, "
+                + "Lecture à voix haute de l'écran des autres applis (bouton flottant), de PDF, Word (.docx), OpenOffice (.odt), livres EPUB, RTF, HTML, "
                 + "fichiers texte et pages web.\n\n"
                 + "Tout est traité sur le téléphone, avec la synthèse vocale d'Android. Aucune donnée n'est envoyée "
                 + "ailleurs (sauf le téléchargement des pages web que tu demandes).\n\n"
