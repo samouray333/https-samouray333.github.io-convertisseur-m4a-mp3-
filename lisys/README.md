@@ -51,6 +51,32 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - L'appli reprend là où tu t'étais arrêté (bibliothèque des 60 derniers documents)
 - **Export audio** : le document entier devient un fichier `.m4a` (livre audio), enregistré dans `Téléchargements/Lisys`. Bouton Partager dans la notification.
 
+## Version Windows (dossier `windows/`)
+
+- Version 1.0.0, pour Windows 10 et 11. Elle utilise le .NET Framework 4.8, déjà présent sur ces systèmes : rien d'autre à installer.
+- **Installeur** `Lisys-1.0.0-installation.exe` : installation pour l'utilisateur sans droits administrateur (dans `%LOCALAPPDATA%\Programs\Lisys`), raccourcis menu Démarrer et bureau, « Lire avec Lisys » au clic droit sur les PDF, Word, EPUB, images…, désinstallation propre depuis Applications et fonctionnalités.
+- **Version portable** `Lisys-1.0.0-portable.zip` : à décompresser n'importe où, puis lancer `Lisys.exe`.
+
+**Fonctions**
+- Les mêmes lectures que sur Android : PDF, Word, ODT, EPUB, RTF, HTML, texte, pages web (article seul), texte copié, glisser-déposer d'un fichier ou d'un texte dans la fenêtre.
+- Photos, images et PDF scannés lus avec la **reconnaissance de texte intégrée à Windows**, hors ligne. Si elle manque : Paramètres > Langue > Français > Options > Reconnaissance optique de caractères.
+- Écran de lecture : phrase et mot surlignés, clic sur une phrase pour lire à partir de là, mode loupe (phrase en très gros), 4 thèmes dont contraste élevé, taille du texte, vitesse, voix, recherche (Ctrl+F), export en fichier audio `.m4a` dans `Documents\Lisys`.
+- **Raccourcis dans toutes les applis** :
+  - `Ctrl+Alt+L` : lire le texte sélectionné (ou, s'il n'y a pas de sélection, le texte sous la souris)
+  - `Ctrl+Alt+M` : **lecture sous la souris**. On passe la souris sur un texte, Lisys le lit et l'entoure en jaune.
+  - `Ctrl+Alt+O` : **lire une zone de l'écran**. On trace un rectangle, Lisys reconnaît le texte (images, PDF scannés, applis sans texte).
+  - `Ctrl+Alt+P` : pause et reprise
+  - `Ctrl+Alt+C` : lire le presse-papiers (texte ou image)
+- **Bandeau en très gros texte** (option) : la phrase lue s'affiche en très gros par-dessus les autres fenêtres.
+- Icône près de l'horloge. La croix garde Lisys disponible, et l'option « Démarrer avec Windows » est proposée.
+- Clavier dans l'écran de lecture : Espace (lire/pause), ← → (phrase), Ctrl+↑ ↓ (paragraphe), Ctrl+ + / − (taille), Échap (accueil).
+
+**Fichiers** : réglages et bibliothèque dans `%APPDATA%\Lisys`, fichiers audio dans `Documents\Lisys`.
+
+**Reconstruire** : `windows/build-windows.sh` (.NET SDK 8 et NSIS 3, sous Linux ou Windows). Il produit `windows/dist/` (installeur, version portable).
+
+**Limites** : la voix est celle de Windows (Hortense en français, d'autres voix s'installent dans les Paramètres). L'exe n'est pas signé numériquement, donc Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » : cliquer sur « Informations complémentaires », puis « Exécuter quand même ».
+
 ## Où sont les fichiers
 
 | Quoi | Où |
@@ -80,6 +106,9 @@ Tes fichiers d'origine ne sont jamais modifiés.
 | `Prefs.java`, `Ui.java` | Réglages, couleurs des thèmes, composants d'interface |
 | `libs/` | PdfBox-Android 2.0.27.0 (Apache 2.0) et jsoup 1.13.1 (MIT) |
 | `tests/` | Tests sur PC des moteurs d'extraction (`tests/run-tests.sh fichier.pdf …`) |
+| `windows/Lisys/` | Code de la version Windows (C#, WinForms) |
+| `windows/installer/lisys.nsi` | Script de l'installeur NSIS |
+| `windows/Tests/` | Tests des moteurs d'extraction de la version Windows |
 
 ## Reconstruire l'APK
 
