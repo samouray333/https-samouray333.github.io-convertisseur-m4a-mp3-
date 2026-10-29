@@ -187,22 +187,7 @@ public class MainActivity extends Activity {
 
     private void showBubbleHelp() {
         if (ScreenReaderService.isEnabled(this)) {
-            final boolean shown = Prefs.bubble(this);
-            new AlertDialog.Builder(this)
-                    .setTitle("Bouton flottant Lisys")
-                    .setMessage("Le bouton 🔊 reste par-dessus toutes les applis.\n\n"
-                            + "• Un appui : Lisys lit le texte affiché (page web, appli, message…). Un deuxième appui arrête.\n"
-                            + "• Appui long : touche ensuite l'endroit où commencer la lecture.\n"
-                            + "• Glisse-le pour le déplacer.\n\n"
-                            + "Le bouton d'accessibilité d'Android (barre du bas) fait la même chose.")
-                    .setPositiveButton(shown ? "Masquer la bulle" : "Afficher la bulle", new DialogInterface.OnClickListener() {
-                        @Override public void onClick(DialogInterface d, int w) { Prefs.setBubble(MainActivity.this, !shown); }
-                    })
-                    .setNeutralButton("Désactiver", new DialogInterface.OnClickListener() {
-                        @Override public void onClick(DialogInterface d, int w) { openAccessibilitySettings(); }
-                    })
-                    .setNegativeButton("Fermer", null)
-                    .show();
+            bubbleSettings();
             return;
         }
         String restricted = Build.VERSION.SDK_INT >= 33
@@ -229,6 +214,88 @@ public class MainActivity extends Activity {
                     }
                 })
                 .setNegativeButton("Plus tard", null)
+                .show();
+    }
+
+    /** Réglages de la bulle : taille, couleur, annonces vocales, affichage. */
+    private void bubbleSettings() {
+        final boolean shown = Prefs.bubble(this);
+        int size = Prefs.bubbleSize(this);
+        String sizeName = Ui.BUBBLE_SIZE_NAMES[1];
+        for (int i = 0; i < Ui.BUBBLE_SIZES.length; i++) if (Ui.BUBBLE_SIZES[i] == size) sizeName = Ui.BUBBLE_SIZE_NAMES[i];
+        int color = Math.max(0, Math.min(Prefs.bubbleColor(this), Ui.BUBBLE_COLOR_NAMES.length - 1));
+        String[] items = {
+                "Taille de la bulle : " + sizeName,
+                "Couleur de la bulle : " + Ui.BUBBLE_COLOR_NAMES[color],
+                "Annonces vocales : " + (Prefs.bubbleVoice(this) ? "oui" : "non"),
+                shown ? "Masquer la bulle" : "Afficher la bulle",
+                "Comment ça marche ?",
+                "Désactiver le bouton (réglages Android)"};
+        new AlertDialog.Builder(this)
+                .setTitle("Bouton flottant Lisys")
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        switch (w) {
+                            case 0: chooseBubbleSize(); break;
+                            case 1: chooseBubbleColor(); break;
+                            case 2:
+                                Prefs.setBubbleVoice(MainActivity.this, !Prefs.bubbleVoice(MainActivity.this));
+                                bubbleSettings();
+                                break;
+                            case 3:
+                                Prefs.setBubble(MainActivity.this, !shown);
+                                bubbleSettings();
+                                break;
+                            case 4: bubbleHowTo(); break;
+                            default: openAccessibilitySettings();
+                        }
+                    }
+                })
+                .setNegativeButton("Fermer", null)
+                .show();
+    }
+
+    private void chooseBubbleSize() {
+        int cur = 1;
+        for (int i = 0; i < Ui.BUBBLE_SIZES.length; i++) if (Ui.BUBBLE_SIZES[i] == Prefs.bubbleSize(this)) cur = i;
+        new AlertDialog.Builder(this)
+                .setTitle("Taille de la bulle")
+                .setSingleChoiceItems(Ui.BUBBLE_SIZE_NAMES, cur, new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        // La bulle change tout de suite : on voit le résultat derrière la fenêtre.
+                        Prefs.setBubbleSize(MainActivity.this, Ui.BUBBLE_SIZES[w]);
+                    }
+                })
+                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
+                })
+                .show();
+    }
+
+    private void chooseBubbleColor() {
+        new AlertDialog.Builder(this)
+                .setTitle("Couleur de la bulle")
+                .setSingleChoiceItems(Ui.BUBBLE_COLOR_NAMES, Prefs.bubbleColor(this), new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { Prefs.setBubbleColor(MainActivity.this, w); }
+                })
+                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
+                })
+                .show();
+    }
+
+    private void bubbleHowTo() {
+        new AlertDialog.Builder(this)
+                .setTitle("Comment ça marche ?")
+                .setMessage("La bulle 🔊 reste par-dessus toutes les applis.\n\n"
+                        + "• Un appui : Lisys lit tout le texte affiché (page web, appli, message…). "
+                        + "Un deuxième appui arrête.\n\n"
+                        + "• Appui long (la bulle devient ✋) : lecture au doigt. Glisse le doigt sur le texte : "
+                        + "Lisys lit la phrase qui est sous le doigt et l'entoure en jaune. Quand tu lèves le doigt, "
+                        + "la lecture continue. Touche la bulle pour quitter ce mode.\n\n"
+                        + "• Glisse la bulle pour la déplacer : elle se range contre le bord.\n\n"
+                        + "Avec TalkBack, les deux actions sont dans le menu des actions de la bulle.")
+                .setPositiveButton("OK", null)
                 .show();
     }
 

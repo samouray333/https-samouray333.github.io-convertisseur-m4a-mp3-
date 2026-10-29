@@ -41,6 +41,15 @@ public final class Prefs {
     /** Bulle flottante affichée par le service d'accessibilité. */
     public static boolean bubble(Context c) { return sp(c).getBoolean("bubble", true); }
     public static void setBubble(Context c, boolean v) { sp(c).edit().putBoolean("bubble", v).apply(); }
+    /** Taille de la bulle en dp. */
+    public static int bubbleSize(Context c) { return sp(c).getInt("bubbleSize", 76); }
+    public static void setBubbleSize(Context c, int v) { sp(c).edit().putInt("bubbleSize", v).apply(); }
+    /** Couleur de la bulle : index dans Ui.BUBBLE_COLORS. */
+    public static int bubbleColor(Context c) { return sp(c).getInt("bubbleColor", 0); }
+    public static void setBubbleColor(Context c, int v) { sp(c).edit().putInt("bubbleColor", v).apply(); }
+    /** Annonce vocale des actions de la bulle (« Mode doigt », « Arrêt »…). */
+    public static boolean bubbleVoice(Context c) { return sp(c).getBoolean("bubbleVoice", true); }
+    public static void setBubbleVoice(Context c, boolean v) { sp(c).edit().putBoolean("bubbleVoice", v).apply(); }
     public static int bubbleX(Context c) { return sp(c).getInt("bubbleX", -1); }
     public static int bubbleY(Context c) { return sp(c).getInt("bubbleY", -1); }
     public static void setBubblePos(Context c, int x, int y) { sp(c).edit().putInt("bubbleX", x).putInt("bubbleY", y).apply(); }

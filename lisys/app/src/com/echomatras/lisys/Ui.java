@@ -23,6 +23,20 @@ final class Ui {
     static final int BRAND_LIGHT = 0xFF3B82F6;
     static final int ACCENT = 0xFFF59E0B;     // ambre
 
+    /** Couleurs de la bulle flottante : nom, fond, symbole, bordure (toujours bien contrastées). */
+    static final String[] BUBBLE_COLOR_NAMES = {"Bleu", "Jaune", "Rouge", "Vert", "Orange", "Violet", "Noir", "Blanc"};
+    static final int[][] BUBBLE_COLORS = {
+            {0xFF1E3A8A, 0xFFFFFFFF, 0xFFFFFFFF},
+            {0xFFFFD600, 0xFF000000, 0xFF000000},
+            {0xFFD50000, 0xFFFFFFFF, 0xFFFFFFFF},
+            {0xFF00701A, 0xFFFFFFFF, 0xFFFFFFFF},
+            {0xFFFF6D00, 0xFF000000, 0xFF000000},
+            {0xFF6A1B9A, 0xFFFFFFFF, 0xFFFFFFFF},
+            {0xFF000000, 0xFFFFFF00, 0xFFFFFF00},
+            {0xFFFFFFFF, 0xFF000000, 0xFF000000}};
+    static final int[] BUBBLE_SIZES = {56, 76, 96, 120, 150};
+    static final String[] BUBBLE_SIZE_NAMES = {"Petit", "Moyen", "Grand", "Très grand", "Géant"};
+
     /** Couleurs d'un thème de lecture. */
     static final class Palette {
         int bg, surface, text, muted, paraBg, sentBg, wordBg, wordText, bar, barText, button, buttonText;

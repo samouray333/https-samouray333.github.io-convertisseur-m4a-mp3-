@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.1 (versionCode 2)
+- Version : 1.2 (versionCode 3)
 - Package : `com.echomatras.lisys`
 - Android 8.0 (API 26) minimum, cible Android 14 (API 34)
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -15,10 +15,11 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - Navigateur intégré pour les sites qui demandent JavaScript ou une connexion. Le bouton « Lire cette page » lit toute la page, ou seulement la sélection.
 - Texte copié dans le presse-papiers, ou saisi à la main
 
-**Bouton flottant : lire n'importe quelle appli ou site (nouveau en 1.1)**
+**Bouton flottant : lire n'importe quelle appli ou site**
 - Un bouton 🔊 reste par-dessus toutes les applis (Chrome, Facebook, messages, mails…).
 - **Un appui** : Lisys lit à voix haute le texte affiché, sans quitter l'appli. Sur une page web, la lecture continue sur la suite de la page. Un deuxième appui arrête.
-- **Appui long** : tu touches ensuite l'endroit où commencer la lecture.
+- **Appui long** (la bulle devient ✋) : **lecture au doigt**. On glisse le doigt sur le texte et Lisys lit la phrase qui est dessous, entourée d'un cadre jaune. Quand on lève le doigt, la lecture continue. Touche la bulle pour quitter (ou arrêt automatique après 90 s sans rien).
+- **Bulle adaptée aux malvoyants** : 5 tailles (de 56 à 150 dp), 8 couleurs bien contrastées (jaune, noir sur jaune…), double bordure visible sur tous les fonds, vibration, annonces vocales (« Lecture au doigt »…) et actions TalkBack. Réglages : accueil > bouton flottant.
 - On peut le déplacer en le faisant glisser (il se range contre le bord). Le bouton d'accessibilité d'Android fait la même chose.
 - Pour l'activer : bouton « Lire les autres applis et sites » sur l'accueil, puis Paramètres > Accessibilité > « Lisys : bouton de lecture ». Sur Android 13 et plus, avec une APK installée depuis un fichier, il faut d'abord aller dans Infos appli > ⋮ > « Autoriser les paramètres restreints ».
 - Lisys lit le contenu de l'écran seulement quand on appuie sur le bouton, et rien n'est envoyé sur internet.

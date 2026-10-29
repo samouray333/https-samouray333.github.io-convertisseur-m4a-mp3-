@@ -8,19 +8,25 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Parcelable;
 import android.os.SystemClock;
 import android.provider.Settings;
-import android.text.TextUtils;
+import android.speech.tts.TextToSpeech;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -36,33 +42,47 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Bouton flottant « Lisys » par-dessus toutes les applis :
- * un appui lit ce qui est affiché (site web, appli, message…),
- * un appui long permet de toucher l'endroit où commencer la lecture.
+ * Bouton flottant « Lisys » par-dessus toutes les applis.
+ * - Appui : lit le texte affiché (site web, appli, message…). Nouvel appui : arrêt.
+ * - Appui long : mode « lecture au doigt » : on glisse le doigt sur le texte,
+ *   Lisys lit la phrase sous le doigt et l'entoure en jaune.
  */
 public class ScreenReaderService extends AccessibilityService implements ReaderService.Listener {
 
     static final String SOURCE = "ecran";
     static final String TITLE = "Lecture de l'écran";
+    private static final long FINGER_IDLE_MS = 90000;
 
     /** Un bloc de texte vu à l'écran, avec sa position. */
     static final class Item {
-        final String text;
+        final String text;          // texte nettoyé (celui qui est lu)
+        final int[] map;            // position dans le texte d'origine -> position dans le texte nettoyé
         final Rect bounds;
         final boolean visible;
-        Item(String t, Rect b, boolean v) { text = t; bounds = b; visible = v; }
+        final AccessibilityNodeInfo node;
+        RectF[] chars;              // position de chaque caractère à l'écran, si l'appli la fournit
+        boolean charsTried;
+
+        Item(String t, int[] m, Rect b, boolean v, AccessibilityNodeInfo n) {
+            text = t; map = m; bounds = b; visible = v; node = n;
+        }
     }
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private WindowManager wm;
     private TextView bubble;
     private WindowManager.LayoutParams bubbleLp;
-    private FrameLayout touchLayer;
-    private List<Item> snapshot;
-    private String snapshotApp;
     private ReaderService reader;
     private boolean bound;
     private AccessibilityButtonController.AccessibilityButtonCallback buttonCallback;
+
+    // Mode lecture au doigt
+    private FrameLayout fingerRoot;
+    private FingerLayer fingerLayer;
+    private List<Item> fingerItems;
+    private String fingerDocId;
+    private int lastPara = -1, lastSent = -1;
+    private long lastTouch;
 
     private final ServiceConnection conn = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName n, IBinder b) {
@@ -75,9 +95,9 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener =
             new SharedPreferences.OnSharedPreferenceChangeListener() {
                 @Override public void onSharedPreferenceChanged(SharedPreferences sp, String key) {
-                    if ("bubble".equals(key)) {
+                    if ("bubble".equals(key) || "bubbleSize".equals(key) || "bubbleColor".equals(key)) {
+                        hideBubble();
                         if (Prefs.bubble(ScreenReaderService.this)) showBubble();
-                        else hideBubble();
                     }
                 }
             };
@@ -94,7 +114,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         // Bouton d'accessibilité d'Android (barre de navigation ou geste) : même action que la bulle.
         try {
             buttonCallback = new AccessibilityButtonController.AccessibilityButtonCallback() {
-                @Override public void onClicked(AccessibilityButtonController c) { readScreen(); }
+                @Override public void onClicked(AccessibilityButtonController c) { onBubbleTap(); }
             };
             getAccessibilityButtonController().registerAccessibilityButtonCallback(buttonCallback, main);
         } catch (Exception ignored) {
@@ -114,7 +134,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     @Override
     public void onDestroy() {
         getSharedPreferences("reglages", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefsListener);
-        hideTouchLayer();
+        stopFingerMode(false);
         hideBubble();
         try {
             if (buttonCallback != null) getAccessibilityButtonController().unregisterAccessibilityButtonCallback(buttonCallback);
@@ -142,23 +162,43 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
 
     // ------------------------------------------------------------------ bulle flottante
 
+    private int[] bubbleColors() {
+        int i = Prefs.bubbleColor(this);
+        if (i < 0 || i >= Ui.BUBBLE_COLORS.length) i = 0;
+        return Ui.BUBBLE_COLORS[i];
+    }
+
     private void showBubble() {
         if (bubble != null || wm == null) return;
-        int size = Ui.dp(this, 58);
+        int sizeDp = Prefs.bubbleSize(this);
+        int size = Ui.dp(this, sizeDp);
+        int[] col = bubbleColors();
         bubble = new TextView(this);
-        bubble.setText("🔊");
-        bubble.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
+        bubble.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeDp * 0.40f);
         bubble.setGravity(Gravity.CENTER);
         bubble.setTypeface(Typeface.DEFAULT_BOLD);
-        bubble.setTextColor(0xFFFFFFFF);
-        bubble.setContentDescription("Lisys : lire l'écran. Appui long : toucher l'endroit où commencer.");
+        bubble.setTextColor(col[1]);
         GradientDrawable d = new GradientDrawable();
         d.setShape(GradientDrawable.OVAL);
-        d.setColor(Ui.BRAND);
-        d.setStroke(Ui.dp(this, 3), 0xFFFFFFFF);
+        d.setColor(col[0]);
+        // Double bordure (couleur + contour opposé) : la bulle se voit sur fond clair comme sur fond sombre.
+        d.setStroke(Math.max(Ui.dp(this, 3), size / 18), col[2]);
         bubble.setBackground(d);
-        bubble.setElevation(Ui.dp(this, 6));
-        bubble.setAlpha(0.92f);
+        bubble.setElevation(Ui.dp(this, 8));
+        bubble.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK,
+                        fingerRoot != null ? "Quitter la lecture au doigt" : "Lire l'écran"));
+                info.addAction(new AccessibilityNodeInfo.AccessibilityAction(R.id.action_finger, "Lecture au doigt"));
+            }
+            @Override public boolean performAccessibilityAction(View host, int action, Bundle args) {
+                if (action == R.id.action_finger) { startFingerMode(); return true; }
+                if (action == AccessibilityNodeInfo.ACTION_CLICK) { onBubbleTap(); return true; }
+                return super.performAccessibilityAction(host, action, args);
+            }
+        });
+        updateBubbleState();
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
         bubbleLp = new WindowManager.LayoutParams(size, size,
@@ -167,8 +207,12 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                 PixelFormat.TRANSLUCENT);
         bubbleLp.gravity = Gravity.TOP | Gravity.START;
         int x = Prefs.bubbleX(this), y = Prefs.bubbleY(this);
-        bubbleLp.x = x >= 0 ? Math.min(x, dm.widthPixels - size) : dm.widthPixels - size - Ui.dp(this, 8);
-        bubbleLp.y = y >= 0 ? Math.min(y, dm.heightPixels - size) : dm.heightPixels / 2;
+        int margin = Ui.dp(this, 6);
+        if (x < 0) x = dm.widthPixels - size - margin;
+        else if (x + size / 2 >= dm.widthPixels / 2) x = dm.widthPixels - size - margin; // garde le bon bord si la taille change
+        else x = margin;
+        bubbleLp.x = x;
+        bubbleLp.y = y >= 0 ? Math.min(y, dm.heightPixels - size - margin) : dm.heightPixels / 2;
         bubble.setOnTouchListener(new BubbleTouch());
         try {
             wm.addView(bubble, bubbleLp);
@@ -184,17 +228,42 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         }
     }
 
-    /** Appui = lire, appui long = toucher pour lire, glisser = déplacer la bulle. */
+    /** Remet la bulle au-dessus de la couche du mode doigt, pour pouvoir quitter. */
+    private void bringBubbleToFront() {
+        if (bubble == null) return;
+        try {
+            wm.removeView(bubble);
+            wm.addView(bubble, bubbleLp);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void updateBubbleState() {
+        if (bubble == null) return;
+        boolean playing = reader != null && reader.isPlaying() && isScreenDoc();
+        if (fingerRoot != null) {
+            bubble.setText("✋");
+            bubble.setContentDescription("Lisys, lecture au doigt en cours. Touche pour quitter.");
+        } else if (playing) {
+            bubble.setText("⏹");
+            bubble.setContentDescription("Lisys, lecture en cours. Touche pour arrêter.");
+        } else {
+            bubble.setText("🔊");
+            bubble.setContentDescription("Lisys : lire l'écran. Appui long : lecture au doigt.");
+        }
+    }
+
+    /** Appui = lire / arrêter, appui long = lecture au doigt, glisser = déplacer la bulle. */
     private final class BubbleTouch implements View.OnTouchListener {
         private float downX, downY;
         private int startX, startY;
         private boolean dragging, longDone;
-        private final int slop = ViewConfiguration.get(ScreenReaderService.this).getScaledTouchSlop();
+        private final int slop = ViewConfiguration.get(ScreenReaderService.this).getScaledTouchSlop() * 2;
         private final Runnable longPress = new Runnable() {
             @Override public void run() {
                 longDone = true;
-                bubble.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
-                startTouchMode();
+                bubble.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                if (fingerRoot == null) startFingerMode();
             }
         };
 
@@ -208,7 +277,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                     startY = bubbleLp.y;
                     dragging = false;
                     longDone = false;
-                    main.postDelayed(longPress, ViewConfiguration.getLongPressTimeout());
+                    main.postDelayed(longPress, 600);
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     if (longDone) return true;
@@ -229,7 +298,8 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                         snapToEdge();
                         Prefs.setBubblePos(ScreenReaderService.this, bubbleLp.x, bubbleLp.y);
                     } else if (!longDone) {
-                        readScreen();
+                        bubble.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                        onBubbleTap();
                     }
                     return true;
                 case MotionEvent.ACTION_CANCEL:
@@ -243,16 +313,27 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     private void snapToEdge() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int size = bubbleLp.width;
-        int margin = Ui.dp(this, 4);
+        int margin = Ui.dp(this, 6);
         bubbleLp.x = bubbleLp.x + size / 2 < dm.widthPixels / 2 ? margin : dm.widthPixels - size - margin;
         bubbleLp.y = Math.min(bubbleLp.y, dm.heightPixels - size - margin);
         try { wm.updateViewLayout(bubble, bubbleLp); } catch (Exception ignored) {}
     }
 
-    private void setBubblePlaying(boolean playing) {
-        if (bubble == null) return;
-        bubble.setText(playing ? "⏹" : "🔊");
-        bubble.setContentDescription(playing ? "Lisys : arrêter la lecture" : "Lisys : lire l'écran");
+    private void onBubbleTap() {
+        if (fingerRoot != null) {
+            stopFingerMode(true);
+            return;
+        }
+        readScreen();
+    }
+
+    /** Petite annonce vocale (« Lecture au doigt »…) pour savoir ce qui se passe sans voir l'écran. */
+    private void announce(String text) {
+        if (!Prefs.bubbleVoice(this) || reader == null || !reader.isTtsReady() || reader.isPlaying()) return;
+        try {
+            reader.tts().speak(text, TextToSpeech.QUEUE_FLUSH, null, "annonce");
+        } catch (Exception ignored) {
+        }
     }
 
     // ------------------------------------------------------------------ lecture de l'écran
@@ -272,11 +353,10 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
             reader.pause();
             return;
         }
-        hideTouchLayer();
-        String app = currentAppLabel();
         List<Item> items = collect();
         if (items.isEmpty()) {
             Toast.makeText(this, "Aucun texte à lire sur cet écran.", Toast.LENGTH_SHORT).show();
+            announce("Aucun texte à lire.");
             return;
         }
         // On commence au premier texte visible ; la suite (bas d'une page web) est lue ensuite.
@@ -284,17 +364,18 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         for (int i = 0; i < items.size(); i++) {
             if (items.get(i).visible) { start = i; break; }
         }
-        play(items, start, app);
+        String id = saveDoc(items, currentAppLabel(), start);
+        reader.playFrom(id, start);
     }
 
-    private void play(List<Item> items, int start, String app) {
+    private String saveDoc(List<Item> items, String app, int start) {
         Extractor.Result r = new Extractor.Result();
         r.title = TITLE;
         r.kind = app != null ? app.toUpperCase() : "ÉCRAN";
         for (Item it : items) r.paragraphs.add(it.text);
         Library.Entry e = Library.add(this, r, SOURCE);
         Library.savePosition(this, e.id, start, 0);
-        reader.playFrom(e.id, start);
+        return e.id;
     }
 
     private String currentAppLabel() {
@@ -312,7 +393,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     /** Fenêtre de l'appli affichée (pas la barre d'état, ni le clavier, ni notre bulle). */
     private AccessibilityNodeInfo appRoot() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root != null && !getPackageName().contentEquals(root.getPackageName() == null ? "" : root.getPackageName())) {
+        if (root != null && root.getPackageName() != null && !getPackageName().contentEquals(root.getPackageName())) {
             return root;
         }
         try {
@@ -340,21 +421,24 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         if (n.isPassword()) return;
         CharSequence t = n.getText();
         boolean skipText = n.isEditable() && !n.isMultiLine(); // barre d'adresse, champs de recherche
-        String text = null;
+        String raw = null;
+        boolean fromText = false;
         if (!skipText && t != null && t.length() > 0) {
-            text = t.toString();
+            raw = t.toString();
+            fromText = true;
         } else if (n.getChildCount() == 0 && !n.isClickable() && n.getContentDescription() != null) {
             // Image avec une description (illustration d'un article…).
-            text = n.getContentDescription().toString();
+            raw = n.getContentDescription().toString();
         }
-        if (text != null) {
-            text = text.replace(' ', ' ').replaceAll("\\s+", " ").trim();
+        if (raw != null) {
+            int[] map = new int[raw.length() + 1];
+            String text = clean(raw, map);
             boolean hasLetter = false;
             for (int i = 0; i < text.length() && !hasLetter; i++) hasLetter = Character.isLetterOrDigit(text.charAt(i));
             if (hasLetter && (out.isEmpty() || !out.get(out.size() - 1).text.equals(text))) {
                 Rect b = new Rect();
                 n.getBoundsInScreen(b);
-                out.add(new Item(text, b, n.isVisibleToUser()));
+                out.add(new Item(text, map, b, n.isVisibleToUser(), fromText ? n : null));
             }
         }
         for (int i = 0; i < n.getChildCount(); i++) {
@@ -363,37 +447,72 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         }
     }
 
-    // ------------------------------------------------------------------ toucher pour lire
+    /** Regroupe les espaces, en gardant la correspondance des positions avec le texte d'origine. */
+    static String clean(String raw, int[] map) {
+        StringBuilder sb = new StringBuilder(raw.length());
+        boolean pendingSpace = false;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (Character.isWhitespace(c) || c == ' ') {
+                pendingSpace = sb.length() > 0;
+                map[i] = sb.length();
+                continue;
+            }
+            if (pendingSpace) { sb.append(' '); pendingSpace = false; }
+            map[i] = sb.length();
+            sb.append(c);
+        }
+        map[raw.length()] = sb.length();
+        return sb.toString();
+    }
 
-    private void startTouchMode() {
-        snapshot = collect();
-        snapshotApp = currentAppLabel();
-        if (snapshot.isEmpty()) {
+    // ------------------------------------------------------------------ lecture au doigt
+
+    private void startFingerMode() {
+        if (reader == null) return;
+        if (fingerRoot != null) return;
+        fingerItems = collect();
+        if (fingerItems.isEmpty()) {
             Toast.makeText(this, "Aucun texte à lire sur cet écran.", Toast.LENGTH_SHORT).show();
+            announce("Aucun texte à lire.");
             return;
         }
-        if (reader != null && reader.isPlaying()) reader.pause();
-        touchLayer = new FrameLayout(this);
-        touchLayer.setBackgroundColor(0x30000000);
-        TextView hint = new TextView(this);
-        hint.setText("Touche le texte à partir duquel lire");
-        hint.setTextColor(0xFFFFFFFF);
-        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        if (reader.isPlaying()) reader.pause();
+        int start = 0;
+        for (int i = 0; i < fingerItems.size(); i++) if (fingerItems.get(i).visible) { start = i; break; }
+        fingerDocId = saveDoc(fingerItems, currentAppLabel(), start);
+        reader.load(fingerDocId, true);
+        lastPara = lastSent = -1;
+        lastTouch = SystemClock.uptimeMillis();
+
+        fingerRoot = new FrameLayout(this);
+        fingerLayer = new FingerLayer(this);
+        fingerRoot.addView(fingerLayer, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        final TextView hint = new TextView(this);
+        hint.setText("✋ Glisse ton doigt sur le texte\nTouche la bulle pour quitter");
+        hint.setTextColor(0xFF000000);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         hint.setTypeface(Typeface.DEFAULT_BOLD);
+        hint.setGravity(Gravity.CENTER);
         int p = Ui.dp(this, 14);
         hint.setPadding(p, p, p, p);
-        hint.setBackground(Ui.rounded(Ui.BRAND, Ui.dp(this, 14)));
+        GradientDrawable hb = Ui.rounded(0xFFFFD600, Ui.dp(this, 16));
+        hb.setStroke(Ui.dp(this, 3), 0xFF000000);
+        hint.setBackground(hb);
         FrameLayout.LayoutParams hl = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        hl.topMargin = Ui.dp(this, 60);
-        touchLayer.addView(hint, hl);
-        final long shownAt = SystemClock.uptimeMillis();
-        touchLayer.setOnTouchListener(new View.OnTouchListener() {
+                FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        hl.bottomMargin = Ui.dp(this, 90);
+        fingerRoot.addView(hint, hl);
+        // Le message disparaît dès qu'on touche l'écran, ou au bout de 5 secondes.
+        main.postDelayed(new Runnable() { @Override public void run() { hint.setVisibility(View.GONE); } }, 5000);
+        fingerRoot.setOnTouchListener(new View.OnTouchListener() {
             @Override public boolean onTouch(View v, MotionEvent e) {
-                if (e.getActionMasked() == MotionEvent.ACTION_UP && SystemClock.uptimeMillis() - shownAt > 300) {
-                    int x = (int) e.getRawX(), y = (int) e.getRawY();
-                    hideTouchLayer();
-                    readAt(x, y);
+                hint.setVisibility(View.GONE);
+                int a = e.getActionMasked();
+                if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_MOVE) {
+                    lastTouch = SystemClock.uptimeMillis();
+                    fingerAt((int) e.getRawX(), (int) e.getRawY());
                 }
                 return true;
             }
@@ -401,62 +520,225 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
         try {
-            wm.addView(touchLayer, lp);
+            wm.addView(fingerRoot, lp);
         } catch (Exception e) {
-            touchLayer = null;
+            fingerRoot = null;
             return;
         }
-        // Sans toucher dans les 8 secondes : on annule.
-        main.postDelayed(new Runnable() {
-            @Override public void run() {
-                if (touchLayer != null && SystemClock.uptimeMillis() - shownAt >= 7900) hideTouchLayer();
+        bringBubbleToFront();
+        updateBubbleState();
+        announce("Lecture au doigt. Glisse ton doigt sur le texte.");
+        main.postDelayed(idleCheck, 5000);
+    }
+
+    private final Runnable idleCheck = new Runnable() {
+        @Override public void run() {
+            if (fingerRoot == null) return;
+            boolean playing = reader != null && reader.isPlaying();
+            if (!playing && SystemClock.uptimeMillis() - lastTouch > FINGER_IDLE_MS) {
+                stopFingerMode(true);
+                return;
             }
-        }, 8000);
-    }
-
-    private void hideTouchLayer() {
-        if (touchLayer != null) {
-            try { wm.removeView(touchLayer); } catch (Exception ignored) {}
-            touchLayer = null;
+            main.postDelayed(this, 5000);
         }
+    };
+
+    private void stopFingerMode(boolean speak) {
+        main.removeCallbacks(idleCheck);
+        if (fingerRoot == null) return;
+        try { wm.removeView(fingerRoot); } catch (Exception ignored) {}
+        fingerRoot = null;
+        fingerLayer = null;
+        fingerItems = null;
+        if (reader != null && reader.isPlaying() && isScreenDoc()) reader.pause();
+        updateBubbleState();
+        if (speak) announce("Fin de la lecture au doigt.");
     }
 
-    private void readAt(int x, int y) {
-        if (snapshot == null || snapshot.isEmpty() || reader == null) return;
+    /** Le doigt est à (x, y) : on lit la phrase qui est dessous, si ce n'est pas déjà celle en cours. */
+    private void fingerAt(int x, int y) {
+        if (fingerItems == null || reader == null) return;
+        int idx = itemAt(x, y);
+        if (idx < 0) return;
+        Item it = fingerItems.get(idx);
+        int clean = cleanIndexAt(it, x, y);
+        List<int[]> ss = reader.sentences(idx);
+        int sent = 0;
+        for (int k = 0; k < ss.size(); k++) if (clean >= ss.get(k)[0]) sent = k;
+        if (idx == lastPara && sent == lastSent && reader.isPlaying()) return;
+        lastPara = idx;
+        lastSent = sent;
+        if (!fingerDocId.equals(reader.docId())) reader.load(fingerDocId, true);
+        reader.seek(idx, sent);
+        if (!reader.isPlaying()) reader.play();
+        highlight(idx, sent);
+    }
+
+    /** Le plus petit bloc de texte sous le doigt, sinon le plus proche (à moins de 30 dp). */
+    private int itemAt(int x, int y) {
         int best = -1;
         long bestArea = Long.MAX_VALUE;
-        for (int i = 0; i < snapshot.size(); i++) {
-            Item it = snapshot.get(i);
+        for (int i = 0; i < fingerItems.size(); i++) {
+            Item it = fingerItems.get(i);
             if (!it.visible || !it.bounds.contains(x, y)) continue;
             long area = (long) it.bounds.width() * it.bounds.height();
             if (area < bestArea) { bestArea = area; best = i; }
         }
-        if (best < 0) {
-            // Touché entre deux textes : on prend le premier texte visible en dessous.
-            for (int i = 0; i < snapshot.size(); i++) {
-                Item it = snapshot.get(i);
-                if (it.visible && it.bounds.top >= y) { best = i; break; }
+        if (best >= 0) return best;
+        int max = Ui.dp(this, 30);
+        double bestDist = Double.MAX_VALUE;
+        for (int i = 0; i < fingerItems.size(); i++) {
+            Item it = fingerItems.get(i);
+            if (!it.visible || it.bounds.isEmpty()) continue;
+            int dx = x < it.bounds.left ? it.bounds.left - x : x > it.bounds.right ? x - it.bounds.right : 0;
+            int dy = y < it.bounds.top ? it.bounds.top - y : y > it.bounds.bottom ? y - it.bounds.bottom : 0;
+            double d = Math.hypot(dx, dy);
+            if (d < bestDist && d <= max) { bestDist = d; best = i; }
+        }
+        return best;
+    }
+
+    /** Position (dans le texte lu) du caractère sous le doigt. */
+    private int cleanIndexAt(Item it, int x, int y) {
+        RectF[] chars = chars(it);
+        if (chars != null) {
+            int bestI = -1;
+            float bestD = Float.MAX_VALUE;
+            for (int i = 0; i < chars.length; i++) {
+                RectF r = chars[i];
+                if (r == null || r.isEmpty()) continue;
+                if (r.contains(x, y)) { bestI = i; break; }
+                // Même ligne : le caractère le plus proche horizontalement.
+                if (y >= r.top && y <= r.bottom) {
+                    float d = Math.min(Math.abs(x - r.left), Math.abs(x - r.right));
+                    if (d < bestD) { bestD = d; bestI = i; }
+                }
+            }
+            if (bestI >= 0) return it.map[Math.min(bestI, it.map.length - 1)];
+        }
+        // Pas de positions de caractères : estimation selon la hauteur dans le bloc.
+        if (it.bounds.height() <= 0) return 0;
+        float frac = Math.max(0f, Math.min(1f, (y - it.bounds.top) / (float) it.bounds.height()));
+        return Math.round(frac * Math.max(0, it.text.length() - 1));
+    }
+
+    /** Demande à l'appli la position de chaque caractère (Chrome, la plupart des applis Android). */
+    private RectF[] chars(Item it) {
+        if (it.charsTried) return it.chars;
+        it.charsTried = true;
+        if (it.node == null) return null;
+        try {
+            List<String> extras = it.node.getAvailableExtraData();
+            String key = AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_KEY;
+            if (extras == null || !extras.contains(key)) return null;
+            CharSequence t = it.node.getText();
+            if (t == null) return null;
+            Bundle args = new Bundle();
+            args.putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_START_INDEX, 0);
+            args.putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_LENGTH, Math.min(t.length(), 20000));
+            if (!it.node.refreshWithExtraData(key, args)) return null;
+            Parcelable[] arr = it.node.getExtras().getParcelableArray(key);
+            if (arr == null) return null;
+            RectF[] out = new RectF[arr.length];
+            for (int i = 0; i < arr.length; i++) out[i] = arr[i] instanceof RectF ? (RectF) arr[i] : null;
+            it.chars = out;
+        } catch (Exception ignored) {
+        }
+        return it.chars;
+    }
+
+    /** Entoure en jaune la phrase lue (ligne par ligne si l'appli donne la position des caractères). */
+    private void highlight(int idx, int sent) {
+        if (fingerLayer == null || fingerItems == null || idx < 0 || idx >= fingerItems.size() || reader == null) return;
+        Item it = fingerItems.get(idx);
+        List<int[]> ss = reader.sentences(idx);
+        List<RectF> rects = new ArrayList<RectF>();
+        if (sent >= 0 && sent < ss.size()) {
+            int s = ss.get(sent)[0], e = ss.get(sent)[1];
+            RectF[] chars = chars(it);
+            if (chars != null) {
+                RectF line = null;
+                for (int i = 0; i < chars.length && i < it.map.length - 1; i++) {
+                    int c = it.map[i];
+                    RectF r = chars[i];
+                    if (c < s || c >= e || r == null || r.isEmpty()) continue;
+                    if (line != null && Math.abs(r.centerY() - line.centerY()) < line.height() / 2) {
+                        line.union(r);
+                    } else {
+                        if (line != null) rects.add(line);
+                        line = new RectF(r);
+                    }
+                }
+                if (line != null) rects.add(line);
+            }
+            if (rects.isEmpty()) {
+                Rect b = it.bounds;
+                int len = Math.max(1, it.text.length());
+                float top = b.top + b.height() * (s / (float) len);
+                float bottom = b.top + b.height() * (e / (float) len);
+                if (ss.size() <= 1) { top = b.top; bottom = b.bottom; }
+                rects.add(new RectF(b.left, top, b.right, Math.max(bottom, top + Ui.dp(this, 24))));
             }
         }
-        if (best < 0) {
-            Toast.makeText(this, "Pas de texte à cet endroit.", Toast.LENGTH_SHORT).show();
-            return;
+        fingerLayer.setRects(rects);
+    }
+
+    /** Couche transparente du mode doigt, qui dessine le cadre jaune. */
+    private static final class FingerLayer extends View {
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private List<RectF> rects = new ArrayList<RectF>();
+        private final int[] loc = new int[2];
+        private final float pad, radius;
+
+        FingerLayer(Context c) {
+            super(c);
+            fill.setColor(0x44FFEB3B);
+            stroke.setColor(0xFFFFD600);
+            stroke.setStyle(Paint.Style.STROKE);
+            stroke.setStrokeWidth(Ui.dp(c, 4));
+            outline.setColor(0xFF000000);
+            outline.setStyle(Paint.Style.STROKE);
+            outline.setStrokeWidth(Ui.dp(c, 7));
+            pad = Ui.dp(c, 4);
+            radius = Ui.dp(c, 6);
         }
-        play(snapshot, best, snapshotApp);
-        snapshot = null;
+
+        void setRects(List<RectF> r) {
+            rects = r;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            canvas.drawColor(0x14000000); // léger voile : on sait que le mode doigt est actif
+            getLocationOnScreen(loc);
+            for (RectF r0 : rects) {
+                RectF r = new RectF(r0.left - loc[0] - pad, r0.top - loc[1] - pad, r0.right - loc[0] + pad, r0.bottom - loc[1] + pad);
+                canvas.drawRoundRect(r, radius, radius, fill);
+                canvas.drawRoundRect(r, radius, radius, outline);
+                canvas.drawRoundRect(r, radius, radius, stroke);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ rappels du lecteur
 
-    @Override public void onPosition(int para, int sentence) {}
-    @Override public void onWord(int para, int start, int end) {}
-    @Override public void onState(boolean playing) { setBubblePlaying(playing && isScreenDoc()); }
-    @Override public void onTtsReady(boolean ok, String error) {
-        if (!ok && error != null && !TextUtils.isEmpty(error)) Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+    @Override public void onPosition(int para, int sentence) {
+        // En mode doigt, le cadre jaune suit la lecture quand elle continue après la phrase touchée.
+        if (fingerRoot != null && isScreenDoc()) highlight(para, sentence);
     }
-    @Override public void onFinished() { setBubblePlaying(false); }
+    @Override public void onWord(int para, int start, int end) {}
+    @Override public void onState(boolean playing) { updateBubbleState(); }
+    @Override public void onTtsReady(boolean ok, String error) {
+        if (!ok && error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+    }
+    @Override public void onFinished() { updateBubbleState(); }
     @Override public void onDocumentChanged() {}
 }
