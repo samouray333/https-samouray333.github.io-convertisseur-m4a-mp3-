@@ -1,4 +1,4 @@
-# Calorys 1.2.0 (QMTech)
+# Calorys 1.3.0 (QMTech)
 
 Compteur de calories et coach nutritionnel, inspiré des fonctionnalités de YAZIO, écrit de zéro (aucun code, texte, image ni donnée de YAZIO). La version 1.1 fusionne Calorys avec le moteur de **Nutravyn** (QMTech) : objectif adaptatif, mode sèche pour les pesées officielles, séances de sports de combat avec RPE et gamification par ceintures.
 
@@ -32,6 +32,9 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 - **Eau automatique** : 35 ml/kg + 500 ml par heure de séance.
 - **Gamification** : ceintures de blanche à 2e dan, XP, séries, défis de la semaine, 9 badges. Seuls les comportements sont récompensés, jamais un déficit plus creux. Désactivable.
 
+**Nouveau en 1.3**
+- **Apparence** (Profil > Apparence) : 10 couleurs (Émeraude, Océan, Lagon, Lavande, Framboise, Corail, Ambre, Combat, Graphite et « Ma ceinture », qui prend la couleur de ta ceinture et change à chaque grade). S'y ajoutent le mode **Couleurs vives** (dégradés, fonds teintés, activé par défaut) et le thème clair, sombre ou automatique.
+
 **Nouveau en 1.2**
 - **Synchronisation téléphone ↔ PC** (ou entre deux téléphones), sans compte ni serveur. Le téléphone affiche une adresse et un code sur le Wi-Fi local, l'autre appareil s'y connecte. Chaque élément (aliment noté, séance, pesée, recette, liste de courses, profil…) est daté automatiquement, et la fusion garde la version la plus récente de chacun. Les suppressions sont propagées, et les données voyagent chiffrées (AES-256-GCM, clé dérivée du code). Un nouvel appareil peut tout récupérer dès l'accueil (« Déjà utilisateur ? »).
 - **Photos des produits** : miniature dans la recherche et le journal, grande photo sur la fiche (95 % des 894 337 produits). Elles sont chargées depuis Open Food Facts quand il y a du réseau, et masquées sinon.
@@ -48,13 +51,13 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 
 | Fichier | Plateforme | Taille |
 |---|---|---|
-| `Calorys-1.2.0.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
-| `Calorys-Setup-1.2.0.exe` | Windows 10/11, installeur | 1,8 Mo |
-| `Calorys-Portable-1.2.0.zip` | Windows 10/11, sans installation | 2,0 Mo |
+| `Calorys-1.3.0.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
+| `Calorys-Setup-1.3.0.exe` | Windows 10/11, installeur | 1,8 Mo |
+| `Calorys-Portable-1.3.0.zip` | Windows 10/11, sans installation | 2,0 Mo |
 
 Le catalogue de produits n'est pas dans ces fichiers : il se télécharge depuis l'appli (Profil > Catalogue produits hors ligne, ou depuis la recherche). Il est publié dans `catalog/` de ce dépôt.
 
-**Android** : ouvre l'APK sur le téléphone. La 1.2 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 3). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
+**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 4). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
 
 **Synchroniser** : sur le téléphone, Profil > Synchroniser mes appareils > « Ce téléphone sert d'hôte ». Sur le PC, même menu : saisis l'adresse et le code affichés, puis Synchroniser. Les deux appareils doivent être sur le même Wi-Fi.
 

@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.3.0';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -106,7 +106,7 @@
       days: {}, weights: [], foods: [], recipes: [], off: {}, favs: [], recents: [],
       fasting: { plan: '16:8', active: null, history: [] },
       shopping: [], favRecipes: [],
-      settings: { theme: 'auto', game: true, geminiKey: '', seenBelt: 'white', seenBadges: [],
+      settings: { theme: 'auto', accent: 'emerald', vivid: true, game: true, geminiKey: '', seenBelt: 'white', seenBadges: [],
         reminders: { on: false, meals: true, breakfast: '08:00', lunch: '12:30', dinner: '19:30', water: true, weigh: false, weighAt: '07:30', fastEnd: true } }
     };
   }
@@ -312,6 +312,7 @@
     const beltIdx = E.BELTS.findIndex(b => b.id === gm.belt.id), seenIdx = E.BELTS.findIndex(b => b.id === st.seenBelt);
     if (beltIdx > seenIdx) {
       st.seenBelt = gm.belt.id; save();
+      if (st.accent === 'belt') applyTheme();
       setTimeout(() => toast('Nouvelle ceinture : ' + gm.belt.label + ' !', { label: 'Voir', fn: openProgress }), 400);
     } else if (beltIdx < seenIdx) { st.seenBelt = gm.belt.id; save(); }
     if (newBadges.length) {
@@ -982,8 +983,7 @@
         ${row('sync', 'share', 'Synchroniser mes appareils', lastSyncText())}
         ${row('progress', 'belt', 'Ma progression', S.settings.game ? 'ceinture ' + game().belt.label.toLowerCase() : 'désactivée')}
         <li><label class="menu-select">${icon('trophy')}<span class="grow">Gamification (ceintures, défis)</span><input type="checkbox" class="toggle" data-act="gameToggleIn" ${S.settings.game ? 'checked' : ''}></label></li>
-        <li><label class="menu-select">${icon('info')}<span class="grow">Thème</span><select data-act="theme">
-          ${[['auto', 'Automatique'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) => `<option value="${v}" ${S.settings.theme === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></li>
+        ${row('appearance', 'sparkle', 'Apparence', (ACCENTS.find(a => a.id === (S.settings.accent || 'emerald')) || ACCENTS[0]).label + (S.settings.vivid === false ? '' : ', vives'))}
       </ul>
       <h4 class="sec">Données</h4>
       <ul class="menu card">
@@ -1550,14 +1550,79 @@ Règles:
   }
 
   /* ---------- Thème ---------- */
+  /* ---------- Couleurs : thèmes d'accent (teinte) + mode « couleurs vives » ---------- */
+  const ACCENTS = [
+    { id: 'emerald', label: 'Émeraude', h: 158, s: 82 },
+    { id: 'ocean', label: 'Océan', h: 216, s: 78 },
+    { id: 'lagoon', label: 'Lagon', h: 188, s: 85 },
+    { id: 'lavender', label: 'Lavande', h: 262, s: 66 },
+    { id: 'rose', label: 'Framboise', h: 332, s: 72 },
+    { id: 'coral', label: 'Corail', h: 10, s: 78 },
+    { id: 'amber', label: 'Ambre', h: 32, s: 92 },
+    { id: 'combat', label: 'Combat', h: 355, s: 76 },
+    { id: 'graphite', label: 'Graphite', h: 222, s: 14 },
+    { id: 'belt', label: 'Ma ceinture', belt: true }
+  ];
+  const BELT_HUES = { white: [228, 14], yellow: [44, 92], orange: [24, 90], green: [142, 70], blue: [199, 85], brown: [24, 48], black: [230, 10], dan2: [348, 80] };
+  function accentHS(a) {
+    if (!a.belt) return [a.h, a.s];
+    const id = S.profile.onboarded && S.settings.game !== false ? game().belt.id : 'white';
+    return BELT_HUES[id] || BELT_HUES.white;
+  }
+  /* Palette dérivée d'une teinte : contrastes réglés pour le clair et le sombre. */
+  function palette(h, sat, dark) {
+    const c = (s2, l) => `hsl(${h} ${Math.round(Math.min(100, sat * s2))}% ${l}%)`;
+    return dark
+      ? { brand: c(.8, 58), brand2: c(.8, 68), 'brand-soft': c(.55, 17), 'on-brand': c(.7, 6), bg: c(.3, 6), card: c(.25, 10), card2: c(.22, 14), line: c(.2, 19), hero1: c(.7, 30), hero2: c(.7, 19) }
+      : { brand: c(1, 37), brand2: c(1, 29), 'brand-soft': c(.75, 92), 'on-brand': '#fff', bg: c(.28, 96.5), card2: c(.25, 93.5), line: c(.2, 89), hero1: c(1, 40), hero2: c(1, 28) };
+  }
   function applyTheme() {
     const t = S.settings.theme;
     const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.dataset.theme = t === 'auto' ? '' : t;
-    if (t === 'auto') delete document.documentElement.dataset.theme;
-    P.setBars(dark, dark ? '#111814' : '#f4f7f5');
+    const root = document.documentElement;
+    root.dataset.theme = t === 'auto' ? '' : t;
+    if (t === 'auto') delete root.dataset.theme;
+    const a = ACCENTS.find(x => x.id === S.settings.accent) || ACCENTS[0];
+    const keys = ['brand', 'brand2', 'brand-soft', 'on-brand', 'bg', 'card', 'card2', 'line', 'hero1', 'hero2'];
+    keys.forEach(k => root.style.removeProperty('--' + k));
+    if (a.id !== 'emerald') {
+      const [h, sat] = accentHS(a);
+      const pal = palette(h, sat, dark);
+      for (const [k, v] of Object.entries(pal)) root.style.setProperty('--' + k, v);
+    }
+    root.dataset.vivid = S.settings.vivid === false ? '' : '1';
+    const cs = getComputedStyle(root);
+    const top = (root.dataset.vivid ? cs.getPropertyValue('--brand-soft') : cs.getPropertyValue('--bg')).trim();
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', cs.getPropertyValue('--brand').trim());
+    P.setBars(dark, toHex(top) || (dark ? '#111814' : '#f4f7f5'));
   }
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  /* Couleur CSS calculée -> #rrggbb (pour la barre d'état Android). */
+  function toHex(css) {
+    const cv = document.createElement('canvas').getContext('2d');
+    if (!cv || !css) return '';
+    cv.fillStyle = '#000'; cv.fillStyle = css;
+    const v = cv.fillStyle;
+    return /^#[0-9a-f]{6}$/i.test(v) ? v : '';
+  }
+  function openAppearance() {
+    openSheet(() => {
+      const cur = S.settings.accent || 'emerald', dark = document.documentElement.dataset.theme === 'dark' || (S.settings.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+      return sheetHead('Apparence', 'Les changements s\'appliquent tout de suite') + `
+        <h4 class="sec">Thème</h4>
+        <div class="seg wide">${[['auto', 'Automatique'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) => `<button class="${S.settings.theme === v ? 'on' : ''}" data-act="setTheme" data-v="${v}">${l}</button>`).join('')}</div>
+        <h4 class="sec">Couleur</h4>
+        <div class="swatches">${ACCENTS.map(a => {
+          const [h, sat] = a.id === 'emerald' ? [158, 82] : accentHS(a);
+          const pal = palette(h, sat, dark);
+          const bg = a.id === 'emerald' ? (dark ? 'linear-gradient(135deg,#22c58b,#146b4c)' : 'linear-gradient(135deg,#0f9f6e,#0b7d57)') : `linear-gradient(135deg, ${pal.brand}, ${pal.hero2})`;
+          return `<button class="swatch ${cur === a.id ? 'on' : ''}" data-act="setAccent" data-v="${a.id}"><i style="background:${bg}">${cur === a.id ? icon('check') : a.belt ? icon('belt') : ''}</i><span>${a.label}</span></button>`;
+        }).join('')}</div>
+        <p class="muted small">« Ma ceinture » prend la couleur de ta ceinture actuelle et change quand tu passes au grade suivant.</p>
+        <label class="switch"><input type="checkbox" id="apVivid" ${S.settings.vivid === false ? '' : 'checked'}><span>Couleurs vives (dégradés, fonds teintés)</span></label>`;
+    }, { live: true, mount: s => { $('#apVivid', s.el).addEventListener('change', e => { S.settings.vivid = e.target.checked; save(); applyTheme(); render(); }); } });
+  }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyTheme(); render(); });
 
   /* ---------- Actions ---------- */
   const A = {
@@ -1834,6 +1899,9 @@ Règles:
   };
   Object.assign(A, {
     progress: () => openProgress(),
+    appearance: () => openAppearance(),
+    setTheme: el => { S.settings.theme = el.dataset.v; save(); applyTheme(); render(); },
+    setAccent: el => { S.settings.accent = el.dataset.v; save(); applyTheme(); render(); },
     cutInfo: () => {
       const g = goals(), c = g.cut;
       openSheet(() => sheetHead('Pesée officielle', 'J-' + c.days + ' · le ' + pkey(S.profile.weighIn).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })) + `

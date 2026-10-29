@@ -2,6 +2,7 @@
 :root {
   --bg: #f4f7f5; --card: #ffffff; --card2: #eef3f0; --text: #14201a; --muted: #67756d; --line: #e1e8e4;
   --brand: #0f9f6e; --brand2: #0b7d57; --brand-soft: #dff4ea; --on-brand: #fff;
+  --hero1: #12a874; --hero2: #0a6e4d;
   --carb: #f2a516; --prot: #e8505b; --fat: #3b82f6; --water: #2fa6e6; --act: #f26b38; --weight: #8b5cf6;
   --danger: #d93a3a; --warn: #d97706; --ok: #0f9f6e;
   --shadow: 0 1px 2px rgba(20, 32, 26, .06), 0 4px 16px rgba(20, 32, 26, .05);
@@ -13,12 +14,14 @@
   :root:not([data-theme="light"]) {
     --bg: #0d1310; --card: #162019; --card2: #1d2a22; --text: #e8f0eb; --muted: #93a39a; --line: #263429;
     --brand: #22c58b; --brand2: #45d6a1; --brand-soft: #133a2a; --on-brand: #04130c;
+    --hero1: #146b4c; --hero2: #0b3f2d;
     --shadow: none; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0d1310; --card: #162019; --card2: #1d2a22; --text: #e8f0eb; --muted: #93a39a; --line: #263429;
   --brand: #22c58b; --brand2: #45d6a1; --brand-soft: #133a2a; --on-brand: #04130c;
+  --hero1: #146b4c; --hero2: #0b3f2d;
   --shadow: none; color-scheme: dark;
 }
 
@@ -119,7 +122,7 @@ body.onboarding main { padding-bottom: 32px; }
 .meal-ic.dinner { background: #e7e4ff; color: #5b4bd6; } .meal-ic.snack { background: #ffe3e6; color: #d23a4b; }
 .meal-ic.water { background: #dcf1fc; color: #1d86c0; } .meal-ic.act { background: #ffe7dc; color: #db5a26; } .meal-ic.weight { background: #eee5ff; color: #7444e0; }
 :root[data-theme="dark"] .meal-ic { filter: saturate(.9) brightness(.85); }
-.add-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--brand); color: var(--on-brand); display: grid; place-items: center; flex: none; box-shadow: 0 2px 8px rgba(15, 159, 110, .3); }
+.add-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--brand); color: var(--on-brand); display: grid; place-items: center; flex: none; box-shadow: 0 2px 8px color-mix(in srgb, var(--brand) 35%, transparent); }
 .add-btn:active { transform: scale(.94); }
 .add-btn.sm { width: 34px; height: 34px; }
 .add-btn.sm .ic { width: 18px; height: 18px; }
@@ -493,3 +496,43 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
 .res-list li .pimg { margin-left: 10px; }
 .entries li .pimg { width: 36px; height: 36px; }
 .pimg-big { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #fff; border-radius: 16px; border: 1px solid var(--line); margin-bottom: 12px; padding: 8px; }
+
+/* ===== v1.3 : couleurs ===== */
+.swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.swatch { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.swatch i { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); transition: transform .15s; }
+.swatch i .ic { width: 22px; height: 22px; stroke-width: 2.6; }
+.swatch.on { color: var(--text); }
+.swatch.on i { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--brand); transform: scale(1.04); }
+@media (max-width: 380px) { .swatches { grid-template-columns: repeat(4, 1fr); } }
+
+/* Couleurs vives : fond teinté, carte du jour en dégradé, onglet actif coloré */
+:root[data-vivid="1"] body { background: linear-gradient(180deg, var(--brand-soft) 0, var(--bg) 340px) no-repeat, var(--bg); background-attachment: fixed; }
+:root[data-vivid="1"] .summary { background: linear-gradient(140deg, var(--hero1), var(--hero2)); border-color: transparent; color: #fff;
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--hero2) 35%, transparent); }
+:root[data-vivid="1"] .summary .ring-bg { stroke: rgba(255,255,255,.22); }
+:root[data-vivid="1"] .summary .ring-fg { stroke: #fff; }
+:root[data-vivid="1"] .summary .sum-ring.over .ring-fg { stroke: #ffd2d2; }
+:root[data-vivid="1"] .summary .sum-ring.over .ring-center b { color: #fff; }
+:root[data-vivid="1"] .summary .sum-side span, :root[data-vivid="1"] .summary .ring-center span,
+:root[data-vivid="1"] .summary .macros .macro-top span:last-child { color: rgba(255,255,255,.82); }
+:root[data-vivid="1"] .summary .macros .macro-top b { color: #fff; }
+:root[data-vivid="1"] .summary .bar { background: rgba(255,255,255,.22); }
+:root[data-vivid="1"] .summary .macro.carb .bar i { background: #ffd166; }
+:root[data-vivid="1"] .summary .macro.prot .bar i { background: #ff9aa2; }
+:root[data-vivid="1"] .summary .macro.fat .bar i { background: #9cc7ff; }
+:root[data-vivid="1"] .summary .target-note { background: rgba(255,255,255,.16); color: #fff; }
+:root[data-vivid="1"] .fast { background: linear-gradient(180deg, var(--card), var(--brand-soft)); }
+:root[data-vivid="1"] .topbar h1, :root[data-vivid="1"] .day-label { color: var(--brand2); }
+:root[data-vivid="1"] .card { border-color: color-mix(in srgb, var(--brand) 14%, var(--line)); }
+:root[data-vivid="1"] .meal-head h3 { color: var(--text); }
+:root[data-vivid="1"] .recipe-card { background: linear-gradient(180deg, var(--card) 55%, var(--brand-soft)); }
+:root[data-vivid="1"] .profile-card { background: linear-gradient(140deg, var(--hero1), var(--hero2)); color: #fff; border-color: transparent; }
+:root[data-vivid="1"] .profile-card .muted { color: rgba(255,255,255,.82); }
+:root[data-vivid="1"] .profile-card .avatar { background: rgba(255,255,255,.22); color: #fff; }
+:root[data-vivid="1"] .profile-card .icon-btn { color: #fff; }
+@media (max-width: 899px) {
+  :root[data-vivid="1"] .tabbar button.active { color: var(--brand); }
+  :root[data-vivid="1"] .tabbar button.active svg { background: var(--brand-soft); border-radius: 12px; padding: 3px 12px; width: 48px; height: 30px; box-sizing: border-box; }
+}
+:root[data-vivid="1"] .tabbar button.active { font-weight: 800; }
