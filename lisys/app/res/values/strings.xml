@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lisys</string>
+    <string name="read_with">Lire avec Lisys</string>
+    <string name="read_selection">Lire avec Lisys</string>
+</resources>
