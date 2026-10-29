@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.2 (versionCode 3)
+- Version : 1.3 (versionCode 4)
 - Package : `com.echomatras.lisys`
 - Android 8.0 (API 26) minimum, cible Android 14 (API 34)
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -95,6 +95,7 @@ Pour une nouvelle version : augmente `android:versionCode` (+1) et `android:vers
 
 ## Limites connues
 
+- Mails et pages web (WebView) : Lisys réessaie automatiquement quelques fois si le contenu n'est pas encore prêt. En cas de souci, Réglages du bouton flottant > « Rapport de la dernière lecture » donne ce que Lisys a vu (à copier pour le dépannage).
 - Le bouton flottant lit le texte que l'appli fournit à Android. Les jeux, les vidéos et certaines applis qui affichent le texte comme une image n'en fournissent pas : il n'y a alors rien à lire.
 
 - Les PDF scannés (des images) ne contiennent pas de texte : il faudrait un module de reconnaissance de texte (OCR), pas encore inclus.

@@ -62,6 +62,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         final AccessibilityNodeInfo node;
         RectF[] chars;              // position de chaque caractère à l'écran, si l'appli la fournit
         boolean charsTried;
+        boolean fromDescription;    // texte venant d'une description et non du texte affiché
 
         Item(String t, int[] m, Rect b, boolean v, AccessibilityNodeInfo n) {
             text = t; map = m; bounds = b; visible = v; node = n;
@@ -353,19 +354,24 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
             reader.pause();
             return;
         }
-        List<Item> items = collect();
-        if (items.isEmpty()) {
-            Toast.makeText(this, "Aucun texte à lire sur cet écran.", Toast.LENGTH_SHORT).show();
-            announce("Aucun texte à lire.");
-            return;
-        }
-        // On commence au premier texte visible ; la suite (bas d'une page web) est lue ensuite.
-        int start = 0;
-        for (int i = 0; i < items.size(); i++) {
-            if (items.get(i).visible) { start = i; break; }
-        }
-        String id = saveDoc(items, currentAppLabel(), start);
-        reader.playFrom(id, start);
+        final String app = currentAppLabel();
+        collectAsync(new ItemsCallback() {
+            @Override public void done(List<Item> items) {
+                if (reader == null) return;
+                if (items.isEmpty()) {
+                    Toast.makeText(ScreenReaderService.this, "Aucun texte à lire sur cet écran.", Toast.LENGTH_SHORT).show();
+                    announce("Aucun texte à lire.");
+                    return;
+                }
+                // On commence au premier texte visible ; la suite (bas d'une page, fin du mail) est lue ensuite.
+                int start = 0;
+                for (int i = 0; i < items.size(); i++) {
+                    if (items.get(i).visible) { start = i; break; }
+                }
+                String id = saveDoc(items, app, start);
+                reader.playFrom(id, start);
+            }
+        });
     }
 
     private String saveDoc(List<Item> items, String app, int start) {
@@ -407,44 +413,140 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         return root;
     }
 
+    /** Nombre de mini-navigateurs (WebView) vus à la dernière lecture, et texte trouvé dedans. */
+    private int lastWebViews, lastWebChars, lastVisited;
+
+    interface ItemsCallback { void done(List<Item> items); }
+
+    /**
+     * Lit l'écran, en réessayant quelques fois si une page web ou un mail (WebView) répond vide :
+     * Chrome met son arbre d'accessibilité en veille et le reconstruit au premier appel.
+     */
+    private void collectAsync(final ItemsCallback cb) {
+        attempt(0, null, cb);
+    }
+
+    private void attempt(final int n, List<Item> best, final ItemsCallback cb) {
+        List<Item> items = collect();
+        final List<Item> keep = best == null || totalChars(items) > totalChars(best) ? items : best;
+        if (lastWebViews > 0 && lastWebChars < 80 && n < 5) {
+            if (n == 0) announce("Un instant.");
+            main.postDelayed(new Runnable() {
+                @Override public void run() { attempt(n + 1, keep, cb); }
+            }, 450);
+            return;
+        }
+        saveReport(n, keep);
+        cb.done(keep);
+    }
+
+    /** Rapport de la dernière lecture (sans le contenu complet), pour le dépannage. */
+    private void saveReport(int attempts, List<Item> items) {
+        StringBuilder sb = new StringBuilder();
+        AccessibilityNodeInfo root = appRoot();
+        sb.append("Lisys ").append(versionName()).append(" · Android ").append(android.os.Build.VERSION.RELEASE).append('\n');
+        sb.append("Appli : ").append(root != null ? root.getPackageName() : "?").append('\n');
+        sb.append("Éléments visités : ").append(lastVisited).append(" · textes : ").append(items.size())
+                .append(" · caractères : ").append(totalChars(items)).append('\n');
+        sb.append("WebView : ").append(lastWebViews).append(" · texte dans les WebView : ").append(lastWebChars)
+                .append(" · essais : ").append(attempts + 1).append('\n');
+        int shown = 0;
+        for (Item it : items) {
+            if (shown++ >= 12) break;
+            String t = it.text.length() > 40 ? it.text.substring(0, 40) + "…" : it.text;
+            sb.append(it.visible ? "• " : "◦ ").append(it.fromDescription ? "[desc] " : "").append(t).append('\n');
+        }
+        getSharedPreferences("reglages", MODE_PRIVATE).edit().putString("rapport", sb.toString()).apply();
+    }
+
+    private String versionName() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) { return "?"; }
+    }
+
+    private static int totalChars(List<Item> l) {
+        int n = 0;
+        for (Item it : l) n += it.text.length();
+        return n;
+    }
+
     /** Récupère les textes de l'écran dans l'ordre de lecture. */
     List<Item> collect() {
         List<Item> out = new ArrayList<Item>();
+        lastWebViews = 0;
+        lastWebChars = 0;
         AccessibilityNodeInfo root = appRoot();
         if (root == null) return out;
-        walk(root, out, 0);
-        return out;
+        // Parcours sans récursion : les mails mis en forme sont faits de tableaux imbriqués très profonds.
+        ArrayList<AccessibilityNodeInfo> stack = new ArrayList<AccessibilityNodeInfo>();
+        ArrayList<Boolean> inWeb = new ArrayList<Boolean>();
+        stack.add(root);
+        inWeb.add(false);
+        int visited = 0;
+        while (!stack.isEmpty() && visited < 20000 && out.size() < 6000) {
+            AccessibilityNodeInfo n = stack.remove(stack.size() - 1);
+            boolean web = inWeb.remove(inWeb.size() - 1);
+            visited++;
+            if (n == null || n.isPassword()) continue;
+            CharSequence cls = n.getClassName();
+            if (cls != null && cls.toString().contains("WebView")) {
+                if (!web) lastWebViews++;
+                web = true;
+            }
+            Item it = itemFor(n);
+            if (it != null && (out.isEmpty() || !out.get(out.size() - 1).text.equals(it.text))) {
+                out.add(it);
+                if (web) lastWebChars += it.text.length();
+            }
+            for (int i = n.getChildCount() - 1; i >= 0; i--) {
+                AccessibilityNodeInfo c = n.getChild(i);
+                if (c != null) { stack.add(c); inWeb.add(web); }
+            }
+        }
+        lastVisited = visited;
+        return removeSummaries(out);
     }
 
-    private void walk(AccessibilityNodeInfo n, List<Item> out, int depth) {
-        if (n == null || depth > 80 || out.size() > 4000) return;
-        if (n.isPassword()) return;
+    private Item itemFor(AccessibilityNodeInfo n) {
         CharSequence t = n.getText();
         boolean skipText = n.isEditable() && !n.isMultiLine(); // barre d'adresse, champs de recherche
         String raw = null;
         boolean fromText = false;
-        if (!skipText && t != null && t.length() > 0) {
+        if (!skipText && t != null && t.toString().trim().length() > 0) {
             raw = t.toString();
             fromText = true;
-        } else if (n.getChildCount() == 0 && !n.isClickable() && n.getContentDescription() != null) {
-            // Image avec une description (illustration d'un article…).
+        } else if (n.getContentDescription() != null && (!n.isClickable() || n.getChildCount() > 0)) {
+            // Texte fourni seulement comme description (certaines applis mail, images d'un article…).
+            // Les simples boutons-icônes (« Retour », « Plus d'options ») sont ignorés.
             raw = n.getContentDescription().toString();
         }
-        if (raw != null) {
-            int[] map = new int[raw.length() + 1];
-            String text = clean(raw, map);
-            boolean hasLetter = false;
-            for (int i = 0; i < text.length() && !hasLetter; i++) hasLetter = Character.isLetterOrDigit(text.charAt(i));
-            if (hasLetter && (out.isEmpty() || !out.get(out.size() - 1).text.equals(text))) {
-                Rect b = new Rect();
-                n.getBoundsInScreen(b);
-                out.add(new Item(text, map, b, n.isVisibleToUser(), fromText ? n : null));
+        if (raw == null) return null;
+        int[] map = new int[raw.length() + 1];
+        String text = clean(raw, map);
+        boolean hasLetter = false;
+        for (int i = 0; i < text.length() && !hasLetter; i++) hasLetter = Character.isLetterOrDigit(text.charAt(i));
+        if (!hasLetter) return null;
+        Rect b = new Rect();
+        n.getBoundsInScreen(b);
+        Item it = new Item(text, map, b, n.isVisibleToUser(), fromText ? n : null);
+        it.fromDescription = !fromText;
+        return it;
+    }
+
+    /**
+     * Une description qui résume ce qu'elle contient (ligne de la liste des mails : « De Paul, objet… »)
+     * ferait lire deux fois la même chose : on la retire si les textes qu'elle contient suivent.
+     */
+    private static List<Item> removeSummaries(List<Item> in) {
+        List<Item> out = new ArrayList<Item>();
+        for (int i = 0; i < in.size(); i++) {
+            Item it = in.get(i);
+            if (it.fromDescription && i + 1 < in.size()) {
+                Item next = in.get(i + 1);
+                if (!next.fromDescription && it.bounds.contains(next.bounds) && it.text.contains(next.text)) continue;
             }
+            out.add(it);
         }
-        for (int i = 0; i < n.getChildCount(); i++) {
-            AccessibilityNodeInfo c = n.getChild(i);
-            if (c != null) walk(c, out, depth + 1);
-        }
+        return out;
     }
 
     /** Regroupe les espaces, en gardant la correspondance des positions avec le texte d'origine. */
@@ -469,9 +571,16 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     // ------------------------------------------------------------------ lecture au doigt
 
     private void startFingerMode() {
-        if (reader == null) return;
-        if (fingerRoot != null) return;
-        fingerItems = collect();
+        if (reader == null || fingerRoot != null) return;
+        final String app = currentAppLabel();
+        collectAsync(new ItemsCallback() {
+            @Override public void done(List<Item> items) { startFingerMode(items, app); }
+        });
+    }
+
+    private void startFingerMode(List<Item> items, String app) {
+        if (reader == null || fingerRoot != null) return;
+        fingerItems = items;
         if (fingerItems.isEmpty()) {
             Toast.makeText(this, "Aucun texte à lire sur cet écran.", Toast.LENGTH_SHORT).show();
             announce("Aucun texte à lire.");
@@ -480,7 +589,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         if (reader.isPlaying()) reader.pause();
         int start = 0;
         for (int i = 0; i < fingerItems.size(); i++) if (fingerItems.get(i).visible) { start = i; break; }
-        fingerDocId = saveDoc(fingerItems, currentAppLabel(), start);
+        fingerDocId = saveDoc(fingerItems, app, start);
         reader.load(fingerDocId, true);
         lastPara = lastSent = -1;
         lastTouch = SystemClock.uptimeMillis();

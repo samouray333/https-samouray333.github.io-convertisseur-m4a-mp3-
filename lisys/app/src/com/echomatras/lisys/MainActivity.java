@@ -230,6 +230,7 @@ public class MainActivity extends Activity {
                 "Annonces vocales : " + (Prefs.bubbleVoice(this) ? "oui" : "non"),
                 shown ? "Masquer la bulle" : "Afficher la bulle",
                 "Comment ça marche ?",
+                "Rapport de la dernière lecture (dépannage)",
                 "Désactiver le bouton (réglages Android)"};
         new AlertDialog.Builder(this)
                 .setTitle("Bouton flottant Lisys")
@@ -247,6 +248,7 @@ public class MainActivity extends Activity {
                                 bubbleSettings();
                                 break;
                             case 4: bubbleHowTo(); break;
+                            case 5: showReport(); break;
                             default: openAccessibilitySettings();
                         }
                     }
@@ -281,6 +283,23 @@ public class MainActivity extends Activity {
                 .setPositiveButton("OK", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
                 })
+                .show();
+    }
+
+    private void showReport() {
+        final String r = getSharedPreferences("reglages", MODE_PRIVATE).getString("rapport",
+                "Pas encore de lecture avec la bulle. Ouvre l'appli ou le mail à lire, appuie sur la bulle, puis reviens ici.");
+        new AlertDialog.Builder(this)
+                .setTitle("Dernière lecture de l'écran")
+                .setMessage(r)
+                .setPositiveButton("Copier", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(ClipData.newPlainText("Rapport Lisys", r));
+                        Toast.makeText(MainActivity.this, "Rapport copié", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Fermer", null)
                 .show();
     }
 
