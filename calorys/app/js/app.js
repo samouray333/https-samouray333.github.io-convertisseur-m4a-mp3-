@@ -1238,7 +1238,7 @@
       const st = CAT.status();
       return sheetHead('Catalogue produits hors ligne', st.count.toLocaleString('fr-FR') + ' produits vendus en France · Open Food Facts') + `<div class="prose">
         <p>Le catalogue permet de chercher un produit de marque et de scanner un code-barres <b>sans connexion</b> : en avion, au sous-sol d'un gymnase, partout.</p>
-        <ul><li>Téléchargement unique : <b>${st.sizeMb} Mo</b> (Wi-Fi conseillé), ${st.dbMb} Mo une fois installé.</li>
+        <ul><li>Téléchargement unique : <b>${st.sizeMb} Mo</b> (Wi-Fi conseillé), ${P.kind === 'android' ? st.dbMb : st.sizeMb} Mo une fois installé.</li>
         <li>Version des données : ${st.version ? pkey(st.version).toLocaleDateString('fr-FR') : '–'}. Chaque morceau est vérifié (empreinte SHA-256).</li>
         <li>Données Open Food Facts, licence ODbL. Les produits sortis après cette date restent trouvables en ligne.</li></ul>
         ${st.state === 'downloading' ? `<div class="dl"><i style="width:${Math.round(st.progress * 100)}%"></i></div><p class="muted">${esc(st.message)} ${Math.round(st.progress * 100)} %</p>` : ''}
@@ -1249,7 +1249,7 @@
         ${st.state === 'ready' ? `<button class="btn ghost danger-text" data-act="catRemove">${icon('trash')}Supprimer</button>` : ''}
         ${st.state !== 'ready' || st.outdated ? `<button class="btn grow" data-act="catInstall" ${st.state === 'downloading' ? 'disabled' : ''}>${icon('download')}${st.state === 'downloading' ? 'Installation…' : st.outdated ? 'Mettre à jour' : 'Installer (' + st.sizeMb + ' Mo)'}</button>` : ''}
       </div>`;
-    }, { live: true });
+    }, { live: true, onClose: () => setTimeout(render, 0) });
   }
 
   /* ---------- Analyse photo (Gemini, en ligne, facultative) ---------- */

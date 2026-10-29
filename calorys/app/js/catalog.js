@@ -103,10 +103,16 @@
     return opening;
   }
 
-  /* Stockage du fichier .db : %APPDATA%\Calorys\catalog.db (Windows), IndexedDB (navigateur). */
+  /* Stockage du catalogue compressé (61 Mo) : %APPDATA%\Calorys\catalog.db.gz (Windows), IndexedDB (navigateur).
+     Neutralino transmet les fichiers en base64 : lecture et écriture par blocs de 4 Mo. */
+  const CHUNK = 4 * 1024 * 1024;
   async function neuPath() {
     const sep = window.NL_OS === 'Windows' ? '\\' : '/';
-    return (await Neutralino.os.getPath('data')) + sep + 'Calorys' + sep + 'catalog.db';
+    return (await Neutralino.os.getPath('data')) + sep + 'Calorys' + sep + 'catalog.db.gz';
+  }
+  async function gunzip(data) {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    return new Uint8Array(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
   }
   function idb() {
     return new Promise((res, rej) => {
@@ -126,20 +132,40 @@
       tx.onabort = () => rej(tx.error || new Error('espace de stockage insuffisant'));
     });
   }
+  /* Renvoie la base SQLite décompressée, ou null. */
   async function readStored() {
     if (isNeu) {
-      try { return new Uint8Array(await Neutralino.filesystem.readBinaryFile(await neuPath())); } catch (e) { return null; }
+      try {
+        const path = await neuPath();
+        const size = (await Neutralino.filesystem.getStats(path)).size;
+        const gz = new Uint8Array(size);
+        for (let pos = 0; pos < size; pos += CHUNK) {
+          gz.set(new Uint8Array(await Neutralino.filesystem.readBinaryFile(path, { pos, size: Math.min(CHUNK, size - pos) })), pos);
+        }
+        return await gunzip(gz);
+      } catch (e) { return null; }
     }
-    const v = await idbOp('readonly', s => s.get('db'));
-    return v ? new Uint8Array(v) : null;
+    const v = await idbOp('readonly', s => s.get('gz'));
+    return v ? gunzip(v) : null;
   }
-  async function writeStored(u8) {
-    if (isNeu) { await Neutralino.filesystem.writeBinaryFile(await neuPath(), u8.buffer); return; }
-    await idbOp('readwrite', s => s.put(u8.buffer, 'db'));
+  async function writeStored(gzParts) {
+    if (isNeu) {
+      const path = await neuPath();
+      let first = true;
+      for (const part of gzParts) {
+        for (let off = 0; off < part.length; off += CHUNK) {
+          const chunk = part.slice(off, off + CHUNK).buffer;
+          if (first) { await Neutralino.filesystem.writeBinaryFile(path, chunk); first = false; }
+          else await Neutralino.filesystem.appendBinaryFile(path, chunk);
+        }
+      }
+      return;
+    }
+    await idbOp('readwrite', s => s.put(new Blob(gzParts), 'gz'));
   }
   async function removeStored() {
     if (isNeu) { try { await Neutralino.filesystem.remove(await neuPath()); } catch (e) { /* absent */ } return; }
-    await idbOp('readwrite', s => s.delete('db'));
+    await idbOp('readwrite', s => s.delete('gz'));
   }
 
   async function sha256(buf) {
@@ -177,16 +203,14 @@
       parts.push(await fetchPart(p, n => { got += n; progress = got / M.gzSize * 0.9; emit(); }));
     }
     message = 'Décompression…'; emit();
-    const blob = new Blob(parts);
-    const ds = blob.stream().pipeThrough(new DecompressionStream('gzip'));
-    const u8 = new Uint8Array(await new Response(ds).arrayBuffer());
+    const u8 = await gunzip(new Blob(parts));
     if (u8.length !== M.dbSize || (await sha256(u8)) !== M.dbSha256) throw new Error('catalogue corrompu après décompression');
     message = 'Enregistrement…'; progress = 0.95; emit();
     const SQL = await loadSql();
     db = new SQL.Database(u8);
     try {
       if (!isNeu && navigator.storage && navigator.storage.persist) { try { await navigator.storage.persist(); } catch (e) { /* ignore */ } }
-      await writeStored(u8);
+      await writeStored(parts);
       try { localStorage.setItem('calorys.catalog', M.version); } catch (e) { /* ignore */ }
     } catch (e) {
       // Navigateur sans assez d'espace : le catalogue reste utilisable pendant cette session.
@@ -235,6 +259,8 @@
         try { flag = localStorage.getItem('calorys.catalog'); } catch (e) { /* ignore */ }
         if (isNeu) { try { await Neutralino.filesystem.getStats(await neuPath()); state = 'ready'; } catch (e) { state = 'none'; } }
         else if (flag) state = 'ready';
+        // Préchargement en arrière-plan : la première recherche est ensuite immédiate.
+        if (state === 'ready') setTimeout(() => open().catch(() => { state = 'none'; emit(); }), 1500);
       }
     } catch (e) { state = 'none'; }
     emit();
