@@ -186,7 +186,9 @@
 
   /* Activités : MET d'après le Compendium of Physical Activities (Ainsworth et al.). */
   const ACTIVITIES = [
-    ['Marche tranquille', 3.0], ['Marche rapide', 4.3], ['Randonnée', 6.0], ['Course à pied (8 km/h)', 8.3],
+    ['Marche tranquille', 3.0], ['Marche rapide', 4.3],
+    ['Marche sur tapis (4 km/h)', 3.0], ['Marche sur tapis (5 km/h)', 3.5], ['Marche sur tapis (5,5 km/h)', 4.0],
+    ['Course sur tapis (8 km/h)', 8.3], ['Randonnée', 6.0], ['Course à pied (8 km/h)', 8.3],
     ['Course à pied (10 km/h)', 9.8], ['Course à pied (12 km/h)', 11.8], ['Vélo balade', 4.0], ['Vélo sportif', 8.0],
     ['Vélo d\'appartement', 6.8], ['Natation', 7.0], ['Musculation', 5.0], ['Musculation intense', 6.0],
     ['Boxe (sac, pattes d\'ours)', 7.8], ['Boxe (sparring)', 12.8], ['Arts martiaux / MMA', 10.3], ['Corde à sauter', 11.8],
