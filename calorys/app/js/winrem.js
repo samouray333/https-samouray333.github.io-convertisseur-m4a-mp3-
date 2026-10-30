@@ -59,7 +59,11 @@ $vbs = Join-Path $dir 'notify.vbs'
 $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
 foreach ($r in $cfg.items) {
   if ($r.once) { $t = New-ScheduledTaskTrigger -Once -At ([DateTime]::Parse($r.once, [Globalization.CultureInfo]::InvariantCulture)) }
-  else { $h, $m = $r.at.Split(':'); $t = New-ScheduledTaskTrigger -Daily -At ([DateTime]::Today.AddHours([int]$h).AddMinutes([int]$m)) }
+  else {
+    $h, $m = $r.at.Split(':'); $when = [DateTime]::Today.AddHours([int]$h).AddMinutes([int]$m)
+    if ($r.days) { $names = @($r.days | ForEach-Object { @('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday')[[int]$_ - 1] }); $t = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $names -At $when }
+    else { $t = New-ScheduledTaskTrigger -Daily -At $when }
+  }
   $a = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '" ' + $r.id)
   Register-ScheduledTask -TaskName ('Calorys Rappel ' + $r.id) -Action $a -Trigger $t -Settings $set -Description 'Rappel Calorys' -Force | Out-Null
 }
@@ -91,7 +95,7 @@ foreach ($r in $cfg.items) {
   async function apply(plan, fastEnd) {
     if (!isWin) return false;
     const d = await ensureFiles();
-    const items = plan.map(x => ({ id: x.id, at: x.at, title: x.title, text: x.text }));
+    const items = plan.map(x => Object.assign({ id: x.id, at: x.at, title: x.title, text: x.text }, x.days ? { days: x.days } : {}));
     if (fastEnd && fastEnd > Date.now() + 60000) items.push({ id: 99, once: localIso(fastEnd), title: 'Jeûne terminé', text: 'Objectif atteint : tu peux rompre le jeûne. Bravo !' });
     const exe = (window.NL_PATH || '') + '\\Calorys.exe';
     await Neutralino.filesystem.writeFile(d + '\\reminders.json', JSON.stringify({ exe, items }));

@@ -1,4 +1,4 @@
-# Calorys 1.3.2 (QMTech)
+# Calorys 1.4.0 (QMTech)
 
 Compteur de calories et coach nutritionnel, inspiré des fonctionnalités de YAZIO, écrit de zéro (aucun code, texte, image ni donnée de YAZIO). La version 1.1 fusionne Calorys avec le moteur de **Nutravyn** (QMTech) : objectif adaptatif, mode sèche pour les pesées officielles, séances de sports de combat avec RPE et gamification par ceintures.
 
@@ -32,6 +32,12 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 - **Eau automatique** : 35 ml/kg + 500 ml par heure de séance.
 - **Gamification** : ceintures de blanche à 2e dan, XP, séries, défis de la semaine, 9 badges. Seuls les comportements sont récompensés, jamais un déficit plus creux. Désactivable.
 
+**Nouveau en 1.4 : programmes**
+- **Programmes importables** (Profil > Programmes) : un fichier `.json` règle l'appli. Il fixe la fenêtre de jeûne avec un minuteur lancé et arrêté automatiquement, les repas supprimés (par exemple pas de petit-déjeuner), la répartition des calories, l'objectif, les macros et les jours spéciaux (5:2). Il programme aussi l'eau (heure et quantité, créneaux à cocher dans le journal) et les notifications (avec jours de la semaine), et fournit des règles et un conseil du jour.
+- Carte du programme dans le journal : jour X/Y, fenêtre de repas ouverte ou fermée avec compte à rebours, conseil du jour. Un avertissement s'affiche si on note un aliment pendant le jeûne.
+- 5 programmes fournis : Jeûne 16:8 sans petit-déjeuner, Rééquilibrage 3 repas, Jeûne 18:6, Jeûne 5:2, Sèche sports de combat. On peut importer ses propres fichiers, les partager, exporter un modèle à remplir (format détaillé dans `programmes/LISEZMOI.md`).
+- Arrêter un programme rétablit les réglages d'avant.
+
 **Nouveau en 1.3**
 - **Apparence** (Profil > Apparence) : 10 couleurs (Émeraude, Océan, Lagon, Lavande, Framboise, Corail, Ambre, Combat, Graphite et « Ma ceinture », qui prend la couleur de ta ceinture et change à chaque grade). S'y ajoutent le mode **Couleurs vives** (dégradés, fonds teintés, activé par défaut) et le thème clair, sombre ou automatique.
 
@@ -51,13 +57,13 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 
 | Fichier | Plateforme | Taille |
 |---|---|---|
-| `Calorys-1.3.2.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
-| `Calorys-Setup-1.3.2.exe` | Windows 10/11, installeur | 1,8 Mo |
-| `Calorys-Portable-1.3.2.zip` | Windows 10/11, sans installation | 2,0 Mo |
+| `Calorys-1.4.0.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
+| `Calorys-Setup-1.4.0.exe` | Windows 10/11, installeur | 1,8 Mo |
+| `Calorys-Portable-1.4.0.zip` | Windows 10/11, sans installation | 2,0 Mo |
 
 Le catalogue de produits n'est pas dans ces fichiers : il se télécharge depuis l'appli (Profil > Catalogue produits hors ligne, ou depuis la recherche). Il est publié dans `catalog/` de ce dépôt.
 
-**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 6). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
+**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 7). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
 
 **Synchroniser** : sur le téléphone, Profil > Synchroniser mes appareils > « Ce téléphone sert d'hôte ». Sur le PC, même menu : saisis l'adresse et le code affichés, puis Synchroniser. Les deux appareils doivent être sur le même Wi-Fi.
 
@@ -80,6 +86,7 @@ calorys/
 │   ├── js/engine.js        Moteur Nutravyn (objectifs, adaptatif, sèche, séances, gamification)
 │   ├── js/nutrition.js     Ciqual, recherche, portions, Open Food Facts en ligne
 │   ├── js/catalog.js       Catalogue hors ligne (SQLite natif Android, sql.js ailleurs)
+│   ├── js/program.js       Programmes (validation, fenêtre de repas, notifications)
 │   ├── js/sync.js          Synchronisation (horodatage, fusion, chiffrement, transport Wi-Fi)
 │   ├── js/winrem.js        Rappels Windows (Planificateur de tâches + notifications)
 │   ├── js/platform.js      Stockage et fichiers selon la plateforme
@@ -87,6 +94,7 @@ calorys/
 │   ├── data/foods.js       Table Ciqual générée
 │   └── data/nutravyn.js    Aliments courants et recettes Nutravyn
 ├── catalog/                Catalogue Open Food Facts (morceaux gzip + manifeste SHA-256)
+├── programmes/             Programmes fournis (.json) et description du format
 ├── android/                Coquille Android native (WebView, SQLite, rappels, impression, serveur de synchro)
 ├── windows/                Neutralino + installeur NSIS
 ├── tools/                  Scripts de génération des données et des icônes

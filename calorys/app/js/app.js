@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.3.2';
+  const APP_VERSION = '1.4.0';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -105,7 +105,7 @@
         adaptive: true, exercisePct: 50, waterAuto: true, waterGoal: 2000, glass: 250, stepsGoal: 8000 },
       days: {}, weights: [], foods: [], recipes: [], off: {}, favs: [], recents: [],
       fasting: { plan: '16:8', active: null, history: [] },
-      shopping: [], favRecipes: [],
+      shopping: [], favRecipes: [], program: null,
       settings: { theme: 'auto', accent: 'emerald', vivid: true, game: true, geminiKey: '', seenBelt: 'white', seenBadges: [],
         reminders: { on: false, meals: true, breakfast: '08:00', lunch: '12:30', dinner: '19:30', water: true, weigh: false, weighAt: '07:30', fastEnd: true } }
     };
@@ -175,13 +175,14 @@
     const cut = p.goal === 'cut' && p.weighIn ? E.cutPlan(p, w, expenditure, b) : null;
     const rate = p.goal === 'maintain' ? 0 : p.pace;
     const calc = cut ? cut.target : E.dailyTarget(expenditure, p.goal, rate, p.sex, b);
-    const k = p.kcalOverride || calc;
+    const ov = S.program ? window.Program.override(S.program.p, pkey(ui.date)) : null;
+    const k = ov && ov.kcal ? ov.kcal : p.kcalOverride || calc;
     const m = E.macros(k, splitOf(p), w, p.goal === 'cut' ? 1.8 : 0);
     const trainMin = (dayGet(ui.date).acts || []).filter(a => a.session).reduce((a, x) => a + (x.min || 0), 0);
     const water = p.waterAuto ? E.waterGoalMl(w, trainMin) : p.waterGoal;
     const info = E.describe(k, expenditure, b, cut ? Math.min(cut.required, cut.safe) : rate, w);
     goalsMemo = { kcal: k, calc, bmr: Math.round(b), tdee: Math.round(theo), expenditure: Math.round(expenditure),
-      p: m.p, c: m.c, f: m.f, water, adaptive: ad, cut, info: p.kcalOverride ? Object.assign({}, info, { note: null }) : info };
+      p: m.p, c: m.c, f: m.f, water, adaptive: ad, cut, info: p.kcalOverride || (ov && ov.kcal) ? Object.assign({}, info, { note: null }) : info };
     return goalsMemo;
   }
 
@@ -410,6 +411,7 @@
         <i class="belt-prog"><i style="width:${Math.round(gm.progress * 100)}%"></i></i></span>
         <span class="streak">${icon('flame')}<b>${gm.streak}</b></span></button>`;
     }
+    h += programCard();
     if (g.cut) h += cutCard(g);
     h += `<section class="card summary">
       <div class="sum-side"><b>${kcal(t.eaten)}</b><span>mangées</span></div>
@@ -422,9 +424,16 @@
       const list = d.meals[m.id] || [];
       const mk = list.reduce((a, e) => a + (e.n.e || 0), 0);
       const yest = (dayGet(addDays(ui.date, -1)).meals[m.id] || []).length;
+      const share = mealShare(m);
+      if (!share && !list.length) {
+        h += `<section class="card meal off"><header class="meal-head"><span class="meal-ic ${m.id}">${icon(m.id)}</span>
+          <div class="grow"><h3>${m.label}</h3><p class="muted">Pas prévu dans ton programme</p></div>
+          <button class="icon-btn" data-act="addFood" data-meal="${m.id}" aria-label="Ajouter quand même">${icon('plus')}</button></header></section>`;
+        continue;
+      }
       h += `<section class="card meal"><header class="meal-head">
         <span class="meal-ic ${m.id}">${icon(m.id)}</span>
-        <div class="grow"><h3>${m.label}</h3><p class="muted">${kcal(mk)} / ${kcal(g.kcal * m.share)} kcal</p></div>
+        <div class="grow"><h3>${m.label}</h3><p class="muted">${kcal(mk)} / ${kcal(g.kcal * share)} kcal</p></div>
         ${!list.length && yest ? `<button class="chip" data-act="copyMeal" data-meal="${m.id}" title="Reprendre le repas de la veille">${icon('copy')}Comme hier</button>` : ''}
         <button class="add-btn" data-act="addFood" data-meal="${m.id}" aria-label="Ajouter au ${m.label}">${icon('plus')}</button></header>`;
       if (list.length) {
@@ -442,7 +451,7 @@
       <div class="grow"><h3>Eau</h3><p class="muted">${fr(t.water / 1000, 2)} / ${fr(wg / 1000, 2)} L${S.profile.waterAuto ? ' · objectif auto' : ''}</p></div>
       <button class="icon-btn" data-act="water" data-n="-1" aria-label="Retirer un verre">${icon('minus')}</button>
       <button class="add-btn" data-act="water" data-n="1" aria-label="Ajouter un verre">${icon('plus')}</button></header>
-      <div class="cups">${cups}</div></section>`;
+      <div class="cups">${cups}</div>${waterPlanHtml(d)}</section>`;
     const w = currentWeight();
     h += `<section class="card"><header class="meal-head"><span class="meal-ic act">${icon('run')}</span>
       <div class="grow"><h3>Séances et activités</h3><p class="muted">${kcal(t.burned)} kcal brûlées · ${kcal(burned)} rendues à l'objectif</p></div>
@@ -886,6 +895,8 @@
     const F = S.fasting;
     const goalH = parseInt((F.active ? F.active.plan : F.plan), 10);
     let h = '<div class="topbar"><h1>Jeûne intermittent</h1></div>';
+    const pgm = prog();
+    if (pgm && pgm.fasting) h += `<p class="pg-note">${icon('recipe')}<span>Piloté par ton programme « ${esc(pgm.name)} » : repas de ${pgm.fasting.eatStart} à ${pgm.fasting.eatEnd}${pgm.fasting.autoStart ? ', jeûne lancé et arrêté automatiquement' : ''}.</span></p>`;
     if (F.active) {
       const el = Date.now() - F.active.start, pct = el / (goalH * 3600000);
       const stage = FAST_STAGES.filter(s => el / 3600000 >= s[0]).pop();
@@ -990,7 +1001,8 @@
         ${row('manageFoods', 'food', 'Mes aliments et recettes', (S.foods.length + Object.keys(S.off).length) + ' / ' + S.recipes.length)}
         ${row('catalog', 'box', 'Catalogue produits hors ligne', { ready: 'installé', downloading: Math.round(CAT.status().progress * 100) + ' %', error: 'erreur', none: 'non installé' }[CAT.status().state])}
         ${row('gemini', 'sparkle', 'Analyse photo (Gemini)', S.settings.geminiKey ? 'activée' : 'à configurer')}
-        ${row('reminders', 'bell', 'Rappels', S.settings.reminders.on ? 'activés' : 'désactivés')}
+        ${row('programs', 'recipe', 'Programmes', S.program ? S.program.p.name : 'aucun')}
+        ${row('reminders', 'bell', 'Rappels', S.program ? 'pilotés par le programme' : S.settings.reminders.on ? 'activés' : 'désactivés')}
         ${row('sync', 'share', 'Synchroniser mes appareils', lastSyncText())}
         ${row('progress', 'belt', 'Ma progression', S.settings.game ? 'ceinture ' + game().belt.label.toLowerCase() : 'désactivée')}
         <li><label class="menu-select">${icon('trophy')}<span class="grow">Gamification (ceintures, défis)</span><input type="checkbox" class="toggle" data-act="gameToggleIn" ${S.settings.game ? 'checked' : ''}></label></li>
@@ -1408,6 +1420,7 @@ Règles:
   function remindersPlan() {
     const r = S.settings.reminders, out = [];
     if (!r.on) return out;
+    if (S.program) return window.Program.notifications(S.program.p);
     if (r.meals) {
       out.push({ id: 1, at: r.breakfast, title: 'Petit-déjeuner', text: 'Pense à noter ton petit-déjeuner dans Calorys.' });
       out.push({ id: 2, at: r.lunch, title: 'Déjeuner', text: 'Un déjeuner à noter ?' });
@@ -1419,7 +1432,7 @@ Règles:
   }
   function syncReminders() {
     const r = S.settings.reminders, F = S.fasting;
-    const fastEnd = r.on && r.fastEnd && F.active ? F.active.start + parseInt(F.active.plan, 10) * 3600000 : 0;
+    const fastEnd = r.on && r.fastEnd && F.active && !(F.active.auto && S.program) ? F.active.start + parseInt(F.active.plan, 10) * 3600000 : 0;
     if (window.CalorysNative && window.CalorysNative.setReminders) {
       try { window.CalorysNative.setReminders(JSON.stringify({ daily: remindersPlan(), fastEnd })); } catch (e) { /* ignore */ }
     }
@@ -1435,7 +1448,8 @@ Règles:
     const now = new Date(), hm = pad2(now.getHours()) + ':' + pad2(now.getMinutes()), stamp = today() + ' ' + hm;
     if (stamp === lastTick) return;
     lastTick = stamp;
-    const due = remindersPlan().filter(x => x.at === hm);
+    const iso = ((now.getDay() + 6) % 7) + 1;
+    const due = remindersPlan().filter(x => x.at === hm && (!x.days || x.days.includes(iso)));
     const F = S.fasting;
     if (S.settings.reminders.fastEnd && F.active) {
       const end = F.active.start + parseInt(F.active.plan, 10) * 3600000;
@@ -1461,6 +1475,137 @@ Règles:
         <label class="switch"><input type="checkbox" id="rFast" ${r.fastEnd ? 'checked' : ''}><span>Fin du jeûne en cours</span></label>
       </div><div class="sheet-actions"><button class="btn grow" data-act="saveReminders">${icon('check')}Enregistrer</button></div>`;
     }, { data: { r: Object.assign({}, S.settings.reminders) } });
+  }
+
+  /* ---------- Programmes (fichiers importables) ---------- */
+  const PG = window.Program;
+  const BUILTIN_PROGRAMS = (window.CALORYS_PROGRAMMES || []).map(x => PG.validate(x).prog);
+  const prog = () => (S.program ? S.program.p : null);
+  /* Part d'un repas dans l'objectif du jour (le programme peut supprimer un repas). */
+  const mealShare = m => (prog() && prog().meals ? prog().meals[m.id] : m.share);
+  const hhmm = d => pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  function startProgram(p) {
+    stopProgram(true);
+    const pr = S.profile, F = S.fasting;
+    const prev = { goal: pr.goal, pace: pr.pace, preset: pr.preset, split: Object.assign({}, pr.split), plan: F.plan,
+      waterAuto: pr.waterAuto, waterGoal: pr.waterGoal, reminders: Object.assign({}, S.settings.reminders) };
+    if (p.goal) { pr.goal = p.goal.type; if (p.goal.type !== 'maintain') pr.pace = p.goal.pace; }
+    if (p.macros) { if (p.macros.preset) pr.preset = p.macros.preset; else { pr.preset = 'custom'; pr.split = Object.assign({}, p.macros.custom); } }
+    if (p.fasting) F.plan = p.fasting.plan;
+    if (p.water) { if (p.water.goal === 'auto') pr.waterAuto = true; else { pr.waterAuto = false; pr.waterGoal = p.water.goal; } }
+    S.settings.reminders.on = true;
+    S.program = { p, start: today(), prev };
+    programTick(true);
+    save(); syncReminders();
+  }
+  function stopProgram(silent) {
+    if (!S.program) return;
+    const v = S.program.prev, pr = S.profile;
+    if (v) {
+      pr.goal = v.goal; pr.pace = v.pace; pr.preset = v.preset; pr.split = v.split; S.fasting.plan = v.plan;
+      pr.waterAuto = v.waterAuto; pr.waterGoal = v.waterGoal; S.settings.reminders = Object.assign(S.settings.reminders, v.reminders);
+    }
+    if (S.fasting.active && S.fasting.active.auto) S.fasting.active = null;
+    S.program = null;
+    if (!silent) { save(); syncReminders(); }
+  }
+  /* Jeûne automatique : démarre à la fermeture de la fenêtre de repas, se termine à son ouverture. */
+  function programTick(quiet) {
+    const p = prog();
+    if (!p || !p.fasting || !p.fasting.autoStart) return false;
+    const w = PG.eatWindow(p), F = S.fasting, goalH = parseInt(p.fasting.plan, 10);
+    let changed = false;
+    if (!w.open && !F.active) {
+      const lastHist = F.history.length ? F.history[F.history.length - 1].end : 0;
+      const start = Math.max(w.lastEnd.getTime(), lastHist);
+      if (Date.now() - start < 26 * 3600000) { F.active = { start, plan: p.fasting.plan, auto: true }; changed = true; }
+    } else if (w.open && F.active && F.active.auto) {
+      const end = Math.min(Date.now(), w.start.getTime());
+      if (end - F.active.start > 10 * 60000) F.history.push({ start: F.active.start, end, plan: F.active.plan, goalH });
+      F.active = null; changed = true;
+    }
+    if (changed && !quiet) { save(); syncReminders(); render(); }
+    return changed;
+  }
+  setInterval(() => { if (S.profile.onboarded && !document.hidden) programTick(); }, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.profile.onboarded) programTick(); });
+  /* Avertit quand on note un aliment pendant la période de jeûne du programme. */
+  function fastingWarning() {
+    const p = prog();
+    if (!p || !p.fasting || ui.date !== today()) return '';
+    const w = PG.eatWindow(p);
+    return w.open ? '' : ' · période de jeûne (repas dès ' + hhmm(w.next) + ')';
+  }
+  function programCard() {
+    const p = prog();
+    if (!p) return '';
+    const n = PG.dayIndex(S.program), dur = p.durationDays, done = dur && n > dur;
+    const ov = PG.override(p, pkey(ui.date));
+    let status = '';
+    if (p.fasting && ui.date === today()) {
+      const w = PG.eatWindow(p), left = dur2(w.next.getTime() - Date.now());
+      status = w.open ? `<span class="pg-state open">${icon('food')}Fenêtre de repas ouverte jusqu'à ${hhmm(w.next)} (${left})</span>`
+        : `<span class="pg-state closed">${icon('clock')}Jeûne : repas à ${hhmm(w.next)} (dans ${left})</span>`;
+    }
+    const tip = PG.tipOf(p, n);
+    return `<button class="card pg-card" data-act="programInfo">
+      <span class="pg-top"><b>${esc(p.name)}</b><span class="muted">${done ? 'Programme terminé' : 'Jour ' + Math.max(1, n) + (dur ? ' / ' + dur : '')}</span></span>
+      ${dur ? `<i class="belt-prog q"><i style="width:${Math.min(100, Math.round(n / dur * 100))}%"></i></i>` : ''}
+      ${status}
+      ${ov ? `<span class="pg-ov">${icon('target')}Aujourd'hui : ${ov.kcal ? ov.kcal + ' kcal' : ''}${ov.note ? ' (' + esc(ov.note) + ')' : ''}</span>` : ''}
+      ${tip ? `<span class="pg-tip">${icon('info')}${esc(tip)}</span>` : ''}</button>`;
+  }
+  const dur2 = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m >= 60 ? Math.floor(m / 60) + ' h ' + pad2(m % 60) : m + ' min'; };
+  function waterPlanHtml(d) {
+    const p = prog();
+    if (!p || !p.water || !p.water.schedule.length) return '';
+    const doneSet = new Set(d.wdone || []), now = hhmm(new Date());
+    return `<div class="wplan">${p.water.schedule.map(s => {
+      const ok = doneSet.has(s.at), late = !ok && ui.date === today() && s.at < now;
+      return `<button class="chip ${ok ? 'ok' : late ? 'late' : ''}" data-act="wslot" data-at="${s.at}" data-ml="${s.ml}" title="${esc(s.text)}">${ok ? icon('check') : icon('drop')}${s.at} · ${s.ml} ml</button>`;
+    }).join('')}</div>`;
+  }
+  function programListItem(p, current) {
+    const tags = [];
+    if (p.fasting) tags.push(p.fasting.plan);
+    if (p.dayOverrides.length) tags.push('5:2');
+    if (p.goal) tags.push(p.goal.type === 'lose' ? '-' + String(p.goal.pace).replace('.', ',') + ' kg/sem' : p.goal.type === 'gain' ? 'prise' : 'maintien');
+    if (p.macros && p.macros.preset === 'cut') tags.push('protéines hautes');
+    if (p.durationDays) tags.push(Math.round(p.durationDays / 7) + ' semaines');
+    return `<button class="card pg-item ${current ? 'on' : ''}" data-act="programPreview" data-id="${esc(p.id)}">
+      <b>${esc(p.name)}</b><span class="muted">${esc(p.description.slice(0, 130))}${p.description.length > 130 ? '…' : ''}</span>
+      <span class="rc-tags">${current ? '<i>en cours</i>' : ''}${tags.map(t => `<i>${esc(t)}</i>`).join('')}</span></button>`;
+  }
+  function openPrograms() {
+    openSheet(() => {
+      const cur = prog();
+      return sheetHead('Programmes', 'Ton appli se règle sur le programme choisi : jeûne, repas, eau, notifications') +
+        (cur ? `<h4 class="sec">En cours</h4>${programListItem(cur, true)}<div class="row gap"><button class="btn ghost grow" data-act="programExport">${icon('share')}Partager</button><button class="btn ghost danger-text grow" data-act="programStop">${icon('close')}Arrêter</button></div>` : '') +
+        `<h4 class="sec">Programmes fournis</h4>${BUILTIN_PROGRAMS.filter(p => !cur || p.id !== cur.id).map(p => programListItem(p)).join('')}
+        <h4 class="sec">Mes programmes</h4>
+        <div class="row gap"><button class="btn ghost grow" data-act="programImport">${icon('download')}Importer un fichier</button>
+        <button class="btn ghost grow" data-act="programTemplate">${icon('edit')}Modèle à remplir</button></div>
+        <p class="muted small">Un programme est un fichier .json : tu peux en créer avec le modèle, en recevoir de ton coach ou de ton club, et les partager.</p>`;
+    }, { live: true });
+  }
+  function openProgramPreview(p, imported) {
+    openSheet(() => {
+      const cur = prog(), same = cur && cur.id === p.id;
+      const warn = p.fasting && p.dayOverrides.length ? '' : '';
+      return sheetHead(esc(p.name), (p.author ? 'par ' + esc(p.author) + ' · ' : '') + (imported ? 'fichier importé' : 'programme fourni')) + `<div class="prose">
+        <p>${esc(p.description)}</p>
+        <h4>Ce que l'appli va régler</h4><ul>${PG.summary(p).map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+        ${p.rules.length ? `<h4>Règles</h4><ul>${p.rules.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${p.fasting || p.dayOverrides.length ? '<p class="target-note">' + icon('info') + '<span>Le jeûne ne convient pas à tout le monde (grossesse, diabète, troubles alimentaires…). En cas de doute, demande l\'avis d\'un médecin.</span></p>' : ''}
+        <p class="muted small">Tes réglages actuels sont mémorisés : ils reviennent quand tu arrêtes le programme.${warn}</p></div>
+        <div class="sheet-actions">${same ? `<button class="btn ghost danger-text grow" data-act="programStop">${icon('close')}Arrêter ce programme</button>` : `<button class="btn grow" data-act="programStart">${icon('check')}${cur ? 'Remplacer le programme en cours' : 'Démarrer ce programme'}</button>`}</div>`;
+    }, { data: { p } });
+  }
+  function importProgram(text) {
+    const r = PG.validate(text);
+    if (!r.ok) { toast('Programme refusé : ' + r.errors.slice(0, 2).join(' ')); return false; }
+    openProgramPreview(r.prog, true);
+    return true;
   }
 
   /* ---------- Synchronisation entre appareils ---------- */
@@ -1550,6 +1695,7 @@ Règles:
   async function restoreFrom(text) {
     let data;
     try { data = JSON.parse(text); } catch (e) { toast('Fichier invalide (JSON illisible).'); return; }
+    if (data && data.format === 'calorys-programme') { importProgram(data); return; }
     if (!data || typeof data !== 'object' || !data.profile || !data.days) { toast('Ce fichier n\'est pas une sauvegarde Calorys.'); return; }
     const n = Object.keys(data.days).length;
     if (!(await confirmBox(`Restaurer cette sauvegarde (${n} jour(s) de journal${data.exportedAt ? ', du ' + new Date(data.exportedAt).toLocaleDateString('fr-FR') : ''}) ? Les données actuelles seront remplacées.`, 'Restaurer', true))) return;
@@ -1665,7 +1811,7 @@ Règles:
       const g = lastGrams(f.key);
       logFood(f, g, s.data.meal);
       render(); renderResults(s);
-      toast(f.name.split(',')[0] + ' ajouté (' + fr(g, 0) + ' g)', { label: 'Annuler', fn: () => undoLast(s.data.meal) });
+      toast(f.name.split(',')[0] + ' ajouté (' + fr(g, 0) + ' g)' + fastingWarning(), { label: 'Annuler', fn: () => undoLast(s.data.meal) });
     },
     offSearch: async () => {
       const s = topSheet();
@@ -1708,7 +1854,7 @@ Règles:
       pushRecent(food.key, q.g);
       save(); P.vibrate(12);
       closeSheet(s); render();
-      toast(food.name.split(',')[0] + ' ajouté au ' + mealLabel(s.data.meal).toLowerCase(), { label: 'Annuler', fn: () => undoLast(s.data.meal) });
+      toast(food.name.split(',')[0] + ' ajouté au ' + mealLabel(s.data.meal).toLowerCase() + fastingWarning(), { label: 'Annuler', fn: () => undoLast(s.data.meal) });
     },
     editEntry: el => {
       const d = dayGet(ui.date), e = (d.meals[el.dataset.meal] || []).find(x => x.id === el.dataset.id);
@@ -1910,6 +2056,30 @@ Règles:
   };
   Object.assign(A, {
     progress: () => openProgress(),
+    programs: () => openPrograms(),
+    programInfo: () => openProgramPreview(prog(), false),
+    programPreview: el => { const p = (prog() && prog().id === el.dataset.id) ? prog() : BUILTIN_PROGRAMS.find(x => x.id === el.dataset.id); if (p) openProgramPreview(p, false); },
+    programStart: () => {
+      const s = topSheet(), p = s.data.p;
+      startProgram(p);
+      sheets.slice().forEach(x => closeSheet(x));
+      applyTheme(); render();
+      toast('Programme démarré : ' + p.name + '. Notifications programmées.');
+    },
+    programStop: async () => {
+      if (!(await confirmBox('Arrêter le programme ? Tes réglages d\'avant (objectif, jeûne, eau, rappels) seront rétablis.', 'Arrêter', true))) return;
+      stopProgram(); sheets.slice().forEach(x => closeSheet(x)); render(); toast('Programme arrêté, réglages rétablis.');
+    },
+    programImport: () => { const i = $('#fileInput'); i.value = ''; i.click(); },
+    programTemplate: () => doExport('modele-programme-calorys.json', 'application/json', JSON.stringify(window.Program.template(), null, 2)),
+    programExport: () => { const p = prog(); if (p) doExport('programme-' + p.id + '.json', 'application/json', JSON.stringify(p, null, 2)); },
+    wslot: el => {
+      const d = dayMut(ui.date), at = el.dataset.at, ml = +el.dataset.ml;
+      d.wdone = d.wdone || [];
+      if (d.wdone.includes(at)) { d.wdone = d.wdone.filter(x => x !== at); d.water = Math.max(0, d.water - ml); }
+      else { d.wdone.push(at); d.water += ml; }
+      save(); render(); P.vibrate(8);
+    },
     appearance: () => openAppearance(),
     setTheme: el => { S.settings.theme = el.dataset.v; save(); applyTheme(); render(); },
     setAccent: el => { S.settings.accent = el.dataset.v; save(); applyTheme(); render(); },
@@ -2138,6 +2308,7 @@ Règles:
       if (ui.tab === 'profile' && !sheets.length) render();
     });
     try { await CAT.init(); } catch (e) { console.error(e); }
+    if (S.profile.onboarded && programTick(true)) save();
     render();
     syncReminders();
     const sp = $('#splash');

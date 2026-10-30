@@ -1,3 +1,3 @@
-5e6737ab94da909dd8f84cce4a7d8bd0a294b745cd0d8c5ec097393e9e2d1f55  Calorys-1.3.2.apk
-ad395c169c35223ff672b4e8e0d0d0ca792a8d80ecdfbca88920c6034882b38e  Calorys-Setup-1.3.2.exe
-036d27084aecfd4eab0245ee5ff9982da32b4e631c084abbe668261dd7975184  Calorys-Portable-1.3.2.zip
+5afda85ced91dcf949e8852c23b05f240282fb56b2cbb86a7db2f410031648f3  Calorys-1.4.0.apk
+c6b647997514c04f39106f53930e27c55db12a4eea23148daf3bab8b196ba9d5  Calorys-Setup-1.4.0.exe
+eaa93e0a7c5ad0b766b00aa6b1e1601e00fe20d8094a07f0daf2c0feab97cfba  Calorys-Portable-1.4.0.zip

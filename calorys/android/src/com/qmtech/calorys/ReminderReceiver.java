@@ -35,11 +35,12 @@ public class ReminderReceiver extends BroadcastReceiver {
         }
         if (!ACTION.equals(a)) return;
         int id = intent.getIntExtra("id", 0);
-        notify(ctx, id, intent.getStringExtra("title"), intent.getStringExtra("text"));
+        int[] days = intent.getIntArrayExtra("days");
+        if (days == null || days.length == 0 || contains(days, isoToday())) notify(ctx, id, intent.getStringExtra("title"), intent.getStringExtra("text"));
         // Les rappels quotidiens se reprogramment pour le lendemain (alarmes inexactes, économes en batterie).
         if (id != FAST_ID) {
             String at = intent.getStringExtra("at");
-            if (at != null) set(ctx, id, at, intent.getStringExtra("title"), intent.getStringExtra("text"), next(at, true));
+            if (at != null) set(ctx, id, at, intent.getStringExtra("title"), intent.getStringExtra("text"), days, next(at, true));
         }
     }
 
@@ -80,7 +81,10 @@ public class ReminderReceiver extends BroadcastReceiver {
                 if (daily != null) for (int i = 0; i < daily.length(); i++) {
                     JSONObject r = daily.getJSONObject(i);
                     int id = r.getInt("id");
-                    set(ctx, id, r.getString("at"), r.getString("title"), r.getString("text"), next(r.getString("at"), false));
+                    JSONArray dj = r.optJSONArray("days");
+                    int[] days = null;
+                    if (dj != null) { days = new int[dj.length()]; for (int k = 0; k < dj.length(); k++) days[k] = dj.getInt(k); }
+                    set(ctx, id, r.getString("at"), r.getString("title"), r.optString("text", ""), days, next(r.getString("at"), false));
                     ids.append(id).append(',');
                 }
                 long fastEnd = plan.optLong("fastEnd", 0);
@@ -96,9 +100,10 @@ public class ReminderReceiver extends BroadcastReceiver {
         sp.edit().putString("plan", json).putString("ids", ids.toString()).apply();
     }
 
-    static void set(Context ctx, int id, String at, String title, String text, long when) {
+    static void set(Context ctx, int id, String at, String title, String text, int[] days, long when) {
         Intent it = new Intent(ctx, ReminderReceiver.class).setAction(ACTION)
                 .putExtra("id", id).putExtra("at", at).putExtra("title", title).putExtra("text", text);
+        if (days != null) it.putExtra("days", days);
         PendingIntent pi = PendingIntent.getBroadcast(ctx, id, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am != null) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
@@ -110,6 +115,14 @@ public class ReminderReceiver extends BroadcastReceiver {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (pi != null && am != null) { am.cancel(pi); pi.cancel(); }
     }
+
+    /** Jour ISO : 1 = lundi … 7 = dimanche. */
+    static int isoToday() {
+        int d = Calendar.getInstance().get(Calendar.DAY_OF_WEEK); // 1 = dimanche
+        return d == Calendar.SUNDAY ? 7 : d - 1;
+    }
+
+    static boolean contains(int[] a, int v) { for (int x : a) if (x == v) return true; return false; }
 
     /** Prochaine occurrence de HH:MM (demain si l'heure est passée, ou si forceTomorrow). */
     static long next(String at, boolean forceTomorrow) {

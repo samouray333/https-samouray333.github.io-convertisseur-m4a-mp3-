@@ -1,0 +1,43 @@
+{
+  "format": "calorys-programme",
+  "version": 1,
+  "id": "jeune-5-2",
+  "name": "Jeûne 5:2",
+  "author": "Calorys",
+  "description": "Cinq jours d'alimentation normale (au maintien) et deux jours non consécutifs à environ 600 kcal, le lundi et le jeudi. Le déficit de la semaine vient de ces deux jours. Déconseillé en cas de grossesse, de diabète traité, d'antécédents de troubles alimentaires, et les jours d'entraînement intense.",
+  "durationDays": 56,
+  "goal": { "type": "maintain" },
+  "macros": { "preset": "balanced" },
+  "meals": { "breakfast": 0.25, "lunch": 0.35, "dinner": 0.3, "snack": 0.1 },
+  "dayOverrides": [
+    { "days": [1, 4], "kcal": 600, "note": "jour réduit à 600 kcal" }
+  ],
+  "water": {
+    "goalMl": "auto",
+    "schedule": [
+      { "at": "08:00", "ml": 500, "text": "Un grand verre d'eau au réveil." },
+      { "at": "11:00", "ml": 500, "text": "Hydratation de la matinée." },
+      { "at": "15:00", "ml": 500, "text": "Hydratation de l'après-midi." },
+      { "at": "18:00", "ml": 500, "text": "Encore un verre d'eau." }
+    ]
+  },
+  "reminders": [
+    { "at": "07:30", "title": "Jour à 600 kcal", "text": "Aujourd'hui, deux petits repas riches en protéines et en légumes. Bois beaucoup.", "days": [1, 4] },
+    { "at": "19:00", "title": "Dîner léger", "text": "Une soupe de légumes et une protéine maigre : tu tiens le cap.", "days": [1, 4] },
+    { "at": "07:30", "title": "Journée normale", "text": "Mange normalement, sans compenser la journée réduite d'hier.", "days": [2, 5] },
+    { "at": "08:00", "title": "Pesée du lundi", "text": "À jeun, avant le premier repas.", "days": [1] }
+  ],
+  "rules": [
+    "Lundi et jeudi : environ 600 kcal en deux petits repas.",
+    "Les autres jours : alimentation normale, sans compenser.",
+    "Les jours réduits, privilégie protéines maigres, légumes et soupes.",
+    "Pas d'entraînement intense les jours à 600 kcal."
+  ],
+  "tips": [
+    "Les jours réduits, une soupe de légumes maison remplit l'estomac pour très peu de calories.",
+    "Garde les jours à 600 kcal pour des journées calmes, sans grosse séance.",
+    "Le lendemain d'un jour réduit, mange normalement : surcompenser annule le bénéfice.",
+    "Les œufs, le blanc de poulet et le skyr sont tes alliés les jours réduits.",
+    "Si un lundi tombe mal, décale le jour réduit au mardi : l'important est d'en faire deux par semaine."
+  ]
+}

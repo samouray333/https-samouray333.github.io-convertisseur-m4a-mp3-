@@ -1,0 +1,55 @@
+{
+  "format": "calorys-programme",
+  "version": 1,
+  "id": "jeune-16-8-sans-petit-dejeuner",
+  "name": "Jeûne 16:8 sans petit-déjeuner",
+  "author": "Calorys",
+  "description": "On saute le petit-déjeuner et on mange entre 12 h et 20 h. Deux vrais repas et une collation, beaucoup d'eau le matin pour passer le jeûne. Programme de 8 semaines pour perdre environ 0,5 kg par semaine. Déconseillé en cas de grossesse, de diabète traité ou d'antécédents de troubles alimentaires : demande l'avis d'un médecin en cas de doute.",
+  "durationDays": 56,
+  "goal": { "type": "lose", "pace": 0.5 },
+  "macros": { "preset": "balanced" },
+  "fasting": { "eatStart": "12:00", "eatEnd": "20:00", "autoStart": true },
+  "meals": { "breakfast": 0, "lunch": 0.45, "dinner": 0.4, "snack": 0.15 },
+  "water": {
+    "goalMl": "auto",
+    "schedule": [
+      { "at": "07:30", "ml": 500, "text": "Au réveil : un grand verre d'eau. Thé ou café noir sans sucre autorisés, le jeûne continue." },
+      { "at": "10:00", "ml": 500, "text": "Mi-matinée : l'eau aide à tenir jusqu'au déjeuner." },
+      { "at": "12:00", "ml": 250, "text": "Un verre d'eau avant de commencer le repas." },
+      { "at": "15:00", "ml": 500, "text": "Hydratation de l'après-midi." },
+      { "at": "17:30", "ml": 500, "text": "Encore un verre, surtout si tu t'entraînes ce soir." },
+      { "at": "20:30", "ml": 250, "text": "Un dernier verre d'eau ou une infusion : le jeûne a commencé." }
+    ]
+  },
+  "reminders": [
+    { "at": "11:45", "title": "Fin du jeûne dans 15 min", "text": "Prévois un déjeuner riche en protéines et en légumes." },
+    { "at": "12:00", "title": "Fenêtre de repas ouverte", "text": "Bon appétit ! Note ton déjeuner dans Calorys." },
+    { "at": "16:30", "title": "Collation", "text": "Une collation protéinée (skyr, fruit, poignée d'amandes) pour arriver au dîner sans fringale." },
+    { "at": "19:30", "title": "Dernier repas dans 30 min", "text": "La fenêtre de repas se ferme à 20 h." },
+    { "at": "20:00", "title": "Début du jeûne", "text": "Jusqu'à demain 12 h : eau, thé, café noir et infusions uniquement." },
+    { "at": "07:30", "title": "Pesée du lundi", "text": "À jeun, après les toilettes. Seule la tendance compte.", "days": [1] }
+  ],
+  "rules": [
+    "Pas de petit-déjeuner : eau, thé ou café noir le matin.",
+    "Repas uniquement entre 12 h et 20 h.",
+    "Des protéines à chaque repas (viande, poisson, œufs, laitages, légumineuses).",
+    "La moitié de l'assiette en légumes.",
+    "Pas de boissons sucrées, même pendant la fenêtre de repas."
+  ],
+  "tips": [
+    "Les premiers jours, la faim du matin est surtout une habitude : elle passe en une à deux semaines.",
+    "Un café noir ou un thé vert le matin aide à tenir le jeûne sans le rompre.",
+    "Commence le déjeuner par des légumes ou une soupe : tu seras rassasié plus vite.",
+    "Vise 25 à 40 g de protéines au déjeuner et au dîner.",
+    "Le jeûne ne compense pas les excès : ce qui compte reste le total de calories de la journée.",
+    "Si tu t'entraînes le matin, place ta séance juste avant 12 h et mange tout de suite après.",
+    "Dors 7 à 8 h : le manque de sommeil augmente la faim le lendemain.",
+    "Prépare ton déjeuner à l'avance pour ne pas craquer sur le premier sandwich venu.",
+    "Un écart n'efface rien : reprends simplement le rythme au repas suivant.",
+    "Le sel retient l'eau : une hausse sur la balance après un repas salé n'est pas de la graisse.",
+    "Bois un grand verre d'eau dès que la faim arrive le matin : souvent, c'est de la soif.",
+    "Les fibres (légumes, légumineuses, céréales complètes) calent longtemps : mets-en au dîner.",
+    "Évite les grignotages après 20 h : brosse-toi les dents juste après le dîner.",
+    "Regarde ta courbe de poids lissée dans Analyse plutôt que la pesée du jour."
+  ]
+}

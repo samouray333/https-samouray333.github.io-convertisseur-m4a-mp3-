@@ -180,7 +180,7 @@ public class CatalogStore {
                 c = (HttpURLConnection) u.openConnection();
                 c.setConnectTimeout(20000);
                 c.setReadTimeout(30000);
-                c.setRequestProperty("User-Agent", "Calorys/1.3 (QMTech; Android)");
+                c.setRequestProperty("User-Agent", "Calorys/1.4 (QMTech; Android)");
                 if (c.getResponseCode() != 200) { last = new Exception("HTTP " + c.getResponseCode()); continue; }
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
                 InputStream in = new BufferedInputStream(c.getInputStream(), 1 << 16);

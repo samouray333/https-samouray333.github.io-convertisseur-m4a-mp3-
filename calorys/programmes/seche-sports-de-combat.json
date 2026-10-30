@@ -1,0 +1,45 @@
+{
+  "format": "calorys-programme",
+  "version": 1,
+  "id": "seche-sports-de-combat",
+  "name": "Sèche sports de combat",
+  "author": "QMTech",
+  "description": "Perte de gras en gardant le muscle et la force, pensé pour la boxe, le MMA et les sports de combat : protéines hautes, quatre prises par jour, collation avant l'entraînement du soir, pesée quotidienne. Pour une pesée officielle à date fixe, choisis aussi l'objectif « Faire le poids » dans Profil.",
+  "durationDays": 42,
+  "goal": { "type": "lose", "pace": 0.5 },
+  "macros": { "preset": "cut" },
+  "meals": { "breakfast": 0.25, "lunch": 0.3, "dinner": 0.3, "snack": 0.15 },
+  "water": {
+    "goalMl": "auto",
+    "schedule": [
+      { "at": "07:15", "ml": 500, "text": "Réveil : un grand verre d'eau avant tout." },
+      { "at": "10:00", "ml": 500, "text": "Hydratation de la matinée." },
+      { "at": "13:00", "ml": 500, "text": "Avec le déjeuner." },
+      { "at": "16:00", "ml": 500, "text": "Avant l'entraînement : arrive bien hydraté." },
+      { "at": "20:30", "ml": 500, "text": "Après la séance : remplace ce que tu as transpiré." }
+    ]
+  },
+  "reminders": [
+    { "at": "07:15", "title": "Pesée du matin", "text": "À jeun, après les toilettes. Seule la courbe lissée compte." },
+    { "at": "07:45", "title": "Petit-déjeuner protéiné", "text": "Œufs, skyr ou fromage blanc : au moins 30 g de protéines." },
+    { "at": "12:30", "title": "Déjeuner", "text": "Protéines, légumes et féculents : c'est le carburant de la séance du soir." },
+    { "at": "17:00", "title": "Collation avant l'entraînement", "text": "Glucides digestes et un peu de protéines, 1 h 30 avant la séance." },
+    { "at": "21:00", "title": "Récupération", "text": "Dîner protéiné après la séance. N'oublie pas de noter ta séance avec son RPE." }
+  ],
+  "rules": [
+    "Au moins 2 g de protéines par kg de poids de corps par jour.",
+    "Quatre prises par jour, dont une collation avant l'entraînement.",
+    "Glucides concentrés autour des séances.",
+    "Pesée chaque matin à jeun : on suit la tendance, pas le chiffre du jour.",
+    "Aucune coupe hydrique sans ton staff."
+  ],
+  "tips": [
+    "Note chaque séance avec son RPE : la dépense et l'eau à boire en dépendent.",
+    "Si la force baisse à l'entraînement, ralentis le rythme de perte plutôt que de forcer.",
+    "Garde les glucides autour des séances : avant pour l'énergie, après pour la récupération.",
+    "Le sommeil fait partie de la sèche : moins de 7 h et la faim augmente.",
+    "Une perte trop rapide se paie sur le ring. Vise 0,5 à 1 % du poids de corps par semaine.",
+    "Les recettes « Sèche » de Calorys sont calibrées pour ce programme.",
+    "Pèse tes aliments quelques jours : on sous-estime souvent les portions de féculents et d'huile."
+  ]
+}

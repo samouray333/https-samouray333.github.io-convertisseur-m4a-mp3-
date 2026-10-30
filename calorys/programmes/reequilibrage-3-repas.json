@@ -1,0 +1,46 @@
+{
+  "format": "calorys-programme",
+  "version": 1,
+  "id": "reequilibrage-3-repas",
+  "name": "Rééquilibrage : 3 repas et une collation",
+  "author": "Calorys",
+  "description": "Le programme classique et sans jeûne : trois repas à heures régulières et une collation, un déficit modéré pour perdre environ 0,5 kg par semaine sans frustration. Idéal pour reprendre de bonnes habitudes.",
+  "durationDays": 84,
+  "goal": { "type": "lose", "pace": 0.5 },
+  "macros": { "preset": "balanced" },
+  "meals": { "breakfast": 0.25, "lunch": 0.35, "dinner": 0.3, "snack": 0.1 },
+  "water": {
+    "goalMl": "auto",
+    "schedule": [
+      { "at": "07:30", "ml": 250, "text": "Un verre d'eau au réveil." },
+      { "at": "10:00", "ml": 500, "text": "Hydratation de la matinée." },
+      { "at": "12:30", "ml": 250, "text": "Un verre d'eau avec le déjeuner." },
+      { "at": "15:00", "ml": 500, "text": "Hydratation de l'après-midi." },
+      { "at": "17:30", "ml": 500, "text": "Encore un verre avant le dîner." },
+      { "at": "20:00", "ml": 250, "text": "Un verre d'eau avec le dîner." }
+    ]
+  },
+  "reminders": [
+    { "at": "07:45", "title": "Petit-déjeuner", "text": "Des protéines dès le matin (œufs, skyr, fromage blanc) calent jusqu'au midi." },
+    { "at": "12:30", "title": "Déjeuner", "text": "Un quart de protéines, un quart de féculents, la moitié de légumes." },
+    { "at": "16:30", "title": "Collation", "text": "Un fruit et un laitage, ou une poignée d'oléagineux." },
+    { "at": "19:30", "title": "Dîner", "text": "Note ton dîner pour boucler la journée." },
+    { "at": "07:30", "title": "Pesée du lundi", "text": "À jeun, après les toilettes.", "days": [1] }
+  ],
+  "rules": [
+    "Trois repas à heures régulières, une collation dans l'après-midi.",
+    "La moitié de l'assiette en légumes, un quart de protéines, un quart de féculents.",
+    "Pas de boissons sucrées ni d'alcool en semaine.",
+    "Tout se note, même les petits écarts : c'est ce qui fait marcher le programme."
+  ],
+  "tips": [
+    "Mange lentement : il faut environ 20 minutes pour ressentir la satiété.",
+    "Prépare des portions à l'avance (batch cooking) le dimanche : regarde les recettes « Batch cooking ».",
+    "Remplace le soda par de l'eau pétillante avec un trait de citron.",
+    "Garde les aliments tentants hors de vue : on mange ce qu'on voit.",
+    "Les légumineuses (lentilles, pois chiches) sont rassasiantes et peu chères.",
+    "Un restaurant n'est pas un échec : choisis un plat avec légumes et protéines, et note-le.",
+    "Marcher 30 minutes par jour aide autant le moral que la balance.",
+    "Utilise « Comme hier » dans le journal pour noter en un geste un repas qui se répète."
+  ]
+}

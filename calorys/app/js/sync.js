@@ -31,6 +31,7 @@
     r.set('fav', S.favs || []);
     r.set('rc', S.recents || []);
     r.set('frc', S.favRecipes || []);
+    r.set('pg', S.program || null);
     return r;
   }
   const hashes = recs => { const h = new Map(); for (const [k, v] of recs) h.set(k, JSON.stringify(v)); return h; };
@@ -122,6 +123,7 @@
     if (R.fav) S.favs = R.fav;
     if (R.rc) S.recents = R.rc;
     if (R.frc) S.favRecipes = R.frc;
+    if ('pg' in R) S.program = R.pg;
     const m = meta(S);
     m.t = merged.t; m.tomb = merged.tomb;
     prev = hashes(explode(S));
