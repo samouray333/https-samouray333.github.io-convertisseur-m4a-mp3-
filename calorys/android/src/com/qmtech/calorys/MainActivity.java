@@ -13,7 +13,11 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
+import android.app.AlarmManager;
+import android.app.NotificationManager;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.VibrationEffect;
@@ -464,6 +468,44 @@ public class MainActivity extends Activity {
             if (any && Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
                 runOnUiThread(new Runnable() { @Override public void run() { requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF_PERM); } });
             }
+        }
+
+        /** État de ce qui peut empêcher les rappels : autorisation, heure exacte, économie de batterie. */
+        @JavascriptInterface
+        public String notifStatus() {
+            try {
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                JSONObject o = new JSONObject();
+                o.put("allowed", nm != null && nm.areNotificationsEnabled());
+                o.put("exact", am != null && ReminderReceiver.canExact(am));
+                o.put("battery", pm != null && pm.isIgnoringBatteryOptimizations(getPackageName()));
+                return o.toString();
+            } catch (Exception e) { return "{}"; }
+        }
+
+        @JavascriptInterface
+        public void testNotif() {
+            ReminderReceiver.notify(MainActivity.this, 98, "Test Calorys", "Les notifications arrivent bien sur ce téléphone.");
+        }
+
+        /** what : "notif" (réglages des notifications), "battery" (ne pas optimiser la batterie), "exact" (alarmes). */
+        @JavascriptInterface
+        public void openSettings(final String what) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Intent i;
+                    if ("battery".equals(what)) i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()));
+                    else if ("exact".equals(what) && Build.VERSION.SDK_INT >= 31) i = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName()));
+                    else i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
+                    try { startActivity(i); }
+                    catch (ActivityNotFoundException e) {
+                        try { startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))); } catch (Exception e2) { /* ignore */ }
+                    }
+                }
+            });
         }
 
         /* ---- Impression / PDF du rapport ---- */

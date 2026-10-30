@@ -91,9 +91,7 @@ public class ReminderReceiver extends BroadcastReceiver {
                 if (fastEnd > System.currentTimeMillis()) {
                     Intent it = new Intent(ctx, ReminderReceiver.class).setAction(ACTION)
                             .putExtra("id", FAST_ID).putExtra("title", "Jeûne terminé").putExtra("text", "Objectif atteint : tu peux rompre le jeûne. Bravo !");
-                    PendingIntent pi = PendingIntent.getBroadcast(ctx, FAST_ID, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                    AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
-                    if (am != null) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fastEnd, pi);
+                    alarm(ctx, fastEnd, PendingIntent.getBroadcast(ctx, FAST_ID, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
                 }
             } catch (Exception e) { /* plan invalide */ }
         }
@@ -104,9 +102,19 @@ public class ReminderReceiver extends BroadcastReceiver {
         Intent it = new Intent(ctx, ReminderReceiver.class).setAction(ACTION)
                 .putExtra("id", id).putExtra("at", at).putExtra("title", title).putExtra("text", text);
         if (days != null) it.putExtra("days", days);
-        PendingIntent pi = PendingIntent.getBroadcast(ctx, id, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        alarm(ctx, when, PendingIntent.getBroadcast(ctx, id, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+    }
+
+    /** Alarme à l'heure exacte, même en veille ; à défaut (droit retiré), alarme inexacte. */
+    static void alarm(Context ctx, long when, PendingIntent pi) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
-        if (am != null) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+        if (am == null) return;
+        if (canExact(am)) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+        else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pi);
+    }
+
+    static boolean canExact(AlarmManager am) {
+        try { return Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms(); } catch (Exception e) { return false; }
     }
 
     static void cancel(Context ctx, int id) {

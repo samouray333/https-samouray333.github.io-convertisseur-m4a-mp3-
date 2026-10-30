@@ -560,3 +560,5 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
 :root[data-theme="dark"] .wplan .chip.late { background: #3a2a0c; color: #ffd8a0; }
 .wset { display: grid; gap: 10px; padding: 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
 .wset .seg.wide { margin: 0; }
+.wset p { margin: 0; }
+.wset .nxt { display: grid; gap: 4px; }

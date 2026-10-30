@@ -103,5 +103,12 @@ foreach ($r in $cfg.items) {
     return /OK/.test((r && r.stdOut) || '');
   }
 
-  window.WinReminders = { available: isWin, apply, _scripts: { NOTIFY_PS1, NOTIFY_VBS, SETUP_PS1 } };
+  /* Lance tout de suite la notification d'un rappel enregistré (même chemin que le Planificateur). */
+  async function test(id) {
+    if (!isWin) return;
+    const d = await ensureFiles();
+    await Neutralino.os.execCommand('wscript.exe "' + d + '\\notify.vbs" ' + Number(id), { background: true });
+  }
+
+  window.WinReminders = { available: isWin, apply, test, _scripts: { NOTIFY_PS1, NOTIFY_VBS, SETUP_PS1 } };
 })();

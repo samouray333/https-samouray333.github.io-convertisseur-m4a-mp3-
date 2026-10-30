@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.4.2';
+  const APP_VERSION = '1.4.3';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -1483,6 +1483,37 @@ Règles:
       mealTimes().forEach(([id, at, label], i) => out.push({ id: 30 + i, at: tfmt((tmin(at) + 1410) % 1440), title: 'Un grand verre d\'eau avant le ' + label,
         text: '500 ml maintenant : boire avant de manger aide à manger un peu moins (repas prévu à ' + at.replace(':', ' h ') + ').' }));
     }
+    return mergeSameTime(out);
+  }
+  /* Plusieurs rappels à la même minute deviennent une seule notification (en veille, Android n'en laisse passer qu'une). */
+  function mergeSameTime(list) {
+    const by = new Map();
+    for (const x of list) {
+      const k = x.at + '|' + (x.days ? x.days.join(',') : '');
+      if (by.has(k)) by.get(k).push(x); else by.set(k, [x]);
+    }
+    return [...by.values()].map(ps => ps.length === 1 ? ps[0] : Object.assign({}, ps[0],
+      { title: ps.map(x => x.title).join(' · '), text: ps.map(x => x.text).filter(Boolean).join('\n') }));
+  }
+  /* Prochains rappels enregistrés (aujourd'hui puis demain). */
+  function nextReminders(n) {
+    const now = new Date(), cur = now.getHours() * 60 + now.getMinutes(), iso = ((now.getDay() + 6) % 7) + 1, plan = remindersPlan(), res = [];
+    for (let d = 0; d < 2; d++) {
+      const di = ((iso - 1 + d) % 7) + 1;
+      plan.filter(x => (!x.days || x.days.includes(di)) && (d || tmin(x.at) > cur)).sort((a, b) => tmin(a.at) - tmin(b.at))
+        .forEach(x => res.push({ when: (d ? 'demain ' : '') + x.at, title: x.title }));
+    }
+    return res.slice(0, n);
+  }
+  /* Android : ce qui peut empêcher les rappels d'arriver. */
+  function notifIssues() {
+    if (!(window.CalorysNative && window.CalorysNative.notifStatus)) return [];
+    let st = {};
+    try { st = JSON.parse(window.CalorysNative.notifStatus()); } catch (e) { /* ignore */ }
+    const out = [];
+    if (st.allowed === false) out.push(['notif', 'Les notifications de Calorys sont bloquées sur ce téléphone.', 'Autoriser']);
+    if (st.exact === false) out.push(['exact', 'Les alarmes à l\'heure exacte sont désactivées : les rappels peuvent arriver en retard.', 'Activer']);
+    if (st.battery === false) out.push(['battery', 'L\'économie de batterie peut retarder ou bloquer les rappels quand Calorys est fermé.', 'Ne pas restreindre']);
     return out;
   }
   function syncReminders() {
@@ -1520,7 +1551,11 @@ Règles:
     openSheet(s => {
       const r = s.data.r;
       const t = (id, v) => `<input type="time" id="${id}" value="${v}">`;
+      const issues = S.settings.reminders.on ? notifIssues() : [], next = nextReminders(4);
       return sheetHead('Rappels', P.kind === 'android' ? 'Notifications du téléphone' : P.kind === 'windows' ? 'Notifications Windows, même appli fermée' : 'Notifications tant que Calorys est ouvert') + `<div class="form">
+        ${issues.map(([k, msg, btn]) => `<div class="wset"><p class="warn-text small">${msg}</p><button class="btn ghost" data-act="notifFix" data-v="${k}">${btn}</button></div>`).join('')}
+        ${S.settings.reminders.on && next.length ? `<div class="wset"><p class="small"><b>Prochains rappels</b>${prog() ? ' (avec ton programme)' : ''}</p><div class="nxt">${next.map(x => `<p class="muted small">${x.when} · ${esc(x.title)}</p>`).join('')}</div>
+          <button class="btn ghost" data-act="notifTest">Envoyer une notification de test</button></div>` : ''}
         <label class="switch"><input type="checkbox" id="rOn" ${r.on ? 'checked' : ''}><span>Activer les rappels</span></label>
         <label class="switch"><input type="checkbox" id="rMeals" ${r.meals ? 'checked' : ''}><span>Repas</span></label>
         <div class="grid3"><label class="field"><span>Petit-déj</span>${t('rB', r.breakfast)}</label><label class="field"><span>Déjeuner</span>${t('rL', r.lunch)}</label><label class="field"><span>Dîner</span>${t('rD', r.dinner)}</label></div>
@@ -1539,7 +1574,7 @@ Règles:
         <label class="field"><span>Heure de la pesée</span>${t('rW', r.weighAt)}</label>
         <label class="switch"><input type="checkbox" id="rFast" ${r.fastEnd ? 'checked' : ''}><span>Fin du jeûne en cours</span></label>
       </div><div class="sheet-actions"><button class="btn grow" data-act="saveReminders">${icon('check')}Enregistrer</button></div>`;
-    }, { data: { r: Object.assign({}, S.settings.reminders) },
+    }, { data: { r: Object.assign({}, S.settings.reminders) }, reminders: true,
       mount: sh => {
         const keep = () => readReminders(sh);
         ['rOn', 'rMeals', 'rWater', 'rWE', 'rWF', 'rWTo', 'rWT', 'rWOP', 'rPre', 'rB', 'rL', 'rD'].forEach(id => { const el = $('#' + id, sh.el); if (el) el.addEventListener('change', () => { keep(); sh.refresh(); }); });
@@ -1610,7 +1645,12 @@ Règles:
     return changed;
   }
   setInterval(() => { if (S.profile.onboarded && !document.hidden) programTick(); }, 30000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.profile.onboarded) programTick(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || !S.profile.onboarded) return;
+    programTick();
+    // Retour des réglages Android : met à jour l'état des notifications.
+    for (const sh of sheets) if (sh.opts.reminders) { readReminders(sh); sh.refresh(); }
+  });
   /* Avertit quand on note un aliment pendant la période de jeûne du programme. */
   function fastingWarning() {
     const p = prog();
@@ -2269,6 +2309,13 @@ Règles:
       toast(s.data.items.length + ' aliment(s) ajouté(s) au ' + mealLabel(s.data.meal).toLowerCase());
     },
     reminders: () => openReminders(),
+    notifFix: el => { try { window.CalorysNative.openSettings(el.dataset.v); } catch (e) { /* ignore */ } },
+    notifTest: () => {
+      if (window.CalorysNative && window.CalorysNative.testNotif) { window.CalorysNative.testNotif(); return; }
+      if (window.WinReminders && WinReminders.available && ui.winTasks) { const x = remindersPlan()[0]; if (x) { WinReminders.test(x.id); toast('Notification de test : « ' + x.title + ' »'); return; } }
+      notify('Test Calorys', 'Les notifications arrivent bien.');
+      if (P.kind === 'web' && 'Notification' in window && Notification.permission !== 'granted') toast('Autorise les notifications dans le navigateur.');
+    },
     wMode: el => { const s = topSheet(); readReminders(s); s.data.r.waterMode = el.dataset.v; s.refresh(); },
     saveReminders: async () => {
       const s = topSheet();
