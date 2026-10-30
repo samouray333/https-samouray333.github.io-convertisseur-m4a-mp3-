@@ -1,4 +1,4 @@
-# Calorys 1.4.0 (QMTech)
+# Calorys 1.4.1 (QMTech)
 
 Compteur de calories et coach nutritionnel, inspiré des fonctionnalités de YAZIO, écrit de zéro (aucun code, texte, image ni donnée de YAZIO). La version 1.1 fusionne Calorys avec le moteur de **Nutravyn** (QMTech) : objectif adaptatif, mode sèche pour les pesées officielles, séances de sports de combat avec RPE et gamification par ceintures.
 
@@ -29,7 +29,7 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 - **Presets de macros** : équilibré, sèche, prise de masse, low-carb, cétogène, ou répartition perso.
 - **Séances** : sparring, technique/pao, grappling, sac/shadow, renforcement, cardio, vélo, mobilité, avec intensité perçue (RPE) et estimation de la sudation. Il y a aussi 40 activités du quotidien, dont la marche sur tapis à 4, 5 et 5,5 km/h et la course sur tapis à 8 km/h. Pour la marche et la course, les pas sont estimés (distance / foulée déduite de la taille) et comptés dans l'objectif de pas.
 - Calories des séances rendues à **50 %** par défaut (réglable).
-- **Eau automatique** : 35 ml/kg + 500 ml par heure de séance.
+- **Eau automatique** : repères EFSA en boisson (environ 2 L pour un homme, 1,6 L pour une femme, ajustés au poids), plus la sueur estimée des séances du jour.
 - **Gamification** : ceintures de blanche à 2e dan, XP, séries, défis de la semaine, 9 badges. Seuls les comportements sont récompensés, jamais un déficit plus creux. Désactivable.
 
 **Nouveau en 1.4 : programmes**
@@ -57,13 +57,13 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 
 | Fichier | Plateforme | Taille |
 |---|---|---|
-| `Calorys-1.4.0.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
-| `Calorys-Setup-1.4.0.exe` | Windows 10/11, installeur | 1,8 Mo |
-| `Calorys-Portable-1.4.0.zip` | Windows 10/11, sans installation | 2,0 Mo |
+| `Calorys-1.4.1.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
+| `Calorys-Setup-1.4.1.exe` | Windows 10/11, installeur | 1,8 Mo |
+| `Calorys-Portable-1.4.1.zip` | Windows 10/11, sans installation | 2,0 Mo |
 
 Le catalogue de produits n'est pas dans ces fichiers : il se télécharge depuis l'appli (Profil > Catalogue produits hors ligne, ou depuis la recherche). Il est publié dans `catalog/` de ce dépôt.
 
-**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 7). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
+**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 8). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
 
 **Synchroniser** : sur le téléphone, Profil > Synchroniser mes appareils > « Ce téléphone sert d'hôte ». Sur le PC, même menu : saisis l'adresse et le code affichés, puis Synchroniser. Les deux appareils doivent être sur le même Wi-Fi.
 

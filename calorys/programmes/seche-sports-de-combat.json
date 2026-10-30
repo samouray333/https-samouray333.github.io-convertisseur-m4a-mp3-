@@ -6,25 +6,75 @@
   "author": "QMTech",
   "description": "Perte de gras en gardant le muscle et la force, pensé pour la boxe, le MMA et les sports de combat : protéines hautes, quatre prises par jour, collation avant l'entraînement du soir, pesée quotidienne. Pour une pesée officielle à date fixe, choisis aussi l'objectif « Faire le poids » dans Profil.",
   "durationDays": 42,
-  "goal": { "type": "lose", "pace": 0.5 },
-  "macros": { "preset": "cut" },
-  "meals": { "breakfast": 0.25, "lunch": 0.3, "dinner": 0.3, "snack": 0.15 },
+  "goal": {
+    "type": "lose",
+    "pace": 0.5
+  },
+  "macros": {
+    "preset": "cut"
+  },
+  "meals": {
+    "breakfast": 0.25,
+    "lunch": 0.3,
+    "dinner": 0.3,
+    "snack": 0.15
+  },
   "water": {
     "goalMl": "auto",
     "schedule": [
-      { "at": "07:15", "ml": 500, "text": "Réveil : un grand verre d'eau avant tout." },
-      { "at": "10:00", "ml": 500, "text": "Hydratation de la matinée." },
-      { "at": "13:00", "ml": 500, "text": "Avec le déjeuner." },
-      { "at": "16:00", "ml": 500, "text": "Avant l'entraînement : arrive bien hydraté." },
-      { "at": "20:30", "ml": 500, "text": "Après la séance : remplace ce que tu as transpiré." }
+      {
+        "at": "07:15",
+        "ml": 400,
+        "text": "Réveil : un grand verre d'eau avant tout."
+      },
+      {
+        "at": "10:00",
+        "ml": 400,
+        "text": "Hydratation de la matinée."
+      },
+      {
+        "at": "13:00",
+        "ml": 400,
+        "text": "Avec le déjeuner."
+      },
+      {
+        "at": "16:00",
+        "ml": 400,
+        "text": "Avant l'entraînement : arrive bien hydraté."
+      },
+      {
+        "at": "20:30",
+        "ml": 400,
+        "text": "Après la séance : bois en plus ce que tu as transpiré (affiché avec ta séance dans le journal)."
+      }
     ]
   },
   "reminders": [
-    { "at": "07:15", "title": "Pesée du matin", "text": "À jeun, après les toilettes. Seule la courbe lissée compte." },
-    { "at": "07:45", "title": "Petit-déjeuner protéiné", "text": "Œufs, skyr ou fromage blanc : au moins 30 g de protéines." },
-    { "at": "12:30", "title": "Déjeuner", "text": "Protéines, légumes et féculents : c'est le carburant de la séance du soir." },
-    { "at": "17:00", "title": "Collation avant l'entraînement", "text": "Glucides digestes et un peu de protéines, 1 h 30 avant la séance." },
-    { "at": "21:00", "title": "Récupération", "text": "Dîner protéiné après la séance. N'oublie pas de noter ta séance avec son RPE." }
+    {
+      "at": "07:15",
+      "title": "Pesée du matin",
+      "text": "À jeun, après les toilettes. Seule la courbe lissée compte."
+    },
+    {
+      "at": "07:45",
+      "title": "Petit-déjeuner protéiné",
+      "text": "Œufs, skyr ou fromage blanc : au moins 30 g de protéines."
+    },
+    {
+      "at": "12:30",
+      "title": "Déjeuner",
+      "text": "Protéines, légumes et féculents : c'est le carburant de la séance du soir."
+    },
+    {
+      "at": "17:00",
+      "title": "Collation avant l'entraînement",
+      "text": "Glucides digestes et un peu de protéines, 1 h 30 avant la séance."
+    },
+    {
+      "at": "21:00",
+      "title": "Récupération",
+      "text": "Dîner protéiné après la séance. N'oublie pas de noter ta séance avec son RPE."
+    }
   ],
   "rules": [
     "Au moins 2 g de protéines par kg de poids de corps par jour.",

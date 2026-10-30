@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.4.1';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -164,6 +164,14 @@
   }
   /* Objectif du jour : formule (Mifflin-St Jeor) ou dépense réelle mesurée (moteur adaptatif),
      puis cible selon l'objectif, bornée seulement en mode sèche. Mémorisé pendant un rendu. */
+  /* Sueur estimée des séances et activités du jour (à boire en plus de la base). */
+  function daySweat(d) {
+    return (d.acts || []).reduce((n, a) => {
+      if (a.sweat) return n + a.sweat;
+      const act = N.ACTIVITIES.find(x => x.name === a.name);
+      return n + (act && a.min ? E.sweatFromMet(act.met, a.min) : 0);
+    }, 0);
+  }
   let goalsMemo = null;
   function goals() {
     if (goalsMemo) return goalsMemo;
@@ -178,8 +186,8 @@
     const ov = S.program ? window.Program.override(S.program.p, pkey(ui.date)) : null;
     const k = ov && ov.kcal ? ov.kcal : p.kcalOverride || calc;
     const m = E.macros(k, splitOf(p), w, p.goal === 'cut' ? 1.8 : 0);
-    const trainMin = (dayGet(ui.date).acts || []).filter(a => a.session).reduce((a, x) => a + (x.min || 0), 0);
-    const water = p.waterAuto ? E.waterGoalMl(w, trainMin) : p.waterGoal;
+    const sweat = daySweat(dayGet(ui.date));
+    const water = p.waterAuto ? E.waterGoalMl(p.sex, w, sweat) : p.waterGoal;
     const info = E.describe(k, expenditure, b, cut ? Math.min(cut.required, cut.safe) : rate, w);
     goalsMemo = { kcal: k, calc, bmr: Math.round(b), tdee: Math.round(theo), expenditure: Math.round(expenditure),
       p: m.p, c: m.c, f: m.f, water, adaptive: ad, cut, info: p.kcalOverride || (ov && ov.kcal) ? Object.assign({}, info, { note: null }) : info };
@@ -448,7 +456,7 @@
     let cups = '';
     for (let i = 0; i < Math.max(nG, filled + 1); i++) cups += `<button class="cup ${i < filled ? 'full' : ''}" data-act="cup" data-i="${i}" aria-label="Verre ${i + 1}">${icon('drop')}</button>`;
     h += `<section class="card water"><header class="meal-head"><span class="meal-ic water">${icon('drop')}</span>
-      <div class="grow"><h3>Eau</h3><p class="muted">${fr(t.water / 1000, 2)} / ${fr(wg / 1000, 2)} L${S.profile.waterAuto ? ' · objectif auto' : ''}</p></div>
+      <div class="grow"><h3>Eau</h3><p class="muted">${fr(t.water / 1000, 2)} / ${fr(wg / 1000, 2)} L${S.profile.waterAuto ? (daySweat(d) ? ' · dont ' + fr(Math.round(daySweat(d) / 50) * 50 / 1000, 2) + ' L pour tes séances' : ' · objectif auto') : ''}</p></div>
       <button class="icon-btn" data-act="water" data-n="-1" aria-label="Retirer un verre">${icon('minus')}</button>
       <button class="add-btn" data-act="water" data-n="1" aria-label="Ajouter un verre">${icon('plus')}</button></header>
       <div class="cups">${cups}</div>${waterPlanHtml(d)}</section>`;
@@ -1073,7 +1081,7 @@
         <p class="recipe-total">Par jour : <b>${kcal(k)} kcal</b> · G ${m.c} g · P ${m.p} g · L ${m.f} g${p.goal === 'cut' ? '<br><span class="muted small">Mode sèche : protéines au moins 1,8 g/kg.</span>' : ''}</p>
         <label class="field"><span>Calories des séances rendues à l'objectif</span><select id="gEx">${[[0, 'Aucune'], [50, '50 % (conseillé)'], [75, '75 %'], [100, '100 %']].map(([v, l]) => `<option value="${v}" ${+d.exPct === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <p class="muted small">Les estimations de dépense sont généreuses : « manger sa séance » est la première cause de plateau.</p>
-        <label class="switch"><input type="checkbox" id="gWA" ${d.waterAuto ? 'checked' : ''}><span>Objectif d'eau automatique (35 ml/kg + 500 ml par heure de séance) : ${fr(E.waterGoalMl(w, 0) / 1000, 2)} L les jours sans séance</span></label>
+        <label class="switch"><input type="checkbox" id="gWA" ${d.waterAuto ? 'checked' : ''}><span>Objectif d'eau automatique : ${fr(E.waterBaseMl(p.sex, w) / 1000, 2)} L les jours sans sport (repères EFSA, hors eau des aliments), plus la sueur estimée de tes séances</span></label>
         <div class="grid2">${d.waterAuto ? '' : `<label class="field"><span>Objectif d'eau (ml)</span><input id="gW" inputmode="numeric" value="${d.water}"></label>`}
         <label class="field"><span>Taille d'un verre (ml)</span><input id="gG" inputmode="numeric" value="${d.glass}"></label></div>
         <label class="field"><span>Objectif de pas</span><input id="gS" inputmode="numeric" value="${d.steps}"></label>

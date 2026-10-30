@@ -57,8 +57,17 @@
     return { kcal, p: Math.round(p), c: Math.round(rest * (split.c / ratio) / 4), f: Math.round(rest * (split.f / ratio) / 9) };
   }
 
-  /* Eau conseillée : 35 ml/kg + 500 ml par heure d'entraînement. */
-  const waterGoalMl = (w, trainingMin) => Math.round((w * 35 + trainingMin / 60 * 500) / 50) * 50;
+  /* Eau à boire : repères EFSA (2,5 L d'eau totale pour un homme, 2,0 L pour une femme, dont
+     environ 20 % apportés par les aliments), soit environ 2,0 L / 1,6 L en boisson, ajustés au
+     poids (10 ml par kg d'écart, ± 400 ml), plus la sueur des séances du jour. */
+  function waterBaseMl(sex, w) {
+    const f = sex === 'f';
+    const base = (f ? 1600 : 2000) + Math.max(-400, Math.min(400, ((w || (f ? 62 : 75)) - (f ? 62 : 75)) * 10));
+    return Math.round(base / 50) * 50;
+  }
+  const waterGoalMl = (sex, w, sweat) => Math.round((waterBaseMl(sex, w) + (sweat || 0)) / 50) * 50;
+  /* Sueur d'une activité sans estimation propre : selon l'intensité (MET). */
+  const sweatFromMet = (met, minutes) => Math.round((met >= 8 ? 12 : met >= 6 ? 9 : met >= 4 ? 5 : 2) * (minutes || 0));
 
   /* ---------- Moteur adaptatif (adaptive_engine.dart) ---------- */
   const ALPHA = 0.25, MIN_DAYS = 10;
@@ -276,6 +285,6 @@
   }
 
   window.Engine = { KCAL_PER_KG, PRESETS, bmr, tdee, floorKcal, maxWeeklyLossKg, dailyTarget, describe, macros,
-    waterGoalMl, smooth, adaptive, cutPlan, SESSIONS, sessionKcal, sweatMl, BELTS, XP, XP_LABELS, BADGES, beltFor,
+    waterGoalMl, waterBaseMl, sweatFromMet, smooth, adaptive, cutPlan, SESSIONS, sessionKcal, sweatMl, BELTS, XP, XP_LABELS, BADGES, beltFor,
     game, quests, weekKey };
 })();

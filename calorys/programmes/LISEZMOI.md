@@ -36,7 +36,7 @@ Les fichiers de ce dossier sont fournis dans l'appli et servent d'exemples. Le b
 | `macros` | `preset` : `balanced`, `cut`, `bulk`, `lowCarb`, `keto` ; ou `{ "p": 30, "c": 40, "f": 30 }` (total 100) |
 | `fasting` | heures de début et de fin de la fenêtre de repas (HH:MM) ; `autoStart` lance et arrête le minuteur de jeûne tout seul |
 | `meals` | part de chaque repas (`breakfast`, `lunch`, `dinner`, `snack`) ; 0 = repas supprimé ; les parts sont ramenées à 100 % |
-| `water` | `goalMl` : nombre ou `"auto"` (35 ml/kg + séances) ; `schedule` : heures et quantités, chacune devient une notification et un créneau à cocher |
+| `water` | `goalMl` : nombre ou `"auto"` (environ 2 L homme / 1,6 L femme selon le poids, plus la sueur des séances) ; `schedule` : heures et quantités, chacune devient une notification et un créneau à cocher |
 | `reminders` | notifications : heure, titre, texte ; `days` facultatif (1 = lundi … 7 = dimanche) |
 | `dayOverrides` | jours spéciaux : objectif calorique fixe ces jours-là (ex. 5:2) |
 | `rules`, `tips` | affichés dans l'appli (un conseil différent chaque jour) |
