@@ -25,7 +25,7 @@ LIBS="$ROOT/libs/jsoup-1.13.1.jar:$B/pdfbox/classes.jar"
 echo "== Ressources"
 aapt2 compile --dir app/res -o "$B/res/res.zip"
 aapt2 link -o "$B/base.apk" -I "$FRAMEWORK" --manifest app/AndroidManifest.xml \
-  --java "$B/gen" -A "$B/pdfbox/assets" -A app/assets --min-sdk-version 26 --target-sdk-version 34 \
+  --java "$B/gen" -A "$B/pdfbox/assets" -A app/assets --min-sdk-version 26 --target-sdk-version 36 \
   --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" "$B/res/res.zip"
 
 echo "== Compilation Java"

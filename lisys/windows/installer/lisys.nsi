@@ -19,14 +19,14 @@ InstallDir "$LOCALAPPDATA\Programs\Lisys"
 InstallDirRegKey HKCU "Software\EchoMatras\Lisys" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
-BrandingText "Lisys · Echo Matras"
+BrandingText "Lisys · QMTech"
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey "ProductName" "Lisys"
-VIAddVersionKey "CompanyName" "Echo Matras"
+VIAddVersionKey "CompanyName" "QMTech"
 VIAddVersionKey "FileDescription" "Installation de Lisys"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
-VIAddVersionKey "LegalCopyright" "Echo Matras"
+VIAddVersionKey "LegalCopyright" "QMTech"
 
 !define MUI_ICON "..\Lisys\lisys.ico"
 !define MUI_UNICON "..\Lisys\lisys.ico"
@@ -94,7 +94,7 @@ Section "Lisys" SecMain
   WriteRegStr HKCU "Software\EchoMatras\Lisys" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "${UNINST}" "DisplayName" "Lisys"
   WriteRegStr HKCU "${UNINST}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKCU "${UNINST}" "Publisher" "Echo Matras"
+  WriteRegStr HKCU "${UNINST}" "Publisher" "QMTech"
   WriteRegStr HKCU "${UNINST}" "DisplayIcon" "$INSTDIR\Lisys.exe"
   WriteRegStr HKCU "${UNINST}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNINST}" "UninstallString" '"$INSTDIR\Desinstaller-Lisys.exe"'

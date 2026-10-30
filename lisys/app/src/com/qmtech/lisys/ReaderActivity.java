@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -309,7 +309,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         bottom.addView(chips);
 
         root.addView(bottom);
-        setContentView(root);
+        Ui.setContent(this, root);
         applyBigMode();
     }
 

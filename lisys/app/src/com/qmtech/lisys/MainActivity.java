@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -30,6 +30,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -172,7 +173,7 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        setContentView(root);
+        Ui.setContent(this, root);
     }
 
     private View space(int dp) {
@@ -200,6 +201,10 @@ public class MainActivity extends Activity {
             bubbleSettings();
             return;
         }
+        if (!Prefs.a11yConsent(this)) {
+            showAccessibilityDisclosure();
+            return;
+        }
         String restricted = Build.VERSION.SDK_INT >= 33
                 ? "\n\nSi Android affiche « Paramètre restreint » (appli installée depuis un fichier APK) : "
                 + "appuie sur « Infos appli », puis sur ⋮ en haut à droite, puis « Autoriser les paramètres restreints », "
@@ -224,6 +229,53 @@ public class MainActivity extends Activity {
                     }
                 })
                 .setNegativeButton("Plus tard", null)
+                .show();
+    }
+
+    /**
+     * Information obligatoire (règles Google Play) avant d'activer le service d'accessibilité :
+     * ce que Lisys lit, pourquoi, et ce qu'il en fait. L'utilisateur doit accepter.
+     */
+    private void showAccessibilityDisclosure() {
+        TextView t = new TextView(this);
+        int p = Ui.dp(this, 22);
+        t.setPadding(p, Ui.dp(this, 12), p, 0);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        t.setText("Lisys utilise le service d'accessibilité d'Android (AccessibilityService). Il est conçu pour aider "
+                + "les personnes malvoyantes ou ayant des difficultés de lecture.\n\n"
+                + "Ce que Lisys fait avec ce service :\n"
+                + "• lire à voix haute le texte affiché à l'écran, seulement quand tu appuies sur le bouton flottant, "
+                + "le bouton d'accessibilité ou les boutons de volume (si tu actives cette option) ;\n"
+                + "• lire le texte sur lequel tu passes le doigt (lecture au doigt) et l'entourer en jaune ;\n"
+                + "• faire défiler la page quand tu le demandes avec deux doigts ;\n"
+                + "• si tu actives l'option, annoncer à voix haute les messages reçus (expéditeur et texte).\n\n"
+                + "Données consultées : le texte et la position des éléments affichés à l'écran et, avec l'option "
+                + "d'annonce, le contenu des notifications de messages.\n\n"
+                + "Ces données sont traitées uniquement sur ton téléphone, au moment où tu le demandes. Elles ne sont "
+                + "ni envoyées sur internet, ni partagées, ni vendues. Seul le dernier texte lu est gardé sur le "
+                + "téléphone pour pouvoir le relire dans Lisys.\n\n"
+                + "Tu peux désactiver ce service à tout moment dans Paramètres > Accessibilité.");
+        ScrollView sv = new ScrollView(this);
+        sv.addView(t);
+        new AlertDialog.Builder(this)
+                .setTitle("Autorisation d'accessibilité")
+                .setView(sv)
+                .setCancelable(false)
+                .setPositiveButton("J'accepte", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        Prefs.setA11yConsent(MainActivity.this, true);
+                        showBubbleHelp();
+                    }
+                })
+                .setNegativeButton("Refuser", null)
+                .setNeutralButton("Confidentialité", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                })
                 .show();
     }
 
@@ -880,14 +932,23 @@ public class MainActivity extends Activity {
         int p = Ui.dp(this, 22);
         t.setPadding(p, p, p, 0);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        t.setText("Lisys " + v + " · Echo Matras\n\n"
-                + "Lecture à voix haute de l'écran des autres applis (bouton flottant), de PDF, Word (.docx), OpenOffice (.odt), livres EPUB, RTF, HTML, "
-                + "fichiers texte et pages web.\n\n"
+        t.setText("Lisys " + v + " · QMTech\n\n"
+                + "Lecture à voix haute de l'écran des autres applis (bouton flottant), de photos, de PDF, Word (.docx), "
+                + "OpenOffice (.odt), livres EPUB, RTF, HTML, fichiers texte et pages web.\n\n"
                 + "Tout est traité sur le téléphone, avec la synthèse vocale d'Android. Aucune donnée n'est envoyée "
                 + "ailleurs (sauf le téléchargement des pages web que tu demandes).\n\n"
-                + "Bibliothèques : PdfBox-Android (Apache 2.0), jsoup (MIT).");
+                + "Bibliothèques : PdfBox-Android (Apache 2.0), jsoup (MIT), Tesseract OCR et son modèle français "
+                + "(Apache 2.0), tesseract-wasm (Apache 2.0).");
         t.setTypeface(Typeface.DEFAULT);
-        new AlertDialog.Builder(this).setTitle("À propos").setView(t).setPositiveButton("OK", null).show();
+        new AlertDialog.Builder(this).setTitle("À propos").setView(t).setPositiveButton("OK", null)
+                .setNeutralButton("Confidentialité", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int w) {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }).show();
     }
 
     private void askNotificationPermission() {

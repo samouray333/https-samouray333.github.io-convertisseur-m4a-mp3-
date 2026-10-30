@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -70,6 +70,10 @@ public final class Prefs {
     public static int bubbleX(Context c) { return sp(c).getInt("bubbleX", -1); }
     public static int bubbleY(Context c) { return sp(c).getInt("bubbleY", -1); }
     public static void setBubblePos(Context c, int x, int y) { sp(c).edit().putInt("bubbleX", x).putInt("bubbleY", y).apply(); }
+
+    /** Consentement à l'utilisation du service d'accessibilité (information obligatoire Google Play). */
+    public static boolean a11yConsent(Context c) { return sp(c).getBoolean("a11yConsent", false); }
+    public static void setA11yConsent(Context c, boolean v) { sp(c).edit().putBoolean("a11yConsent", v).apply(); }
 
     public static String lastUrl(Context c) { return sp(c).getString("lastUrl", ""); }
     public static void setLastUrl(Context c, String v) { sp(c).edit().putString("lastUrl", v).apply(); }

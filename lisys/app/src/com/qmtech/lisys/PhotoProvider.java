@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -17,7 +17,7 @@ import java.io.FileNotFoundException;
  */
 public class PhotoProvider extends ContentProvider {
 
-    static final String AUTHORITY = "com.echomatras.lisys.photos";
+    static final String AUTHORITY = "com.qmtech.lisys.photos";
 
     static Uri photoUri() {
         return Uri.parse("content://" + AUTHORITY + "/photo.jpg");

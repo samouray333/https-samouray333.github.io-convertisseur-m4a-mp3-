@@ -1,8 +1,8 @@
 import android.content.Context;
 import android.content.ContextWrapper;
-import com.echomatras.lisys.Extractor;
-import com.echomatras.lisys.Sentences;
-import com.echomatras.lisys.WebExtractor;
+import com.qmtech.lisys.Extractor;
+import com.qmtech.lisys.Sentences;
+import com.qmtech.lisys.WebExtractor;
 import java.io.File;
 
 /** Tests sur PC des moteurs d'extraction de Lisys. Usage : TestExtract fichier... | url... */

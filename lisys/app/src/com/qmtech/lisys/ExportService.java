@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -40,7 +40,7 @@ import java.util.concurrent.TimeUnit;
 public class ExportService extends Service {
 
     public static final String EXTRA_ID = "id";
-    public static final String ACTION_CANCEL = "com.echomatras.lisys.EXPORT_CANCEL";
+    public static final String ACTION_CANCEL = "com.qmtech.lisys.EXPORT_CANCEL";
     private static final String CHANNEL = "export";
     private static final int NOTIF_ID = 2;
     private static final int NOTIF_DONE = 3;
@@ -53,6 +53,17 @@ public class ExportService extends Service {
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
+
+    /** Android 15+ : temps maximal d'un service au premier plan atteint (6 h) : on arrête proprement. */
+    public void onTimeout(int startId, int fgsType) {
+        cancelled = true;
+        stopSelf();
+    }
+
+    public void onTimeout(int startId) {
+        cancelled = true;
+        stopSelf();
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -71,6 +82,7 @@ public class ExportService extends Service {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Export audio", NotificationManager.IMPORTANCE_LOW));
         Notification n = progressNotification("Préparation…", 0, 0);
+        // Type « dataSync » : traitement local de fichiers (création du fichier audio).
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         else startForeground(NOTIF_ID, n);
         new Thread(new Runnable() {

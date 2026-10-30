@@ -11,11 +11,11 @@
     <AssemblyName>Lisys</AssemblyName>
     <ApplicationIcon>lisys.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.1</Version>
+    <FileVersion>1.0.1.0</FileVersion>
     <Product>Lisys</Product>
-    <Company>Echo Matras</Company>
-    <Copyright>Echo Matras</Copyright>
+    <Company>QMTech</Company>
+    <Copyright>QMTech</Copyright>
     <Description>Lisys : lecture à voix haute de documents, pages web, photos et de l'écran</Description>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <DebugType>none</DebugType>

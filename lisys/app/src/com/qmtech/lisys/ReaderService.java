@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -40,10 +40,10 @@ import java.util.Set;
  */
 public class ReaderService extends Service implements TextToSpeech.OnInitListener {
 
-    public static final String ACTION_TOGGLE = "com.echomatras.lisys.TOGGLE";
-    public static final String ACTION_NEXT = "com.echomatras.lisys.NEXT";
-    public static final String ACTION_PREV = "com.echomatras.lisys.PREV";
-    public static final String ACTION_STOP = "com.echomatras.lisys.STOP";
+    public static final String ACTION_TOGGLE = "com.qmtech.lisys.TOGGLE";
+    public static final String ACTION_NEXT = "com.qmtech.lisys.NEXT";
+    public static final String ACTION_PREV = "com.qmtech.lisys.PREV";
+    public static final String ACTION_STOP = "com.qmtech.lisys.STOP";
 
     private static final String CHANNEL = "lecture";
     private static final int NOTIF_ID = 1;

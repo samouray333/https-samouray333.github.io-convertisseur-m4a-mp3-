@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.app.Activity;
 import android.content.ClipData;
@@ -116,7 +116,7 @@ public class OcrActivity extends Activity {
         actions.addView(gallery, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(actions);
 
-        setContentView(root);
+        Ui.setContent(this, root);
         engine = new OcrEngine(this, root);
 
         if (state == null) {

@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -143,7 +143,7 @@ public class WebActivity extends Activity {
         bottom.addView(readBtn, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(bottom);
 
-        setContentView(root);
+        Ui.setContent(this, root);
 
         String url = getIntent().getStringExtra(EXTRA_URL);
         if (state != null) web.restoreState(state);

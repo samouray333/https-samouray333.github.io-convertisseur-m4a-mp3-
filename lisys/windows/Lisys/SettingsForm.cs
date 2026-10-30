@@ -106,7 +106,7 @@ namespace Lisys
                         MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK) Library.Clear();
             });
             Link("À propos de Lisys", () => MessageBox.Show(this,
-                "Lisys " + Application.ProductVersion + " · Echo Matras\n\n"
+                "Lisys " + Application.ProductVersion + " · QMTech\n\n"
                 + "Lecture à voix haute de documents (PDF, Word, OpenOffice, EPUB, RTF, HTML, texte), de pages web, de photos et de l'écran.\n\n"
                 + "Tout est traité sur l'ordinateur avec la voix et la reconnaissance de texte de Windows. Rien n'est envoyé ailleurs (sauf le téléchargement des pages web demandées).\n\n"
                 + "Bibliothèques : PdfPig (Apache 2.0), HtmlAgilityPack (MIT), NAudio (MIT).", "À propos", MessageBoxButtons.OK, MessageBoxIcon.Information));

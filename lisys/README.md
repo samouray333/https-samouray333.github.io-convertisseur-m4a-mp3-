@@ -1,10 +1,10 @@
-# Lisys (Echo Matras)
+# Lisys (QMTech)
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.4 (versionCode 5)
-- Package : `com.echomatras.lisys`
-- Android 8.0 (API 26) minimum, cible Android 14 (API 34)
+- Version : 1.5 (versionCode 6)
+- Package : `com.qmtech.lisys` (définitif pour le Play Store ; les versions 1.0 à 1.4 s'appelaient `com.echomatras.lisys`)
+- Android 8.0 (API 26) minimum, cible Android 16 (API 36), comme l'exige le Play Store
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
 
 ## Fonctions
@@ -53,9 +53,9 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 
 ## Version Windows (dossier `windows/`)
 
-- Version 1.0.0, pour Windows 10 et 11. Elle utilise le .NET Framework 4.8, déjà présent sur ces systèmes : rien d'autre à installer.
-- **Installeur** `Lisys-1.0.0-installation.exe` : installation pour l'utilisateur sans droits administrateur (dans `%LOCALAPPDATA%\Programs\Lisys`), raccourcis menu Démarrer et bureau, « Lire avec Lisys » au clic droit sur les PDF, Word, EPUB, images…, désinstallation propre depuis Applications et fonctionnalités.
-- **Version portable** `Lisys-1.0.0-portable.zip` : à décompresser n'importe où, puis lancer `Lisys.exe`.
+- Version 1.0.1, pour Windows 10 et 11. Elle utilise le .NET Framework 4.8, déjà présent sur ces systèmes : rien d'autre à installer.
+- **Installeur** `Lisys-1.0.1-installation.exe` : installation pour l'utilisateur sans droits administrateur (dans `%LOCALAPPDATA%\Programs\Lisys`), raccourcis menu Démarrer et bureau, « Lire avec Lisys » au clic droit sur les PDF, Word, EPUB, images…, désinstallation propre depuis Applications et fonctionnalités.
+- **Version portable** `Lisys-1.0.1-portable.zip` : à décompresser n'importe où, puis lancer `Lisys.exe`.
 
 **Fonctions**
 - Les mêmes lectures que sur Android : PDF, Word, ODT, EPUB, RTF, HTML, texte, pages web (article seul), texte copié, glisser-déposer d'un fichier ou d'un texte dans la fenêtre.
@@ -91,6 +91,7 @@ Tes fichiers d'origine ne sont jamais modifiés.
 
 | Fichier | Rôle |
 |---|---|
+| `app/src/com/qmtech/lisys/` | Code Java de l'appli Android |
 | `app/AndroidManifest.xml` | Déclaration de l'appli, du partage, de « Lire avec Lisys » et des services. **Numéro de version ici.** |
 | `MainActivity.java` | Écran d'accueil : ouvrir un document, une page web ou du texte, liste des lectures, réglages |
 | `ReaderActivity.java` | Écran de lecture : surlignage, mode loupe, commandes, voix, vitesse, recherche, export |
@@ -109,6 +110,13 @@ Tes fichiers d'origine ne sont jamais modifiés.
 | `windows/Lisys/` | Code de la version Windows (C#, WinForms) |
 | `windows/installer/lisys.nsi` | Script de l'installeur NSIS |
 | `windows/Tests/` | Tests des moteurs d'extraction de la version Windows |
+
+## Publication sur le Google Play Store
+
+- `./build-aab.sh` (après `./build.sh`) produit `release/Lisys-<version>.aab`, l'App Bundle signé à envoyer dans la Play Console. Il utilise bundletool 1.18.3 de Google (`~/deps/bundletool-1.18.3.jar`).
+- `play-store/FICHE-PLAY-STORE.md` : tous les textes à copier-coller (fiche, sécurité des données, déclarations accessibilité et services au premier plan, test fermé), plus l'icône 512 px et la bannière 1024 × 500.
+- `confidentialite.html` : la politique de confidentialité, à publier sur GitHub Pages après avoir remplacé `[ADRESSE E-MAIL DE CONTACT]`.
+- Avant d'activer le bouton flottant, l'appli affiche l'information obligatoire sur l'utilisation du service d'accessibilité, et demande l'accord (« J'accepte »).
 
 ## Reconstruire l'APK
 

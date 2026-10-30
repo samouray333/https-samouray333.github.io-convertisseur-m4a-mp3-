@@ -1,9 +1,11 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.app.Activity;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Insets;
+import android.os.Build;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
@@ -11,6 +13,8 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -19,7 +23,10 @@ import android.widget.TextView;
 final class Ui {
     private Ui() {}
 
-    static final int BRAND = 0xFF1E3A8A;      // bleu Echo Matras
+    /** Politique de confidentialité (site GitHub Pages). */
+    static final String PRIVACY_URL = "https://samouray333.github.io/https-samouray333.github.io-convertisseur-m4a-mp3-/lisys/confidentialite.html";
+
+    static final int BRAND = 0xFF1E3A8A;      // bleu QMTech
     static final int BRAND_LIGHT = 0xFF3B82F6;
     static final int ACCENT = 0xFFF59E0B;     // ambre
 
@@ -94,13 +101,50 @@ final class Ui {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, c.getResources().getDisplayMetrics()));
     }
 
+    /**
+     * Affichage bord à bord (obligatoire depuis Android 15) : l'appli dessine sous les barres du système,
+     * avec des icônes claires ou foncées selon le thème. Le contenu est décalé par {@link #setContent}.
+     */
     static void systemBars(Activity a, Palette p) {
         Window w = a.getWindow();
-        w.setStatusBarColor(p.bar);
-        w.setNavigationBarColor(p.bar);
-        int flags = 0;
-        if (!p.dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        w.getDecorView().setSystemUiVisibility(flags);
+        View decor = w.getDecorView();
+        w.setStatusBarColor(Color.TRANSPARENT);
+        w.setNavigationBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= 30) {
+            w.setDecorFitsSystemWindows(false);
+            WindowInsetsController c = w.getInsetsController();
+            if (c != null) {
+                int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                c.setSystemBarsAppearance(p.dark ? 0 : mask, mask);
+            }
+        } else {
+            int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+            if (!p.dark) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            decor.setSystemUiVisibility(flags);
+        }
+    }
+
+    /** Affiche l'écran en laissant la place des barres du système et du clavier. */
+    static void setContent(Activity a, View root) {
+        a.setContentView(root);
+        final int l = root.getPaddingLeft(), t = root.getPaddingTop(), r = root.getPaddingRight(), b = root.getPaddingBottom();
+        root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override public WindowInsets onApplyWindowInsets(View v, WindowInsets in) {
+                int il, it, ir, ib;
+                if (Build.VERSION.SDK_INT >= 30) {
+                    Insets bars = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                    Insets ime = in.getInsets(WindowInsets.Type.ime());
+                    il = bars.left; it = bars.top; ir = bars.right; ib = Math.max(bars.bottom, ime.bottom);
+                } else {
+                    il = in.getSystemWindowInsetLeft(); it = in.getSystemWindowInsetTop();
+                    ir = in.getSystemWindowInsetRight(); ib = in.getSystemWindowInsetBottom();
+                }
+                v.setPadding(l + il, t + it, r + ir, b + ib);
+                return Build.VERSION.SDK_INT >= 30 ? WindowInsets.CONSUMED : in.consumeSystemWindowInsets();
+            }
+        });
+        root.requestApplyInsets();
     }
 
     static GradientDrawable rounded(int color, float radiusPx) {

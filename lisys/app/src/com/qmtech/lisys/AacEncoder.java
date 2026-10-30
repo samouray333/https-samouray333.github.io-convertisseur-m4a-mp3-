@@ -1,4 +1,4 @@
-package com.echomatras.lisys;
+package com.qmtech.lisys;
 
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
