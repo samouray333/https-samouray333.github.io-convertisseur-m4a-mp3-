@@ -558,3 +558,5 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
 .wplan .chip.ok { background: var(--brand-soft); color: var(--brand); }
 .wplan .chip.late { background: #fff1e0; color: #b45309; }
 :root[data-theme="dark"] .wplan .chip.late { background: #3a2a0c; color: #ffd8a0; }
+.wset { display: grid; gap: 10px; padding: 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+.wset .seg.wide { margin: 0; }

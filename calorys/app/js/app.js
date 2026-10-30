@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.4.1';
+  const APP_VERSION = '1.4.2';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -107,7 +107,8 @@
       fasting: { plan: '16:8', active: null, history: [] },
       shopping: [], favRecipes: [], program: null,
       settings: { theme: 'auto', accent: 'emerald', vivid: true, game: true, geminiKey: '', seenBelt: 'white', seenBadges: [],
-        reminders: { on: false, meals: true, breakfast: '08:00', lunch: '12:30', dinner: '19:30', water: true, weigh: false, weighAt: '07:30', fastEnd: true } }
+        reminders: { on: false, meals: true, breakfast: '08:00', lunch: '12:30', dinner: '19:30', water: true, weigh: false, weighAt: '07:30', fastEnd: true,
+          waterMode: 'interval', waterEvery: 2, waterFrom: '08:00', waterTo: '20:00', waterTimes: '10:30, 15:00, 17:30', waterOverProgram: false, preMeal: false } }
     };
   }
   function migrate(s) {
@@ -1425,17 +1426,63 @@ Règles:
   }
 
   /* ---------- Rappels ---------- */
-  function remindersPlan() {
-    const r = S.settings.reminders, out = [];
-    if (!r.on) return out;
-    if (S.program) return window.Program.notifications(S.program.p);
-    if (r.meals) {
-      out.push({ id: 1, at: r.breakfast, title: 'Petit-déjeuner', text: 'Pense à noter ton petit-déjeuner dans Calorys.' });
-      out.push({ id: 2, at: r.lunch, title: 'Déjeuner', text: 'Un déjeuner à noter ?' });
-      out.push({ id: 3, at: r.dinner, title: 'Dîner', text: 'Note ton dîner pour boucler la journée.' });
+  const tmin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const tfmt = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
+  /* Heures des rappels d'eau choisies par l'utilisateur : intervalle régulier ou liste libre. */
+  function userWaterTimes(r) {
+    r = r || S.settings.reminders;
+    let list = [];
+    if (r.waterMode === 'custom') {
+      list = String(r.waterTimes || '').split(/[,;\s]+/).map(x => x.replace('h', ':').replace(/^(\d):/, '0$1:')).filter(x => /^([01]\d|2[0-3]):[0-5]\d$/.test(x));
+    } else {
+      const a = tmin(r.waterFrom || '08:00'), b = tmin(r.waterTo || '20:00'), step = Math.round((Number(r.waterEvery) || 2) * 60);
+      for (let m = a; m <= b && list.length < 20; m += step) list.push(tfmt(m));
     }
-    if (r.water) ['10:30', '15:00', '17:30'].forEach((at, i) => out.push({ id: 10 + i, at, title: 'Hydratation', text: 'Un grand verre d\'eau ? Ton objectif t\'attend.' }));
-    if (r.weigh) out.push({ id: 20, at: r.weighAt, title: 'Pesée du matin', text: 'À jeun, après les toilettes : seule la courbe lissée compte.' });
+    return Array.from(new Set(list)).sort().slice(0, 20);
+  }
+  /* Créneaux d'eau du jour : planning du programme, ou horaires de l'utilisateur (quantité = objectif / nombre). */
+  function waterSlots() {
+    const p = prog(), r = S.settings.reminders;
+    if (p && p.water && p.water.schedule.length && !r.waterOverProgram) return p.water.schedule;
+    if (!r.water) return [];
+    const times = userWaterTimes(r);
+    if (!times.length) return [];
+    const ml = Math.max(100, Math.round(goals().water / times.length / 50) * 50);
+    return times.map(at => ({ at, ml, text: 'Environ ' + ml + ' ml pour suivre ton objectif d\'eau.' }));
+  }
+  /* Repas encore prévus (un programme peut en supprimer), avec leur heure. */
+  function mealTimes() {
+    const r = S.settings.reminders;
+    const f = prog() && prog().fasting;
+    // Avec un jeûne, les repas restent dans la fenêtre (au plus tard 1 h avant sa fermeture).
+    const fit = at => (f ? tfmt(Math.min(Math.max(tmin(at), tmin(f.eatStart)), tmin(f.eatEnd) - 60)) : at);
+    return [['breakfast', r.breakfast, 'petit-déjeuner'], ['lunch', r.lunch, 'déjeuner'], ['dinner', r.dinner, 'dîner']]
+      .filter(([id]) => mealShare(MEALS.find(m => m.id === id)) > 0).map(([id, at, l]) => [id, fit(at), l]);
+  }
+  function remindersPlan() {
+    const r = S.settings.reminders;
+    let out = [];
+    if (!r.on) return out;
+    if (S.program) {
+      out = window.Program.notifications(S.program.p);
+      if (r.waterOverProgram || !r.water) out = out.filter(x => !/^Hydratation/.test(x.title));
+    } else {
+      if (r.meals) {
+        out.push({ id: 1, at: r.breakfast, title: 'Petit-déjeuner', text: 'Pense à noter ton petit-déjeuner dans Calorys.' });
+        out.push({ id: 2, at: r.lunch, title: 'Déjeuner', text: 'Un déjeuner à noter ?' });
+        out.push({ id: 3, at: r.dinner, title: 'Dîner', text: 'Note ton dîner pour boucler la journée.' });
+      }
+      if (r.weigh) out.push({ id: 20, at: r.weighAt, title: 'Pesée du matin', text: 'À jeun, après les toilettes : seule la courbe lissée compte.' });
+    }
+    // Horaires d'eau de l'utilisateur (hors programme, ou s'il remplace le planning du programme).
+    if (r.water && (!S.program || r.waterOverProgram || !(prog().water && prog().water.schedule.length))) {
+      waterSlots().forEach((w, i) => out.push({ id: 40 + i, at: w.at, title: 'Hydratation : ' + w.ml + ' ml', text: w.text }));
+    }
+    // Grand verre d'eau 30 minutes avant chaque repas prévu.
+    if (r.preMeal) {
+      mealTimes().forEach(([id, at, label], i) => out.push({ id: 30 + i, at: tfmt((tmin(at) + 1410) % 1440), title: 'Un grand verre d\'eau avant le ' + label,
+        text: '500 ml maintenant : boire avant de manger aide à manger un peu moins (repas prévu à ' + at.replace(':', ' h ') + ').' }));
+    }
     return out;
   }
   function syncReminders() {
@@ -1477,12 +1524,39 @@ Règles:
         <label class="switch"><input type="checkbox" id="rOn" ${r.on ? 'checked' : ''}><span>Activer les rappels</span></label>
         <label class="switch"><input type="checkbox" id="rMeals" ${r.meals ? 'checked' : ''}><span>Repas</span></label>
         <div class="grid3"><label class="field"><span>Petit-déj</span>${t('rB', r.breakfast)}</label><label class="field"><span>Déjeuner</span>${t('rL', r.lunch)}</label><label class="field"><span>Dîner</span>${t('rD', r.dinner)}</label></div>
-        <label class="switch"><input type="checkbox" id="rWater" ${r.water ? 'checked' : ''}><span>Eau (10 h 30, 15 h, 17 h 30)</span></label>
+        <label class="switch"><input type="checkbox" id="rWater" ${r.water ? 'checked' : ''}><span>Eau</span></label>
+        ${r.water ? `<div class="wset">
+          <div class="seg wide"><button class="${r.waterMode !== 'custom' ? 'on' : ''}" data-act="wMode" data-v="interval">Régulièrement</button><button class="${r.waterMode === 'custom' ? 'on' : ''}" data-act="wMode" data-v="custom">Mes heures</button></div>
+          ${r.waterMode === 'custom'
+            ? `<label class="field"><span>Heures (séparées par des virgules)</span><input id="rWT" value="${esc(r.waterTimes)}" placeholder="09:00, 11:00, 15:00, 18:00"></label>`
+            : `<div class="grid3"><label class="field"><span>Toutes les</span><select id="rWE">${[[1, '1 h'], [1.5, '1 h 30'], [2, '2 h'], [2.5, '2 h 30'], [3, '3 h'], [4, '4 h']].map(([v, l]) => `<option value="${v}" ${Number(r.waterEvery) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+              <label class="field"><span>De</span>${t('rWF', r.waterFrom)}</label><label class="field"><span>À</span>${t('rWTo', r.waterTo)}</label></div>`}
+          <p class="muted small">${(() => { const ts = userWaterTimes(r); const ml = ts.length ? Math.max(100, Math.round(goals().water / ts.length / 50) * 50) : 0; return ts.length ? ts.length + ' rappel(s) : ' + ts.join(', ') + ' · environ ' + ml + ' ml chacun (objectif ' + fr(goals().water / 1000, 2) + ' L)' : 'Aucune heure valide.'; })()}</p>
+          ${prog() && prog().water && prog().water.schedule.length ? `<label class="switch"><input type="checkbox" id="rWOP" ${r.waterOverProgram ? 'checked' : ''}><span>Utiliser ces horaires à la place du planning d'eau du programme</span></label>` : ''}
+        </div>` : ''}
+        <label class="switch"><input type="checkbox" id="rPre" ${r.preMeal ? 'checked' : ''}><span>Un grand verre d'eau 30 min avant chaque repas${prog() && mealTimes().length < 3 ? ' (repas prévus par ton programme)' : ''} : ${mealTimes().map(([, at]) => tfmt((tmin(at) + 1410) % 1440)).join(', ')}</span></label>
         <label class="switch"><input type="checkbox" id="rWeigh" ${r.weigh ? 'checked' : ''}><span>Pesée du matin</span></label>
         <label class="field"><span>Heure de la pesée</span>${t('rW', r.weighAt)}</label>
         <label class="switch"><input type="checkbox" id="rFast" ${r.fastEnd ? 'checked' : ''}><span>Fin du jeûne en cours</span></label>
       </div><div class="sheet-actions"><button class="btn grow" data-act="saveReminders">${icon('check')}Enregistrer</button></div>`;
-    }, { data: { r: Object.assign({}, S.settings.reminders) } });
+    }, { data: { r: Object.assign({}, S.settings.reminders) },
+      mount: sh => {
+        const keep = () => readReminders(sh);
+        ['rOn', 'rMeals', 'rWater', 'rWE', 'rWF', 'rWTo', 'rWT', 'rWOP', 'rPre', 'rB', 'rL', 'rD'].forEach(id => { const el = $('#' + id, sh.el); if (el) el.addEventListener('change', () => { keep(); sh.refresh(); }); });
+      } });
+  }
+  /* Lit le formulaire Rappels dans sh.data.r (sans enregistrer). */
+  function readReminders(sh) {
+    const r = sh.data.r, g = id => $('#' + id, sh.el);
+    const v = (id, d) => (g(id) ? g(id).value || d : undefined);
+    const c = id => (g(id) ? g(id).checked : undefined);
+    const set = (k, val) => { if (val !== undefined) r[k] = val; };
+    set('on', c('rOn')); set('meals', c('rMeals')); set('water', c('rWater')); set('preMeal', c('rPre'));
+    set('breakfast', v('rB', '08:00')); set('lunch', v('rL', '12:30')); set('dinner', v('rD', '19:30'));
+    set('weigh', c('rWeigh')); set('weighAt', v('rW', '07:30')); set('fastEnd', c('rFast'));
+    set('waterEvery', g('rWE') ? Number(g('rWE').value) : undefined); set('waterFrom', v('rWF', '08:00')); set('waterTo', v('rWTo', '20:00'));
+    set('waterTimes', g('rWT') ? g('rWT').value : undefined); set('waterOverProgram', c('rWOP'));
+    return r;
   }
 
   /* ---------- Programmes (fichiers importables) ---------- */
@@ -1565,10 +1639,10 @@ Règles:
   }
   const dur2 = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m >= 60 ? Math.floor(m / 60) + ' h ' + pad2(m % 60) : m + ' min'; };
   function waterPlanHtml(d) {
-    const p = prog();
-    if (!p || !p.water || !p.water.schedule.length) return '';
+    const slots = S.settings.reminders.on || prog() ? waterSlots() : [];
+    if (!slots.length) return '';
     const doneSet = new Set(d.wdone || []), now = hhmm(new Date());
-    return `<div class="wplan">${p.water.schedule.map(s => {
+    return `<div class="wplan">${slots.map(s => {
       const ok = doneSet.has(s.at), late = !ok && ui.date === today() && s.at < now;
       return `<button class="chip ${ok ? 'ok' : late ? 'late' : ''}" data-act="wslot" data-at="${s.at}" data-ml="${s.ml}" title="${esc(s.text)}">${ok ? icon('check') : icon('drop')}${s.at} · ${s.ml} ml</button>`;
     }).join('')}</div>`;
@@ -2195,11 +2269,11 @@ Règles:
       toast(s.data.items.length + ' aliment(s) ajouté(s) au ' + mealLabel(s.data.meal).toLowerCase());
     },
     reminders: () => openReminders(),
+    wMode: el => { const s = topSheet(); readReminders(s); s.data.r.waterMode = el.dataset.v; s.refresh(); },
     saveReminders: async () => {
-      const s = topSheet(), g = id => $('#' + id, s.el);
-      const r = { on: g('rOn').checked, meals: g('rMeals').checked, breakfast: g('rB').value || '08:00', lunch: g('rL').value || '12:30', dinner: g('rD').value || '19:30',
-        water: g('rWater').checked, weigh: g('rWeigh').checked, weighAt: g('rW').value || '07:30', fastEnd: g('rFast').checked };
-      S.settings.reminders = r; save(); closeSheet(s);
+      const s = topSheet();
+      const r = readReminders(s);
+      S.settings.reminders = Object.assign(S.settings.reminders, r); save(); closeSheet(s);
       if (r.on && P.kind === 'web' && 'Notification' in window && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } }
       syncReminders(); render(); toast(r.on ? 'Rappels activés' : 'Rappels désactivés');
     },
@@ -2323,6 +2397,6 @@ Règles:
     sp.classList.add('hide'); setTimeout(() => sp.remove(), 400);
     if ('serviceWorker' in navigator && P.kind === 'web' && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  window.CalorysDebug = { get state() { return S; }, ui, render };
+  window.CalorysDebug = { get state() { return S; }, ui, render, remindersPlan, waterSlots };
   boot();
 })();

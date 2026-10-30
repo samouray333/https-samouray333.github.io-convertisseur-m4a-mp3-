@@ -1,4 +1,4 @@
-# Calorys 1.4.1 (QMTech)
+# Calorys 1.4.2 (QMTech)
 
 Compteur de calories et coach nutritionnel, inspiré des fonctionnalités de YAZIO, écrit de zéro (aucun code, texte, image ni donnée de YAZIO). La version 1.1 fusionne Calorys avec le moteur de **Nutravyn** (QMTech) : objectif adaptatif, mode sèche pour les pesées officielles, séances de sports de combat avec RPE et gamification par ceintures.
 
@@ -32,6 +32,10 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 - **Eau automatique** : repères EFSA en boisson (environ 2 L pour un homme, 1,6 L pour une femme, ajustés au poids), plus la sueur estimée des séances du jour.
 - **Gamification** : ceintures de blanche à 2e dan, XP, séries, défis de la semaine, 9 badges. Seuls les comportements sont récompensés, jamais un déficit plus creux. Désactivable.
 
+**Nouveau en 1.4.2 : rappels d'eau à tes horaires**
+- **Eau réglable** (Profil > Rappels) : « Régulièrement » (toutes les 1 h à 4 h entre deux heures, par défaut toutes les 2 h de 8 h à 20 h) ou « Mes heures » (liste libre). La quantité de chaque rappel est l'objectif du jour divisé par le nombre de rappels, et les mêmes créneaux s'affichent dans la carte Eau. Avec un programme, une case permet d'utiliser ces horaires à la place de son planning d'eau.
+- **Un grand verre avant chaque repas** : rappel 30 min avant chaque repas prévu. Avec un jeûne, seulement pour les repas de la fenêtre (par exemple 12 h et 18 h 30 en 16:8).
+
 **Nouveau en 1.4 : programmes**
 - **Programmes importables** (Profil > Programmes) : un fichier `.json` règle l'appli. Il fixe la fenêtre de jeûne avec un minuteur lancé et arrêté automatiquement, les repas supprimés (par exemple pas de petit-déjeuner), la répartition des calories, l'objectif, les macros et les jours spéciaux (5:2). Il programme aussi l'eau (heure et quantité, créneaux à cocher dans le journal) et les notifications (avec jours de la semaine), et fournit des règles et un conseil du jour.
 - Carte du programme dans le journal : jour X/Y, fenêtre de repas ouverte ou fermée avec compte à rebours, conseil du jour. Un avertissement s'affiche si on note un aliment pendant le jeûne.
@@ -57,13 +61,13 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 
 | Fichier | Plateforme | Taille |
 |---|---|---|
-| `Calorys-1.4.1.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
-| `Calorys-Setup-1.4.1.exe` | Windows 10/11, installeur | 1,8 Mo |
-| `Calorys-Portable-1.4.1.zip` | Windows 10/11, sans installation | 2,0 Mo |
+| `Calorys-1.4.2.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
+| `Calorys-Setup-1.4.2.exe` | Windows 10/11, installeur | 1,8 Mo |
+| `Calorys-Portable-1.4.2.zip` | Windows 10/11, sans installation | 2,0 Mo |
 
 Le catalogue de produits n'est pas dans ces fichiers : il se télécharge depuis l'appli (Profil > Catalogue produits hors ligne, ou depuis la recherche). Il est publié dans `catalog/` de ce dépôt.
 
-**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 8). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
+**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 9). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
 
 **Synchroniser** : sur le téléphone, Profil > Synchroniser mes appareils > « Ce téléphone sert d'hôte ». Sur le PC, même menu : saisis l'adresse et le code affichés, puis Synchroniser. Les deux appareils doivent être sur le même Wi-Fi.
 
