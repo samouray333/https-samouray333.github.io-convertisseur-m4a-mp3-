@@ -485,6 +485,14 @@ public class MainActivity extends Activity {
             } catch (Exception e) { return "{}"; }
         }
 
+        /** Lecture à voix haute immédiate (bouton « Tester la voix »). */
+        @JavascriptInterface
+        public boolean speak(final String text) {
+            if (!Speaker.canSpeak(MainActivity.this)) return false;
+            runOnUiThread(new Runnable() { @Override public void run() { Speaker.say(MainActivity.this, text, 20000, null); } });
+            return true;
+        }
+
         @JavascriptInterface
         public void testNotif() {
             ReminderReceiver.notify(MainActivity.this, 98, "Test Calorys", "Les notifications arrivent bien sur ce téléphone.");

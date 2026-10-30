@@ -30,6 +30,16 @@ $xml = @"
 $doc = New-Object Windows.Data.Xml.Dom.XmlDocument
 $doc.LoadXml($xml)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('${AUMID}').Show([Windows.UI.Notifications.ToastNotification]::new($doc))
+# Rappel vocal (voix française de Windows si elle est installée).
+if ($r.say) {
+  try {
+    Add-Type -AssemblyName System.Speech
+    $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+    $v = $s.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'fr*' } | Select-Object -First 1
+    if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }
+    $s.Speak([string]$r.say)
+  } catch { }
+}
 `;
 
   // Lanceur sans fenêtre (une console PowerShell clignoterait sinon).
@@ -91,12 +101,12 @@ foreach ($r in $cfg.items) {
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':00';
   }
 
-  /* plan : [{id, at:'HH:MM', title, text}] ; fastEnd : horodatage ms (0 si aucun). */
-  async function apply(plan, fastEnd) {
+  /* plan : [{id, at:'HH:MM', title, text, say?, days?}] ; fastEnd : horodatage ms (0 si aucun) ; fastSay : texte lu à la fin du jeûne. */
+  async function apply(plan, fastEnd, fastSay) {
     if (!isWin) return false;
     const d = await ensureFiles();
-    const items = plan.map(x => Object.assign({ id: x.id, at: x.at, title: x.title, text: x.text }, x.days ? { days: x.days } : {}));
-    if (fastEnd && fastEnd > Date.now() + 60000) items.push({ id: 99, once: localIso(fastEnd), title: 'Jeûne terminé', text: 'Objectif atteint : tu peux rompre le jeûne. Bravo !' });
+    const items = plan.map(x => Object.assign({ id: x.id, at: x.at, title: x.title, text: x.text }, x.days ? { days: x.days } : {}, x.say ? { say: x.say } : {}));
+    if (fastEnd && fastEnd > Date.now() + 60000) items.push(Object.assign({ id: 99, once: localIso(fastEnd), title: 'Jeûne terminé', text: 'Objectif atteint : tu peux rompre le jeûne. Bravo !' }, fastSay ? { say: fastSay } : {}));
     const exe = (window.NL_PATH || '') + '\\Calorys.exe';
     await Neutralino.filesystem.writeFile(d + '\\reminders.json', JSON.stringify({ exe, items }));
     const r = await Neutralino.os.execCommand('powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + d + '\\setup-reminders.ps1"');

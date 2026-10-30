@@ -36,11 +36,18 @@ public class ReminderReceiver extends BroadcastReceiver {
         if (!ACTION.equals(a)) return;
         int id = intent.getIntExtra("id", 0);
         int[] days = intent.getIntArrayExtra("days");
-        if (days == null || days.length == 0 || contains(days, isoToday())) notify(ctx, id, intent.getStringExtra("title"), intent.getStringExtra("text"));
-        // Les rappels quotidiens se reprogramment pour le lendemain (alarmes inexactes, économes en batterie).
+        String say = intent.getStringExtra("say");
+        boolean today = days == null || days.length == 0 || contains(days, isoToday());
+        if (today) notify(ctx, id, intent.getStringExtra("title"), intent.getStringExtra("text"));
+        // Les rappels quotidiens se reprogramment pour le lendemain.
         if (id != FAST_ID) {
             String at = intent.getStringExtra("at");
-            if (at != null) set(ctx, id, at, intent.getStringExtra("title"), intent.getStringExtra("text"), days, next(at, true));
+            if (at != null) set(ctx, id, at, intent.getStringExtra("title"), intent.getStringExtra("text"), say, days, next(at, true));
+        }
+        // Rappel vocal : le récepteur reste actif le temps de la lecture (10 s au plus).
+        if (today && say != null && !say.isEmpty() && Speaker.canSpeak(ctx)) {
+            final PendingResult pr = goAsync();
+            Speaker.say(ctx, say, 9000, new Runnable() { @Override public void run() { pr.finish(); } });
         }
     }
 
@@ -66,7 +73,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         try { nm.notify(id, n); } catch (SecurityException e) { /* notifications refusées */ }
     }
 
-    /** Applique un plan JSON {daily:[{id,at,title,text}], fastEnd: ms}. */
+    /** Applique un plan JSON {daily:[{id,at,title,text,say?,days?}], fastEnd: ms, fastSay?}. */
     static void schedule(Context ctx, String json) {
         SharedPreferences sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         // Annule les anciens rappels.
@@ -84,13 +91,14 @@ public class ReminderReceiver extends BroadcastReceiver {
                     JSONArray dj = r.optJSONArray("days");
                     int[] days = null;
                     if (dj != null) { days = new int[dj.length()]; for (int k = 0; k < dj.length(); k++) days[k] = dj.getInt(k); }
-                    set(ctx, id, r.getString("at"), r.getString("title"), r.optString("text", ""), days, next(r.getString("at"), false));
+                    set(ctx, id, r.getString("at"), r.getString("title"), r.optString("text", ""), r.optString("say", null), days, next(r.getString("at"), false));
                     ids.append(id).append(',');
                 }
                 long fastEnd = plan.optLong("fastEnd", 0);
                 if (fastEnd > System.currentTimeMillis()) {
                     Intent it = new Intent(ctx, ReminderReceiver.class).setAction(ACTION)
                             .putExtra("id", FAST_ID).putExtra("title", "Jeûne terminé").putExtra("text", "Objectif atteint : tu peux rompre le jeûne. Bravo !");
+                    if (plan.optString("fastSay", "").length() > 0) it.putExtra("say", plan.getString("fastSay"));
                     alarm(ctx, fastEnd, PendingIntent.getBroadcast(ctx, FAST_ID, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
                 }
             } catch (Exception e) { /* plan invalide */ }
@@ -98,9 +106,10 @@ public class ReminderReceiver extends BroadcastReceiver {
         sp.edit().putString("plan", json).putString("ids", ids.toString()).apply();
     }
 
-    static void set(Context ctx, int id, String at, String title, String text, int[] days, long when) {
+    static void set(Context ctx, int id, String at, String title, String text, String say, int[] days, long when) {
         Intent it = new Intent(ctx, ReminderReceiver.class).setAction(ACTION)
                 .putExtra("id", id).putExtra("at", at).putExtra("title", title).putExtra("text", text);
+        if (say != null && !say.isEmpty()) it.putExtra("say", say);
         if (days != null) it.putExtra("days", days);
         alarm(ctx, when, PendingIntent.getBroadcast(ctx, id, it, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
     }

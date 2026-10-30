@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.4.3';
+  const APP_VERSION = '1.5.0';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -108,7 +108,7 @@
       shopping: [], favRecipes: [], program: null,
       settings: { theme: 'auto', accent: 'emerald', vivid: true, game: true, geminiKey: '', seenBelt: 'white', seenBadges: [],
         reminders: { on: false, meals: true, breakfast: '08:00', lunch: '12:30', dinner: '19:30', water: true, weigh: false, weighAt: '07:30', fastEnd: true,
-          waterMode: 'interval', waterEvery: 2, waterFrom: '08:00', waterTo: '20:00', waterTimes: '10:30, 15:00, 17:30', waterOverProgram: false, preMeal: false } }
+          waterMode: 'interval', waterEvery: 2, waterFrom: '08:00', waterTo: '20:00', waterTimes: '10:30, 15:00, 17:30', waterOverProgram: false, preMeal: false, voice: false, voiceMode: 'title' } }
     };
   }
   function migrate(s) {
@@ -1483,7 +1483,26 @@ Règles:
       mealTimes().forEach(([id, at, label], i) => out.push({ id: 30 + i, at: tfmt((tmin(at) + 1410) % 1440), title: 'Un grand verre d\'eau avant le ' + label,
         text: '500 ml maintenant : boire avant de manger aide à manger un peu moins (repas prévu à ' + at.replace(':', ' h ') + ').' }));
     }
-    return mergeSameTime(out);
+    out = mergeSameTime(out);
+    if (r.voice) out = out.map(x => Object.assign({}, x, { say: sayText(x.title, x.text, r.voiceMode) }));
+    return out;
+  }
+  /* Texte lu à voix haute : unités et heures écrites en toutes lettres pour la synthèse vocale. */
+  function sayText(title, text, mode) {
+    const t = mode === 'full' && text ? title + '. ' + text : title;
+    return t.replace(/ · /g, '. ').replace(/\n/g, ' ')
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+      .replace(/\b(\d{1,2})(?::| h )(\d{2})\b/g, (m, h, mm) => Number(h) + ' heures' + (mm === '00' ? '' : ' ' + Number(mm)))
+      .replace(/\b(\d{1,2}):(\d)\b/g, '$1 $2').replace(/(\d) ?ml\b/g, '$1 millilitres').replace(/(\d) ?kcal\b/g, '$1 kilocalories').replace(/(\d) ?min\b/g, '$1 minutes')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function speakNow(text) {
+    if (window.CalorysNative && window.CalorysNative.speak) { try { return window.CalorysNative.speak(text); } catch (e) { return false; } }
+    if (!('speechSynthesis' in window)) return false;
+    const u = new SpeechSynthesisUtterance(text), v = speechSynthesis.getVoices().find(x => /^fr/i.test(x.lang));
+    u.lang = 'fr-FR'; if (v) u.voice = v;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+    return true;
   }
   /* Plusieurs rappels à la même minute deviennent une seule notification (en veille, Android n'en laisse passer qu'une). */
   function mergeSameTime(list) {
@@ -1519,12 +1538,13 @@ Règles:
   function syncReminders() {
     const r = S.settings.reminders, F = S.fasting;
     const fastEnd = r.on && r.fastEnd && F.active && !(F.active.auto && S.program) ? F.active.start + parseInt(F.active.plan, 10) * 3600000 : 0;
+    const fastSay = r.voice ? 'Jeûne terminé. Tu peux rompre le jeûne, bravo !' : '';
     if (window.CalorysNative && window.CalorysNative.setReminders) {
-      try { window.CalorysNative.setReminders(JSON.stringify({ daily: remindersPlan(), fastEnd })); } catch (e) { /* ignore */ }
+      try { window.CalorysNative.setReminders(JSON.stringify(Object.assign({ daily: remindersPlan(), fastEnd }, fastSay ? { fastSay } : {}))); } catch (e) { /* ignore */ }
     }
     // Windows : tâches planifiées, les rappels arrivent même appli fermée.
     if (window.WinReminders && WinReminders.available) {
-      WinReminders.apply(remindersPlan(), fastEnd).then(ok => { ui.winTasks = ok; }).catch(() => { ui.winTasks = false; });
+      WinReminders.apply(remindersPlan(), fastEnd, fastSay).then(ok => { ui.winTasks = ok; }).catch(() => { ui.winTasks = false; });
     }
   }
   /* Windows et navigateur : rappels envoyés tant que l'appli est ouverte. */
@@ -1539,9 +1559,9 @@ Règles:
     const F = S.fasting;
     if (S.settings.reminders.fastEnd && F.active) {
       const end = F.active.start + parseInt(F.active.plan, 10) * 3600000;
-      if (Math.abs(Date.now() - end) < 30000) due.push({ title: 'Jeûne terminé', text: 'Objectif de ' + F.active.plan + ' atteint, bravo !' });
+      if (Math.abs(Date.now() - end) < 30000) due.push({ title: 'Jeûne terminé', text: 'Objectif de ' + F.active.plan + ' atteint, bravo !', say: S.settings.reminders.voice ? 'Jeûne terminé. Tu peux rompre le jeûne, bravo !' : '' });
     }
-    for (const x of due) notify(x.title, x.text);
+    for (const x of due) { notify(x.title, x.text); if (x.say) speakNow(x.say); }
   }, 20000);
   function notify(title, text) {
     if (P.kind === 'windows') { try { Neutralino.os.showNotification(title, text); } catch (e) { /* ignore */ } return; }
@@ -1570,6 +1590,11 @@ Règles:
           ${prog() && prog().water && prog().water.schedule.length ? `<label class="switch"><input type="checkbox" id="rWOP" ${r.waterOverProgram ? 'checked' : ''}><span>Utiliser ces horaires à la place du planning d'eau du programme</span></label>` : ''}
         </div>` : ''}
         <label class="switch"><input type="checkbox" id="rPre" ${r.preMeal ? 'checked' : ''}><span>Un grand verre d'eau 30 min avant chaque repas${prog() && mealTimes().length < 3 ? ' (repas prévus par ton programme)' : ''} : ${mealTimes().map(([, at]) => tfmt((tmin(at) + 1410) % 1440)).join(', ')}</span></label>
+        <label class="switch"><input type="checkbox" id="rVoice" ${r.voice ? 'checked' : ''}><span>Lire les rappels à voix haute${P.kind === 'android' ? ' (pas en silencieux ni en vibreur)' : ''}</span></label>
+        ${r.voice ? `<div class="wset">
+          <div class="seg wide"><button class="${r.voiceMode !== 'full' ? 'on' : ''}" data-act="vMode" data-v="title">Titre seulement</button><button class="${r.voiceMode === 'full' ? 'on' : ''}" data-act="vMode" data-v="full">Titre et détails</button></div>
+          <button class="btn ghost" data-act="voiceTest">Écouter un exemple</button>
+        </div>` : ''}
         <label class="switch"><input type="checkbox" id="rWeigh" ${r.weigh ? 'checked' : ''}><span>Pesée du matin</span></label>
         <label class="field"><span>Heure de la pesée</span>${t('rW', r.weighAt)}</label>
         <label class="switch"><input type="checkbox" id="rFast" ${r.fastEnd ? 'checked' : ''}><span>Fin du jeûne en cours</span></label>
@@ -1577,7 +1602,7 @@ Règles:
     }, { data: { r: Object.assign({}, S.settings.reminders) }, reminders: true,
       mount: sh => {
         const keep = () => readReminders(sh);
-        ['rOn', 'rMeals', 'rWater', 'rWE', 'rWF', 'rWTo', 'rWT', 'rWOP', 'rPre', 'rB', 'rL', 'rD'].forEach(id => { const el = $('#' + id, sh.el); if (el) el.addEventListener('change', () => { keep(); sh.refresh(); }); });
+        ['rOn', 'rMeals', 'rWater', 'rWE', 'rWF', 'rWTo', 'rWT', 'rWOP', 'rPre', 'rVoice', 'rB', 'rL', 'rD'].forEach(id => { const el = $('#' + id, sh.el); if (el) el.addEventListener('change', () => { keep(); sh.refresh(); }); });
       } });
   }
   /* Lit le formulaire Rappels dans sh.data.r (sans enregistrer). */
@@ -1586,7 +1611,7 @@ Règles:
     const v = (id, d) => (g(id) ? g(id).value || d : undefined);
     const c = id => (g(id) ? g(id).checked : undefined);
     const set = (k, val) => { if (val !== undefined) r[k] = val; };
-    set('on', c('rOn')); set('meals', c('rMeals')); set('water', c('rWater')); set('preMeal', c('rPre'));
+    set('on', c('rOn')); set('meals', c('rMeals')); set('water', c('rWater')); set('preMeal', c('rPre')); set('voice', c('rVoice'));
     set('breakfast', v('rB', '08:00')); set('lunch', v('rL', '12:30')); set('dinner', v('rD', '19:30'));
     set('weigh', c('rWeigh')); set('weighAt', v('rW', '07:30')); set('fastEnd', c('rFast'));
     set('waterEvery', g('rWE') ? Number(g('rWE').value) : undefined); set('waterFrom', v('rWF', '08:00')); set('waterTo', v('rWTo', '20:00'));
@@ -2316,6 +2341,11 @@ Règles:
       notify('Test Calorys', 'Les notifications arrivent bien.');
       if (P.kind === 'web' && 'Notification' in window && Notification.permission !== 'granted') toast('Autorise les notifications dans le navigateur.');
     },
+    vMode: el => { const s = topSheet(); readReminders(s); s.data.r.voiceMode = el.dataset.v; s.refresh(); },
+    voiceTest: () => {
+      const r = readReminders(topSheet()), x = remindersPlan()[0] || { title: 'Hydratation : 300 ml', text: 'Environ 300 ml pour suivre ton objectif d\'eau.' };
+      if (!speakNow(sayText(x.title, x.text, r.voiceMode))) toast(P.kind === 'android' ? 'Téléphone en silencieux ou vibreur : pas de voix.' : 'Synthèse vocale indisponible ici.');
+    },
     wMode: el => { const s = topSheet(); readReminders(s); s.data.r.waterMode = el.dataset.v; s.refresh(); },
     saveReminders: async () => {
       const s = topSheet();
@@ -2444,6 +2474,6 @@ Règles:
     sp.classList.add('hide'); setTimeout(() => sp.remove(), 400);
     if ('serviceWorker' in navigator && P.kind === 'web' && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  window.CalorysDebug = { get state() { return S; }, ui, render, remindersPlan, waterSlots };
+  window.CalorysDebug = { get state() { return S; }, ui, render, remindersPlan, waterSlots, sayText };
   boot();
 })();

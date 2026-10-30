@@ -1,4 +1,4 @@
-# Calorys 1.4.3 (QMTech)
+# Calorys 1.5.0 (QMTech)
 
 Compteur de calories et coach nutritionnel, inspiré des fonctionnalités de YAZIO, écrit de zéro (aucun code, texte, image ni donnée de YAZIO). La version 1.1 fusionne Calorys avec le moteur de **Nutravyn** (QMTech) : objectif adaptatif, mode sèche pour les pesées officielles, séances de sports de combat avec RPE et gamification par ceintures.
 
@@ -32,7 +32,12 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 - **Eau automatique** : repères EFSA en boisson (environ 2 L pour un homme, 1,6 L pour une femme, ajustés au poids), plus la sueur estimée des séances du jour.
 - **Gamification** : ceintures de blanche à 2e dan, XP, séries, défis de la semaine, 9 badges. Seuls les comportements sont récompensés, jamais un déficit plus creux. Désactivable.
 
-**Nouveau en 1.4.3 : rappels fiables**
+**Nouveau en 1.5.0 : rappels vocaux**
+- **Lire les rappels à voix haute** (Profil > Rappels) : en plus de la notification, Calorys dit le rappel en français (« Hydratation : 300 millilitres », « Un grand verre d'eau avant le déjeuner »…). Au choix : le titre seulement ou le titre et les détails, avec un bouton « Écouter un exemple ».
+- Android : voix de synthèse du téléphone, même appli fermée, au volume des notifications. Rien n'est dit en silencieux, en vibreur, en « Ne pas déranger » ni pendant un appel.
+- Windows : voix française de Windows (Hortense, Julie ou Paul), même appli fermée. Navigateur : tant que Calorys est ouvert.
+
+**Rappels fiables (1.4.3)**
 - **Android, rappels à l'heure exacte** : avant, ils étaient programmés en alarmes « inexactes », qu'Android peut décaler d'une heure ou plus quand le téléphone dort. Ils utilisent maintenant des alarmes exactes, autorisées même en veille.
 - **Rappels de la même minute regroupés** : une seule notification au lieu de trois (par exemple à 12 h en 16:8 : fenêtre ouverte, eau et verre avant le déjeuner). En veille, Android n'en laissait passer qu'une.
 - **Diagnostic dans Profil > Rappels** : liste des prochains rappels, bouton « Envoyer une notification de test » et, sur Android, des alertes quand quelque chose bloque, avec le bouton qui ouvre le bon réglage (notifications bloquées, alarmes exactes, économie de batterie).
@@ -66,13 +71,13 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 
 | Fichier | Plateforme | Taille |
 |---|---|---|
-| `Calorys-1.4.3.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
-| `Calorys-Setup-1.4.3.exe` | Windows 10/11, installeur | 1,8 Mo |
-| `Calorys-Portable-1.4.3.zip` | Windows 10/11, sans installation | 2,0 Mo |
+| `Calorys-1.5.0.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
+| `Calorys-Setup-1.5.0.exe` | Windows 10/11, installeur | 1,8 Mo |
+| `Calorys-Portable-1.5.0.zip` | Windows 10/11, sans installation | 2,0 Mo |
 
 Le catalogue de produits n'est pas dans ces fichiers : il se télécharge depuis l'appli (Profil > Catalogue produits hors ligne, ou depuis la recherche). Il est publié dans `catalog/` de ce dépôt.
 
-**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 10). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
+**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 11). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
 
 **Synchroniser** : sur le téléphone, Profil > Synchroniser mes appareils > « Ce téléphone sert d'hôte ». Sur le PC, même menu : saisis l'adresse et le code affichés, puis Synchroniser. Les deux appareils doivent être sur le même Wi-Fi.
 
