@@ -15,15 +15,40 @@ Construite sur le moteur d'AudioLivre Studio (même dépôt, dossier `audiolivre
 | Étape | Outil | Détail |
 |---|---|---|
 | 1. Extraction | FFmpeg | `original.wav` (44,1 kHz stéréo) et `original16.wav` (16 kHz mono) |
+| 1 bis. Sous-titres existants | FFmpeg, RapidOCR | piste de la vidéo (SRT, ASS/SSA, mov_text, WebVTT), fichier à côté (`.srt`, `.ass`, `.vtt`, avec ou sans suffixe de langue) ou **sous-titres incrustés dans l'image lus par OCR** : leur texte devient celui des répliques (français d'abord : pas de traduction) |
 | 2. Séparation | Demucs htdemucs | par blocs de 30 s avec 2 s de contexte (mémoire stable) → `voix.wav` + `fond.wav` (fond = mélange − voix). Option sans séparation : VO baissée de 18 dB sous la VF |
-| 3. Transcription | faster-whisper | modèle *small* par défaut (*medium*, *large-v3-turbo* en option), position de chaque mot, filtre de silence, progression |
-| 4. Répliques | — | coupure aux fins de phrase, aux silences > 0,7 s, 12 s au plus (coupure préférée après 10 s, sur une virgule ou une pause), fragments < 0,6 s fusionnés |
+| 3. Transcription | faster-whisper | **langue parlée détectée** sur 5 extraits ; parole repérée (Silero, seuil bas, son d'origine + voix isolée) pour le recalage et la couverture ; sans sous-titres, modèle *small* par défaut (*medium*, *large-v3-turbo* en option), position de chaque mot, passages écartés listés |
+| 4. Répliques | — | avec sous-titres : une réplique par sous-titre, recalée sur la parole (décalage global automatique, début et fin resserrés, jamais coupée), répliques à deux voix « - … - … » séparées, génériques chantés laissés en VO ; sinon coupure aux fins de phrase, aux silences > 0,7 s, 12 s au plus |
 | 5. Personnes | speechbrain ECAPA | empreinte vocale par réplique, regroupement hiérarchique (cosinus, seuil réglable, nombre maximal optionnel), petits groupes fusionnés, P1…Pn par ordre d'apparition |
 | 6. Traduction | Opus-MT / DeepSeek | `opus-mt-tc-big-en-fr` (défaut) ou `opus-mt-en-fr` (rapide), hors ligne ; ou DeepSeek en ligne, par lots, avec le contexte et un nombre de caractères par réplique (≈ 14,5 car./s) |
 | 7. Voix | voir ci-dessous | extrait de référence de 12 à 25 s pris dans les répliques de chaque personne (voix isolée), genre estimé par la hauteur |
 | 8. Calage | FFmpeg atempo | créneau = début de la réplique → début de la suivante − 0,1 s (au plus 1 s après la fin d'origine). Trop long : accélération jusqu'à ×1,12 ; au-delà, nouvelle synthèse plus rapide (×1,30 au plus, réglable) puis accélération du reste ; sinon alerte « raccourcis le texte » et bouton **Raccourcir** (DeepSeek). Niveau aligné sur la voix d'origine |
-| 9. Mixage | — | par blocs : fond + VF (option : voix d'origine laissée faible) |
+| 9. Mixage | — | par blocs : fond + VF compressée légèrement ; **voix d'origine remise là où il n'y a pas de VF** (jamais de trou), atténuée sous la VF |
 | 10. Export | FFmpeg | MP4 ou MKV, vidéo copiée sans réencodage, piste VF AAC 192 kb/s normalisée à −16 LUFS, VO en option, sous-titres FR/EN intégrés (mov_text ou srt) et fichiers `.srt`, incrustation en option (libx264, sinon libopenh264, sinon Media Foundation), piste VF seule en WAV/MP3, aperçu rapide sans normalisation |
+
+### Aucune réplique oubliée (1.2)
+
+- **Couverture** : la parole détectée est comparée aux répliques ; tout passage parlé de plus de 0,4 s sans
+  réplique est listé « Parole sans VF » (page **Contrôle**) : écouter, voir l'image, étendre la réplique voisine,
+  saisir le texte, transcrire, garder la VO ou ne pas doubler. Indicateur sur la page Doublage :
+  « 312 répliques, 100 % de la parole couverte ».
+- Une réplique trop longue est accélérée puis **déborde** sur le silence (ou chevauche un peu la suivante, baissée de
+  6 dB) : jamais supprimée. Une voix qui échoue est **retentée** (3 essais, puis voix de secours) et signalée en
+  rouge si elle échoue encore ; la voix d'origine reste alors audible.
+- Cris et répliques courtes doublés comme les autres (option « Garder les cris d'origine »).
+- Tout ce qui est écarté (panneaux, génériques, lecture illisible, passage douteux pour Whisper) est listé avec la
+  raison.
+
+### Sous-titres incrustés (OCR)
+
+Cas typique : épisode japonais avec des sous-titres anglais gravés dans l'image. Doublys trouve la bande des
+sous-titres (réglable à la souris : bouton **Zone…**), lit la vidéo une seule fois en ne gardant que cette bande
+(mémoire stable), repère chaque changement de sous-titre (début et fin à ± 0,08 s) et lit les lignes avec RapidOCR
+(modèles PP-OCRv4, Apache 2.0, environ 25 ms par ligne sur le processeur). Les confusions de lecture classiques
+(l/I/1, 0/O, apostrophes) et les noms du glossaire sont corrigés ; une lecture douteuse est signalée. Le résultat
+est aussi enregistré en `<vidéo> (EN, OCR).srt`, réutilisé si vous rouvrez la vidéo. À l'export, les sous-titres
+d'origine peuvent être **floutés** (ou couverts d'un bandeau) pendant qu'ils sont affichés, et les sous-titres
+français incrustés à la place (vidéo réencodée avec Media Foundation ou OpenH264).
 
 ### Outils de travail
 
@@ -43,12 +68,13 @@ Construite sur le moteur d'AudioLivre Studio (même dépôt, dossier `audiolivre
 ### Langues de départ
 
 Anglais, **japonais**, espagnol, allemand, italien, portugais, coréen, chinois, russe, arabe, néerlandais, turc,
-polonais, ou **détection automatique** (Paramètres → Langue de la vidéo). Traduction locale directe vers le
+polonais, avec **détection automatique** par défaut (affichée et modifiable sur la page Doublage). Traduction locale directe vers le
 français quand Opus-MT en propose une, sinon en passant par l'anglais (chinois, portugais). Pour le japonais, le
 chinois et le coréen, Whisper « medium » est choisi automatiquement (bien plus précis) ; DeepSeek donne une
 traduction nettement meilleure pour ces langues. **Mots à ne pas traduire** (Paramètres) : noms de personnages,
-d'attaques, « 変身 = Henshin »… Les passages que Whisper invente en boucle sur de la musique ou du bruit sont
-écartés automatiquement.
+d'attaques, « 変身 = Henshin », avec une prononciation si besoin (« Daizyujin | Daïzyoudjine ») ; bouton
+« Proposer les noms propres ». Les passages que Whisper invente en boucle sur de la musique ou du bruit sont écartés
+et listés dans Contrôle.
 
 ### Pensé pour les vidéos longues (jusqu'à 1 h 30 et plus)
 
@@ -193,7 +219,9 @@ doublys/
   core/engines/    repris d'AudioLivre : installateur uv, processus moteurs JSON, Edge, SAPI, XTTS, Chatterbox,
                    Kokoro, clonage rapide, RVC, Whisper + environnement « analyse » (Demucs, ECAPA, Opus-MT)
   worker/          processus de calcul exécuté dans l'environnement de chaque moteur
-  ui/              interface PySide6 (Accueil, Doublage, Personnes, Export, Moteurs IA, Paramètres)
+  core/            (1.2) subsources (pistes, fichiers, SRT/ASS/VTT), ocr (sous-titres incrustés), align
+                   (recalage), coverage (parole sans VF, écarts), glossary
+  ui/              interface PySide6 (Accueil, Doublage, Contrôle, Personnes, Export, Moteurs IA, Paramètres)
 packaging/         PyInstaller, NSIS, icônes
 scripts/           engine_smoke.py (tests réels des moteurs)
 tests/             tests automatisés
@@ -205,7 +233,8 @@ tests/             tests automatisés
 
 Doublys intègre Qt for Python (LGPL), FFmpeg en version **LGPL** (BtbN), NumPy (BSD), libsndfile (LGPL),
 num2words (LGPL), edge-tts (LGPL), uv (MIT/Apache). Moteurs installés à la demande :
-Demucs (MIT), faster-whisper et Whisper (MIT), speechbrain ECAPA (Apache 2.0), **Opus-MT (CC-BY 4.0 : citer
+Demucs (MIT), faster-whisper et Whisper (MIT), Silero VAD (MIT), RapidOCR et PP-OCR (Apache 2.0), onnxruntime
+(MIT), speechbrain ECAPA (Apache 2.0), **Opus-MT (CC-BY 4.0 : citer
 « traduction Opus-MT, Helsinki-NLP » si vous publiez)**, Kokoro (Apache 2.0), Chatterbox (MIT, filigrane inaudible),
 **XTTS-v2 (CPML : usage non commercial uniquement)**, RVC (MIT), PyTorch (BSD).
 

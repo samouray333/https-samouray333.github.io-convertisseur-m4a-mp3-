@@ -3,6 +3,8 @@
 Usage :
   python scripts/engine_smoke.py --engine analysis|whisper|kokoro|chatterbox|xtts   (installation + essai d'un moteur)
   python scripts/engine_smoke.py --full   (vidéo anglaise à deux voix → VF complète avec les vrais modèles)
+  python scripts/engine_smoke.py --full --lang ja --hardsubs   (japonais + sous-titres anglais incrustés, OCR)
+  python scripts/engine_smoke.py --ocr-bench 22   (temps de lecture des sous-titres incrustés sur 22 min)
 """
 
 from __future__ import annotations
@@ -49,6 +51,15 @@ DIALOGUES = {
         ("af_heart", "いいね。今度はあなたのおごりよ！"),
     ], "ja"),
 }
+# sous-titres anglais incrustés de la vidéo japonaise (--hardsubs)
+HARDSUBS_JA = [
+    "Good morning. I didn't think\nI'd see you this early.",
+    "I couldn't sleep. The storm\nkept me up all night.",
+    "Is the meeting material ready?\nEveryone is waiting for the numbers.",
+    "Almost. I'll send it to everyone\nin twenty minutes.",
+    "Perfect. Let's have a coffee\nuntil you're done.",
+    "Nice. This time it's your treat!",
+]
 
 
 def log(msg: str) -> None:
@@ -134,23 +145,31 @@ def make_video(work: Path, minutes: float = 0.0, lang: str = "en") -> tuple[Path
     return video, truth
 
 
-def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: str = "en") -> int:
+def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: str = "en",
+         hardsubs: bool = False) -> int:
     from doublys.config import settings
     from doublys.core import engines, ffmpeg, pipeline
     from doublys.core import project as project_io
     from doublys.core.engines.neural import LOG_LISTENERS
 
-    for eid in ("analysis", "whisper", "kokoro", "chatterbox"):
+    for eid in ("analysis", "whisper", "kokoro", "chatterbox") + (("ocr",) if hardsubs else ()):
         ensure(eid, device)
     LOG_LISTENERS.append(lambda e, m: log(f"[{e}] {m}"))
     work = Path(tempfile.mkdtemp(prefix="doublys-full-"))
     video, truth = make_video(work, minutes, lang)
+    expected_subs = []
+    if hardsubs:
+        from doublys.selftest import burn_hardsubs
+
+        texts = HARDSUBS_JA if lang == "ja" else [t for _v, t in DIALOGUES[lang][0]]
+        expected_subs = [(a, b, texts[i % len(texts)]) for i, (a, b, _v) in enumerate(truth)]
+        video = burn_hardsubs(video, work / "test-sous-titres.mp4", expected_subs)
     log(f"Vidéo de test : {video} ({ffmpeg.probe_duration(video):.1f} s)")
     settings().set("projects_dir", str(work / "projets"))
     pr = project_io.create_project(video, work / "projets", "Test réel")
     pr.settings.voice_mode = mode
     pr.settings.translator = translator
-    pr.settings.source_language = DIALOGUES[lang][1]
+    pr.settings.source_language = "auto" if hardsubs else DIALOGUES[lang][1]
     if lang in ("ja", "zh", "ko"):
         pr.settings.whisper_model = "medium"
     timings = {}
@@ -204,6 +223,33 @@ def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: st
         errors.append("répliques en erreur : " + "; ".join(ln.message for ln in pr.lines if ln.state == "error"))
     if "subtitle" not in kinds or kinds.count("audio") < 1:
         errors.append(f"flux inattendus : {kinds}")
+    from doublys.core import coverage
+
+    text, problems = coverage.summary(pr)
+    log(f"Couverture : {text}")
+    for g in pr.gaps:
+        log(f"  passage sans VF {g['start']:.2f}-{g['end']:.2f} ({g['state']}) {g.get('text', '')}")
+    for d in coverage.load_dropped(pr):
+        log(f"  écarté {d['start']:.2f}-{d['end']:.2f} {d['reason']} : {d.get('text', '')}")
+    if problems:
+        errors.append(f"couverture incomplète : {text}")
+    if hardsubs:
+        import difflib
+
+        if pr.subs.kind != "ocr":
+            errors.append(f"sous-titres incrustés non utilisés ({pr.subs.kind})")
+        if lang != "en" and pr.settings.detected_language != lang:
+            errors.append(f"langue détectée {pr.settings.detected_language} au lieu de {lang}")
+        cues = pipeline.load_cues(pr)
+        if len(cues) != len(expected_subs):
+            errors.append(f"{len(cues)} sous-titres lus au lieu de {len(expected_subs)}")
+        for c, (a, b, t) in zip(cues, expected_subs):
+            ratio = difflib.SequenceMatcher(a=c.text.replace("\n", " "), b=t.replace("\n", " ")).ratio()
+            log(f"  OCR [{c.start:6.2f}-{c.end:6.2f}] attendu [{a:6.2f}-{b:6.2f}] {ratio:.0%} « {c.text} »")
+            if ratio < 0.95:
+                errors.append(f"lecture « {c.text} » au lieu de « {t} »")
+            if abs(c.start - a) > 0.15 or abs(c.end - b) > 0.15:
+                errors.append(f"temps du sous-titre {c.start:.2f}-{c.end:.2f} au lieu de {a:.2f}-{b:.2f}")
     (work / "rapport.json").write_text(json.dumps({"seconds": total, "errors": errors}, indent=2), encoding="utf-8")
     engines.shutdown_all()
     if errors:
@@ -316,9 +362,68 @@ def single(eid: str, device: str) -> int:
     return 0
 
 
+def ocr_bench(device: str, minutes: float) -> int:
+    """Lecture des sous-titres incrustés sur une longue vidéo 1080p (objectif : 22 min lues en moins de 10 min)."""
+    import random
+
+    from doublys.core import engines, ffmpeg, ocr
+    from doublys.core import project as project_io
+
+    ensure("ocr", device)
+    work = Path(tempfile.mkdtemp(prefix="doublys-ocr-"))
+    dur = minutes * 60
+    rnd = random.Random(7)
+    words = ("the dragon is here we have to stop bandora before it is too late geki let's go zyuranger never give "
+             "up my friends power of the guardian beasts").split()
+    cues, t = [], 2.0
+    while t < dur - 4:
+        n = rnd.randint(1, 3)
+        length = rnd.uniform(1.0, 4.0)
+        text = " ".join(rnd.choice(words) for _ in range(rnd.randint(3, 7))).capitalize() + "."
+        if n == 2:
+            text += "\n" + " ".join(rnd.choice(words) for _ in range(rnd.randint(3, 6))).capitalize() + "!"
+        cues.append((round(t, 2), round(t + length, 2), text))
+        t += length + rnd.uniform(0.3, 2.5)
+    plain = work / "fond.mp4"
+    log(f"Création de {minutes:.0f} min de vidéo 1080p avec {len(cues)} sous-titres…")
+    ffmpeg.run_ffmpeg(["-f", "lavfi", "-i", f"testsrc2=size=1920x1080:rate=25:duration={dur:.0f}", "-f", "lavfi",
+                       "-i", f"sine=frequency=220:duration={dur:.0f}", "-c:v", "mpeg4", "-q:v", "8", "-c:a", "aac",
+                       "-shortest", str(plain)])
+    from doublys.selftest import burn_hardsubs
+
+    video = burn_hardsubs(plain, work / "sous-titres.mp4", cues)
+    info = project_io.probe_video(video)
+    t0 = time.time()
+    zone = ocr.detect_zone(video, info.duration, info.width, info.height)
+    if zone is None:
+        log("ÉCHEC : bande des sous-titres non trouvée")
+        return 1
+    tz = time.time() - t0
+    found, dropped = ocr.read_hardsubs(video, info.duration, info.width, info.height, (zone.top, zone.bottom),
+                                       engines.get_tool("ocr"), 12.5,
+                                       progress=lambda f, m: log(f"  {f * 100:5.1f} % {m}") if int(f * 1000) % 100 == 0
+                                       else None)
+    total = time.time() - t0
+    engines.shutdown_all()
+    import difflib
+
+    good = 0
+    for c in cues:
+        best = max(found, key=lambda x: min(x.end, c[1]) - max(x.start, c[0]), default=None)
+        if best is not None and difflib.SequenceMatcher(a=best.text, b=c[2]).ratio() > 0.9 and \
+                abs(best.start - c[0]) <= 0.15:
+            good += 1
+    log(f"OCR de {minutes:.0f} min : {total / 60:.1f} min (zone {tz:.0f} s) ; {len(found)} sous-titres lus, "
+        f"{good}/{len(cues)} exacts (texte ≥ 90 %, début à ± 0,15 s), {len(dropped)} écartés")
+    limit = minutes / 22 * 10 * 60
+    ok = total <= limit and good >= 0.9 * len(cues)
+    log(("SUCCÈS" if ok else "ÉCHEC") + f" (limite {limit / 60:.1f} min, 90 % exacts)")
+    return 0 if ok else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--engine", choices=["analysis", "whisper", "kokoro", "chatterbox", "xtts"])
+    ap.add_argument("--engine", choices=["analysis", "whisper", "kokoro", "chatterbox", "xtts", "ocr"])
     ap.add_argument("--full", action="store_true")
     ap.add_argument("--series", action="store_true", help="reconnaissance des personnages d'un épisode à l'autre")
     ap.add_argument("--device", default="cpu")
@@ -326,11 +431,17 @@ def main() -> int:
     ap.add_argument("--translator", default="opus_big")
     ap.add_argument("--minutes", type=float, default=0.0, help="durée de la vidéo de test (--full)")
     ap.add_argument("--lang", default="en", choices=sorted(DIALOGUES), help="langue de la vidéo de test (--full)")
+    ap.add_argument("--hardsubs", action="store_true", help="sous-titres anglais incrustés lus par OCR (--full)")
+    ap.add_argument("--ocr-bench", type=float, default=0.0, help="temps de l'OCR sur N minutes de vidéo 1080p")
     args = ap.parse_args()
     if args.series:
         return series_test(args.device)
+    if args.ocr_bench:
+        return ocr_bench(args.device, args.ocr_bench)
     if args.full:
-        return full(args.device, args.mode, args.translator, args.minutes, args.lang)
+        return full(args.device, args.mode, args.translator, args.minutes, args.lang, args.hardsubs)
+    if args.engine == "ocr":
+        return ocr_bench(args.device, 2.0)
     if args.engine:
         return single(args.engine, args.device)
     ap.error("--engine ou --full")

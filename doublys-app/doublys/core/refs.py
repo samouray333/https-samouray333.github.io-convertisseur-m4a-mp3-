@@ -27,9 +27,36 @@ def read_span(path: Path, start: float, end: float) -> tuple[np.ndarray, int]:
     return data.mean(axis=1).astype(np.float32), sr
 
 
-def pick_lines(lines: list[Line], offset: int = 0) -> list[Line]:
-    """Répliques choisies pour l'extrait : les plus longues d'abord ; ``offset`` donne un autre choix."""
-    cands = sorted([ln for ln in lines if ln.length >= 1.0], key=lambda x: -x.length)
+def clean_score(voice: np.ndarray, background: np.ndarray, sr: int, line: Line) -> float:
+    """Propreté d'une réplique pour le clonage : peu de musique dessous, pas de cri, pas de voix filtrée (casque,
+    radio), une seule voix ; les répliques assez longues sont préférées."""
+    from .timing import active_rms_db
+
+    score = min(line.length, 6.0) * 0.3
+    v_db = active_rms_db(voice, sr)
+    if background.size:
+        snr = v_db - active_rms_db(background, sr)
+        if snr < 15.0:
+            score -= (15.0 - snr) * 0.2
+    if line.intensity > 6.0:  # cri : timbre déformé
+        score -= 2.0
+    if voice.size >= sr // 2:
+        spec = np.abs(np.fft.rfft(voice[: sr * 4] * np.hanning(min(len(voice), sr * 4)))) ** 2
+        cum = np.cumsum(spec)
+        if cum[-1] > 0:
+            rolloff = np.searchsorted(cum, 0.97 * cum[-1]) * sr / (2 * (len(spec) - 1))
+            if rolloff < 5000.0:  # voix filtrée : bande étroite
+                score -= 2.0
+    if line.speaker_score < 0.5:  # voix mêlées
+        score -= 1.0
+    return score
+
+
+def pick_lines(lines: list[Line], offset: int = 0, scores: dict[str, float] | None = None) -> list[Line]:
+    """Répliques choisies pour l'extrait : les plus propres puis les plus longues ; ``offset`` donne un autre
+    choix."""
+    scores = scores or {}
+    cands = sorted([ln for ln in lines if ln.length >= 1.0], key=lambda x: (-scores.get(x.id, 0.0), -x.length))
     if not cands:
         cands = sorted(lines, key=lambda x: -x.length)
     if not cands:
@@ -47,12 +74,13 @@ def pick_lines(lines: list[Line], offset: int = 0) -> list[Line]:
     return sorted(picked, key=lambda x: x.start)
 
 
-def build_reference(voice_wav: Path, lines: list[Line], out: Path, offset: int = 0) -> tuple[Path, float]:
+def build_reference(voice_wav: Path, lines: list[Line], out: Path, offset: int = 0,
+                    scores: dict[str, float] | None = None) -> tuple[Path, float]:
     """Assemble l'extrait de référence (24 kHz mono, filtré et normalisé). Renvoie (chemin, durée)."""
     parts: list[np.ndarray] = []
     sr = 24000
     total = 0.0
-    for ln in pick_lines(lines, offset):
+    for ln in pick_lines(lines, offset, scores):
         data, file_sr = read_span(voice_wav, ln.start - 0.05, ln.end + 0.1)
         data = audio.resample(data, file_sr, sr)
         data = audio.trim_silence(data, sr, -45.0, pad_ms=60)

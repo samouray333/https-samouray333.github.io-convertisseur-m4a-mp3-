@@ -328,11 +328,19 @@ def fix_text(text: str, terms: list[str] | None = None) -> str:
     for term in terms or []:  # noms propres de la série : la lecture approchée est remplacée par le bon nom
         if len(term) < 4:
             continue
-        for w in set(re.findall(r"[A-Za-z][A-Za-z'-]+", t)):
-            if w != term and abs(len(w) - len(term)) <= 1 and \
-                    difflib.SequenceMatcher(a=w.lower(), b=term.lower()).ratio() >= 0.8:
+        for w in set(re.findall(r"[A-Za-z0-9][A-Za-z0-9'-]+", t)):
+            if w == term or abs(len(w) - len(term)) > 1:
+                continue
+            a, b = _confusable(w), _confusable(term)
+            if a == b or difflib.SequenceMatcher(a=a, b=b).ratio() >= 0.8:
                 t = re.sub(rf"\b{re.escape(w)}\b", term, t)
     return t
+
+
+def _confusable(word: str) -> str:
+    """Forme où les lettres que l'OCR confond sont identiques (l, I, 1, i ; 0, o ; rn, m)."""
+    w = word.lower().replace("rn", "m")
+    return w.translate(str.maketrans({"l": "i", "1": "i", "|": "i", "0": "o"}))
 
 
 def _norm(t: str) -> str:
@@ -349,7 +357,11 @@ def build_cues(segments: list[Segment], texts: dict[str, list], duration: float,
         parts = [(str(p[0]).strip(), float(p[1])) for p in parts if str(p[0]).strip()]
         if not parts:
             continue
-        text = "\n".join(fix_text(p[0], terms) for p in parts)
+        rows = [fix_text(p[0], terms) for p in parts]
+        # point lu en fin de ligne alors que la phrase continue en minuscule à la ligne suivante : parasite
+        rows = [r[:-1] if r.endswith(".") and not r.endswith("..") and k + 1 < len(rows) and rows[k + 1][:1].islower()
+                else r for k, r in enumerate(rows)]
+        text = "\n".join(rows)
         conf = min(p[1] for p in parts)
         short = len(_norm(text))
         # un seul signe : un élément du décor ; « Ha ! », « No ! » sont gardés s'ils sont nets

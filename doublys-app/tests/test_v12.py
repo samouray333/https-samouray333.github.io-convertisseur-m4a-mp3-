@@ -308,3 +308,38 @@ def test_mask_hardsubs_only_while_shown(tmp_path, make_project):
     shown, hidden = 2.0, 0.5  # sous-titre affiché de 1,0 à 3,4 s ; rien à 0,5 s
     assert detail(band(out, shown)) < 0.35 * detail(band(video, shown))
     assert detail(band(out, hidden)) > 0.6 * detail(band(video, hidden))  # hors sous-titre : image intacte
+
+
+# -- glossaire, prononciation, relecture ------------------------------------------------------
+def test_glossary_suggest_and_pronunciation():
+    from doublys.core import dubvoice, glossary
+
+    texts = ["Geki, take the Daizyujin!", "Where is Geki?", "The Daizyujin is ready.", "Bandora laughs.",
+             "I can't. The Ranger is here."]
+    terms = glossary.suggest_terms(texts)
+    assert terms[:2] == ["Geki", "Daizyujin"] and "Bandora" not in terms  # une seule fois : pas proposé
+    pr = Project()
+    pr.settings.glossary = [["Daizyujin", "Daizyujin", "Daïzyoudjine"], ["Geki"]]
+    lex = dubvoice.pronunciations(pr)
+    assert ("Daizyujin", "Daïzyoudjine") in lex
+    assert "Daïzyoudjine" in dubvoice.speech_text("Le Daizyujin arrive !", lex)
+
+
+def test_ocr_text_fixes():
+    from doublys.core import ocr
+
+    assert ocr.fix_text("l can't believe it , Gekl!", ["Geki"]) == "I can't believe it, Geki!"
+    assert ocr.fix_text("heIlo w0rld 0nly") == "hello world Only"
+    assert ocr.fix_text("Wait!What?") == "Wait! What?"
+
+
+def test_deepseek_ocr_correction():
+    from doublys.core import ai
+
+    class Client:
+        def chat_json(self, system, user, max_tokens=0):
+            assert "Geki" in user
+            return {"lines": [{"i": 1, "text": "We have to stop Bandora."}, {"i": 9, "text": "hors limites"}]}
+
+    out = ai.correct_ocr(["Hello.", "We have to st0p Bandcra."], Client(), ["Geki", "Bandora"])
+    assert out == ["Hello.", "We have to stop Bandora."]

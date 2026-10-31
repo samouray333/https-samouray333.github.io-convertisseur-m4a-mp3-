@@ -8,8 +8,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QColorDialog, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLineEdit, QMessageBox,
-                               QVBoxLayout)
+from PySide6.QtWidgets import (QColorDialog, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLineEdit, QMenu,
+                               QMessageBox, QVBoxLayout)
 
 from ... import paths
 from ...config import settings
@@ -128,6 +128,15 @@ class PersonCard(Card):
         bottom = QHBoxLayout()
         self.status = label("", "Hint", wrap=True)
         bottom.addWidget(self.status, 1)
+        others = [p for p in pr.people if p.id != person.id]
+        if others:
+            merge = button("Fusionner avec…", "merge", tooltip="C'est la même personne : ses répliques rejoignent "
+                                                               "l'autre personne")
+            menu = QMenu(merge)
+            for o in others:
+                menu.addAction(o.name, lambda o=o: self._merge_into(o))
+            merge.setMenu(menu)
+            bottom.addWidget(merge)
         self.try_btn = button("Essai", "headphones", "primary", tooltip="Écouter une phrase avec cette voix")
         self.try_btn.clicked.connect(self._try)
         bottom.addWidget(self.try_btn)
@@ -152,6 +161,24 @@ class PersonCard(Card):
             self.avatar.set(name, self.person.color)
             self._changed(voice=False)
             self.page.ctx.people_changed.emit()
+
+    def _merge_into(self, other) -> None:
+        pr = self.page.ctx.project
+        n = sum(1 for ln in pr.lines if ln.person_id == self.person.id)
+        r = QMessageBox.question(self, "Fusionner", f"Les {n} répliques de « {self.person.name} » seront dites par "
+                                 f"« {other.name} ». Continuer ?")
+        if r != QMessageBox.Yes:
+            return
+        self.page.ctx.checkpoint("fusion de personnes")
+        for ln in pr.lines:
+            if ln.person_id == self.person.id:
+                ln.person_id = other.id
+                ln.audio_key = ""
+        pr.people = [p for p in pr.people if p.id != self.person.id]
+        for step in ("voices", "dub", "mix"):
+            pr.mark_step(step, False)
+        self.page.ctx.mark_dirty()
+        self.page.ctx.people_changed.emit()
 
     def _show_color(self) -> None:
         self.color_btn.setIcon(icons.icon("captions", self.person.color, 18))

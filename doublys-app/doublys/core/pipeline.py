@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+import numpy as np
+
 from . import align, ai, audio, coverage, dubvoice, engines, media, mixer, ocr, refs, segment, speakers, subsources
 from . import subtitles, timing
 from . import project as project_io
@@ -480,6 +482,23 @@ def step_speakers(project: Project, job: Job) -> str:
     return f"{len(project.people)} personne(s){found}"
 
 
+def correct_ocr_lines(project: Project, job: Job) -> list[str]:
+    """Relecture DeepSeek des sous-titres lus dans l'image ; renvoie les répliques dont le texte a changé."""
+    lines = [ln for ln in sorted(project.lines, key=lambda x: x.start) if ln.source == "ocr"]
+    if not lines:
+        return []
+    client = ai.client_from_settings()
+    fixed = ai.correct_ocr([ln.en for ln in lines], client, glossary_terms(project),
+                           lambda m: job.progress(0.5, m), job.cancel)
+    changed = []
+    for ln, text in zip(lines, fixed):
+        if text and text != ln.en:
+            job.log(f"Relecture ({ln.start:.1f} s) : « {ln.en} » → « {text} »")
+            ln.en, ln.ocr_conf, ln.checked = text, max(ln.ocr_conf, 0.9), False
+            changed.append(ln.id)
+    return changed
+
+
 def glossary(project: Project) -> list[tuple[str, str]]:
     """Termes à garder ou à rendre toujours de la même façon (noms, attaques, « Henshin »…)."""
     out = []
@@ -585,18 +604,10 @@ def step_voices(project: Project, job: Job, only: list[str] | None = None) -> st
     voice, _v16 = speech_source(project)
     out_dir = project_io.references_dir(project)
     people = [p for p in project.people if only is None or p.id in only]
+    background = wf(project, BACKGROUND) if project.settings.separate and wf(project, BACKGROUND).exists() else None
     for k, person in enumerate(people):
         job.check()
-        mine = [ln for ln in project.lines if ln.person_id == person.id]
-        ref = dubvoice.reference_path(project, person)
-        if person.reference_source != "file" or ref is None:
-            if not mine:
-                continue
-            target = out_dir / f"{person.id}.wav"
-            path, dur = refs.build_reference(voice, mine, target, person.reference_offset)
-            person.reference = project_io.relative(project, path)
-            person.reference_source = "auto"
-            ref = path
+        mine = [ln for ln in project.lines if ln.person_id == person.id and not ln.no_dub]
         # intensité de chaque réplique par rapport à la voix habituelle de la personne
         levels = []
         for ln in mine:
@@ -606,6 +617,21 @@ def step_voices(project: Project, job: Job, only: list[str] | None = None) -> st
         median = usable[len(usable) // 2] if usable else -120.0
         for ln, v in zip(mine, levels):
             ln.intensity = round(v - median, 1) if v > -90 and median > -90 else 0.0
+        ref = dubvoice.reference_path(project, person)
+        if person.reference_source != "file" or ref is None:
+            if not mine:
+                continue
+            # extrait de clonage pris dans les répliques les plus propres (peu de musique, pas de cri)
+            scores = {}
+            for ln in sorted(mine, key=lambda x: -x.length)[:60]:
+                v, vsr = refs.read_span(voice, ln.start, ln.end)
+                bg = refs.read_span(background, ln.start, ln.end)[0] if background is not None else np.zeros(0)
+                scores[ln.id] = refs.clean_score(v, bg, vsr, ln)
+            target = out_dir / f"{person.id}.wav"
+            path, dur = refs.build_reference(voice, mine, target, person.reference_offset, scores)
+            person.reference = project_io.relative(project, path)
+            person.reference_source = "auto"
+            ref = path
         data, sr = audio.read_audio(ref)
         person.pitch_hz = round(refs.estimate_pitch(data, sr), 1)
         g = refs.gender_from_pitch(person.pitch_hz)

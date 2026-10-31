@@ -36,6 +36,39 @@ def _spin(lo: float, hi: float, step: float, decimals: int = 2, suffix: str = ""
 
 
 
+def _secs(text: str) -> float:
+    parts = [float(x) for x in text.strip().replace(",", ".").split(":")]
+    out = 0.0
+    for x in parts:
+        out = out * 60 + x
+    return out
+
+
+def parse_ranges(text: str) -> list[list[float]] | None:
+    """« 0:00-1:30, 21:10-22:40 » → [[0, 90], [1270, 1360]] ; None si illisible."""
+    out = []
+    for chunk in [c for c in text.replace(";", " ").replace(", ", " ").split() if c.strip()]:
+        a, sep, b = chunk.partition("-")
+        try:
+            if not sep:
+                return None
+            x, y = _secs(a), _secs(b)
+        except ValueError:
+            return None
+        if y <= x:
+            return None
+        out.append([round(x, 2), round(y, 2)])
+    return sorted(out)
+
+
+def format_ranges(ranges) -> str:
+    def f(t: float) -> str:
+        m, sec = divmod(float(t), 60)
+        return f"{int(m)}:{sec:04.1f}".replace(".0", "") if sec % 1 else f"{int(m)}:{int(sec):02d}"
+
+    return ", ".join(f"{f(a)}-{f(b)}" for a, b in ranges)
+
+
 def glossary_row(g: list) -> str:
     """[terme, rendu, prononciation] → « terme = rendu | prononciation »."""
     term = str(g[0])
@@ -90,6 +123,14 @@ class SettingsPage(Page):
         r += 1
         self.t_shouts = ToggleSwitch("Garder les cris d'origine (passages parlés courts sans sous-titre)")
         g.addWidget(self.t_shouts, r, 0, 1, 2)
+        r += 1
+        self.nodub = QLineEdit()
+        self.nodub.setPlaceholderText("Ex. : 0:00-1:30, 21:10-22:40 (générique de début et de fin)")
+        self.nodub.setToolTip("Plages où rien n'est doublé : la bande son d'origine reste (génériques chantés). "
+                              "Gardées pour tous les épisodes d'une série.")
+        self.nodub.editingFinished.connect(self._save_project)
+        g.addWidget(label("Ne pas doubler de … à …", "Muted"), r, 0)
+        g.addWidget(self.nodub, r, 1)
         r += 1
         self.duck = _spin(-40, -6, 1, 0, " dB")
         g.addWidget(label("Sans séparation : voix d'origine baissée de", "Muted"), r, 0)
@@ -368,6 +409,7 @@ class SettingsPage(Page):
         self.ocr_fps.setValue(st.ocr_fps)
         self.t_vo.setChecked(st.vo_fallback)
         self.t_shouts.setChecked(st.keep_original_shouts)
+        self.nodub.setText(format_ranges(pr.no_dub_ranges))
         self.duck.setValue(st.no_separation_duck_db)
         self.lang.setCurrentIndex(max(0, self.lang.findData(st.source_language)))
         self.whisper.setCurrentIndex(max(0, self.whisper.findData(st.whisper_model)))
@@ -423,6 +465,23 @@ class SettingsPage(Page):
         st.expressive = self.t_expr.isChecked()
         st.dynamics = self.t_dyn.isChecked()
         changed = {k for k, v in vars(st).items() if before.get(k) != v}
+        ranges = parse_ranges(self.nodub.text())
+        if ranges is not None and ranges != [list(r) for r in pr.no_dub_ranges]:
+            if not changed:
+                self.ctx.push_undo("plages à ne pas doubler", snap)
+            pr.no_dub_ranges = ranges
+            for ln in pr.lines:
+                inside = any(a <= ln.start and ln.end <= b for a, b in ranges)
+                if inside != ln.no_dub and (inside or ln.state == "skip" or ln.no_dub):
+                    ln.no_dub, ln.audio_key = inside, ""
+            pr.mark_step("dub", False)
+            pr.mark_step("mix", False)
+            from ...core import coverage
+
+            coverage.update(pr)
+            self.ctx.mark_dirty()
+        elif ranges is None:
+            self.ctx.toast("Plages illisibles : écrivez par exemple « 0:00-1:30, 21:10-22:40 ».", "warning", 5000)
         if not changed:
             return
         self.ctx.push_undo("réglages du doublage", snap)

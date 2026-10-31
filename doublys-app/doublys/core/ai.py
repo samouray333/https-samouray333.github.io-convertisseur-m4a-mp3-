@@ -233,3 +233,35 @@ def shorten_line(fr: str, en: str, budget: int, client: DeepSeekClient, before: 
     if not text:
         raise AIError("DeepSeek n'a pas proposé de version plus courte.")
     return text
+
+
+SYSTEM_OCR = (
+    "Tu relis des sous-titres anglais lus automatiquement dans l'image d'une vidéo (OCR). Corrige uniquement les "
+    "fautes de lecture (lettres confondues comme l/I/1, rn/m, 0/O, mots collés ou coupés, ponctuation), en t'aidant "
+    "du contexte et du glossaire de noms propres. Ne reformule pas, ne traduis pas, garde le même sens et le même "
+    "nombre de répliques. Réponds uniquement en JSON : {\"lines\": [{\"i\": numéro, \"text\": \"…\"}, …]}."
+)
+
+
+def correct_ocr(texts: list[str], client: DeepSeekClient, glossary: list[str] | None = None,
+                progress: ProgressCb | None = None, cancel=None) -> list[str]:
+    """Textes OCR corrigés (même ordre, même nombre) ; un texte non rendu reste tel quel."""
+    out = list(texts)
+    for start in range(0, len(texts), BATCH_LINES):
+        if cancel is not None and cancel.is_set():
+            break
+        part = texts[start:start + BATCH_LINES]
+        user = ("Glossaire : " + (", ".join(glossary or []) or "—") + "\n" +
+                "\n".join(f"{start + k}: {t}" for k, t in enumerate(part)))
+        data = client.chat_json(SYSTEM_OCR, user, max_tokens=4000)
+        for item in (data or {}).get("lines", []) if isinstance(data, dict) else []:
+            try:
+                i = int(item.get("i"))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            text = re.sub(r"\s+", " ", str(item.get("text") or "")).strip()
+            if start <= i < start + len(part) and text:
+                out[i] = text
+        if progress:
+            progress(f"Relecture des sous-titres : {min(len(texts), start + BATCH_LINES)} sur {len(texts)}")
+    return out

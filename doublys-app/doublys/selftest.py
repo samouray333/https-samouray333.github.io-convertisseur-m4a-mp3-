@@ -266,6 +266,35 @@ def make_hardsub_video(target: Path, cues=None, size: str = "1280x720", noisy: b
     return target
 
 
+def burn_hardsubs(video: Path, target: Path, cues) -> Path:
+    """Écrit des sous-titres blancs à contour noir dans l'image d'une vidéo existante (son copié)."""
+    import shutil
+
+    from .core import ffmpeg
+
+    fonts = test_fonts()
+    if not fonts:
+        raise RuntimeError("Aucune police trouvée pour écrire les sous-titres de test.")
+    info = ffmpeg.probe(video)
+    v = next(s for s in info["streams"] if s.get("codec_type") == "video")
+    fs = max(16, int(v["height"]) // 18)
+    with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
+        for i, f in enumerate(fonts):
+            shutil.copy(f, Path(td) / f"police{i}.ttf")
+        filters = []
+        for k, (a, b, text) in enumerate(cues):
+            rows = text.split("\n")
+            for j, row in enumerate(rows):
+                (Path(td) / f"t{k}_{j}.txt").write_text(row, encoding="utf-8")
+                y = f"h-{int(fs * 1.6 * (len(rows) - j) + fs * 0.6)}"
+                filters.append(f"drawtext=fontfile=police{k % len(fonts)}.ttf:textfile=t{k}_{j}.txt:fontsize={fs}:"
+                               f"fontcolor=white:borderw={max(2, fs // 14)}:bordercolor=black:x=(w-tw)/2:y={y}:"
+                               f"enable='between(t,{a:.2f},{b:.2f})'")
+        ffmpeg.run_ffmpeg(["-i", str(Path(video).resolve()), "-vf", ",".join(filters), "-c:v", "mpeg4", "-q:v", "5",
+                           "-c:a", "copy", str(Path(target).resolve())], cwd=td)
+    return target
+
+
 def install_fakes() -> None:
     from .core import engines
 
@@ -453,6 +482,21 @@ def run_selftest(report_path: Path) -> int:
         colors = {p.color.upper() for p in pr.people}
         assert all(f'<font color="{c}">' in srt for c in colors), srt[:300]
         return f"{len(pr.lines)} répliques, {len(colors)} couleurs, {files[0].name}"
+
+    @check("sous-titres incrustés (bande, temps, chaîne OCR)", critical=False)
+    def _():
+        from .core import pipeline
+        from .core import project as project_io
+
+        video = make_hardsub_video(work / "incrustes.mp4", size="960x540", background="0x2a4060")
+        pr = project_io.create_project(video, work / "projets", "Autotest OCR")
+        for step in ("extract", "subtitles"):
+            pipeline.run_step(pr, step, pipeline.Job())
+        cues = pipeline.load_cues(pr)
+        assert pr.subs.kind == "ocr" and len(cues) == len(HARDSUBS), (pr.subs.kind, len(cues))
+        worst = max(max(abs(c.start - a), abs(c.end - b)) for c, (a, b, _t) in zip(cues, HARDSUBS))
+        assert worst <= 0.15, worst
+        return f"bande {pr.subs.zone[0]:.0%}-{pr.subs.zone[1]:.0%}, {len(cues)} sous-titres, écart max {worst:.2f} s"
 
     @check("voix Windows (SAPI)", critical=False)
     def _():

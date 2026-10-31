@@ -56,6 +56,8 @@ class Series:
     translator: str = ""
     whisper_model: str = ""
     voice_mode: str = ""
+    no_dub_ranges: list = field(default_factory=list)  # générique, plages « ne pas doubler » (mêmes à chaque épisode)
+    ocr_zone: list = field(default_factory=list)  # bande des sous-titres incrustés
 
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
@@ -178,6 +180,9 @@ def save_from_project(project: Project, name: str) -> tuple[Series, int]:
     s.translator = project.settings.translator
     s.whisper_model = project.settings.whisper_model
     s.voice_mode = project.settings.voice_mode
+    s.no_dub_ranges = [list(r) for r in project.no_dub_ranges]
+    if project.subs.kind == "ocr" and project.subs.zone and project.subs.zone[1] > project.subs.zone[0]:
+        s.ocr_zone = list(project.subs.zone)
     known = {str(g[0]) for g in s.glossary if g}
     s.glossary += [list(g) for g in project.settings.glossary if g and str(g[0]) not in known]
     d = series_dir(name)
@@ -228,3 +233,6 @@ def apply_settings(project: Project, name: str) -> None:
     if s.voice_mode:
         st.voice_mode = s.voice_mode
     st.glossary = [list(g) for g in s.glossary]
+    project.no_dub_ranges = [list(r) for r in s.no_dub_ranges]
+    if s.ocr_zone:
+        project.subs.zone = list(s.ocr_zone)

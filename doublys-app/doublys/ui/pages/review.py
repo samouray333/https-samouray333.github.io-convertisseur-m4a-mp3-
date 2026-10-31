@@ -127,7 +127,11 @@ class ReviewPage(Page):
         self.l_vf.clicked.connect(lambda: self._line_listen(True))
         self.l_ok = button("Vérifiée", "check")
         self.l_ok.clicked.connect(self._line_ok)
-        for b in (self.l_go, self.l_vo, self.l_vf, self.l_ok):
+        self.l_ai = button("Relire l'OCR avec DeepSeek", "sparkles",
+                           tooltip="Corrige les fautes de lecture des sous-titres incrustés (en ligne, avec le contexte "
+                                   "et le glossaire), puis retraduit et redouble les répliques corrigées")
+        self.l_ai.clicked.connect(self._ocr_ai)
+        for b in (self.l_go, self.l_vo, self.l_vf, self.l_ok, self.l_ai):
             row.addWidget(b)
         row.addStretch(1)
         lc.add(row)
@@ -244,6 +248,7 @@ class ReviewPage(Page):
             b.setEnabled(ln is not None)
         self.l_vf.setEnabled(ln is not None and bool(ln.audio))
         self.l_ok.setEnabled(ln is not None and not busy)
+        self.l_ai.setEnabled(pr is not None and not busy and any(x.source == "ocr" for x in pr.lines))
         self.d_listen.setEnabled(d is not None)
         self.d_dub.setEnabled(d is not None and not busy and bool(d.get("text")))
 
@@ -408,6 +413,26 @@ class ReviewPage(Page):
         ln.issues = []
         self.ctx.mark_dirty()
         self.refresh()
+
+    def _ocr_ai(self) -> None:
+        pr = self.project
+        if pr is None:
+            return
+        self.ctx.checkpoint("relecture de l'OCR")
+        dubbing = self.window_.pages["dubbing"]
+
+        def work(job):
+            job.step = "translate"
+            ids = pipeline.correct_ocr_lines(pr, job)
+            if ids:
+                pipeline.step_translate(pr, job, only=ids, force=True)
+                job.step = "dub"
+                pipeline.step_dub(pr, job, only=ids)
+            job.log(f"{len(ids)} sous-titre(s) corrigé(s) par la relecture")
+            return None
+
+        dubbing._dirty_audio()
+        dubbing._start("Relecture des sous-titres", ["translate", "dub"], work)
 
     # -- écartés ----------------------------------------------------------------------
     def _drop_selected(self) -> None:

@@ -450,3 +450,48 @@ Les tests lourds (OCR réel, langue, performance) vont dans le job optionnel « 
 - OCR de sous-titres image dans une piste (PGS, VobSub) : signalé, pas lu.
 - OCR d'autres langues que l'anglais (le moteur le permet, mais ce n'est pas testé).
 - Synchronisation labiale (lip-sync) de l'image.
+
+
+---
+
+## 10. État de réalisation (1.2.0)
+
+| Exigence | État | Remarque |
+|---|---|---|
+| R1 texte issu des sous-titres | fait | `core/pipeline.py` : étape « Sous-titres existants », `lines_from_cues` |
+| R2 couverture (VAD 0,35, original + voix isolée, > 0,4 s) | fait | `core/coverage.py` ; actions dans la page Contrôle |
+| R3 aucune suppression (débordement, chevauchement -6 dB, 3 essais + voix de secours, traduction vide retentée) | fait | `dub_line`, `mixer.mix`, `step_translate` |
+| R4 cris courts doublés, option « garder les cris d'origine » | fait | OCR : « Ha ! » gardé s'il est net ; seuil VAD bas |
+| R5 / R33 voix d'origine là où il n'y a pas de VF (fondu 80 ms), atténuée sous la VF | fait | réglable : voix d'origine ou silence |
+| R6 indicateur de couverture cliquable | fait | page Doublage → page Contrôle |
+| R7 journal des éléments écartés | fait | `travail/ecartes.json`, section « Écartés du doublage » |
+| R8 à R11 langue détectée sur 5 extraits, « auto » par défaut, avertissement si forcée autrement | fait | `detect_language` (worker Whisper) |
+| R12 à R17 pistes, fichiers, nettoyage, deux voix, français prioritaire | fait | `core/subsources.py` ; sous-titres image (PGS) signalés non pris en charge |
+| R18 recalage (décalage global par corrélation, resserrage, élargissement, décalage manuel) | fait | `core/align.py` |
+| R19 fusion des morceaux de phrase | fait | |
+| R20 génériques chantés (style, karaoké, musique dominante ≥ 60 s, plages « ne pas doubler ») | fait | plages et zone OCR gardées par série |
+| R21 bande détectée et réglable à la souris | fait | bouton « Zone… » ; la zone du haut (panneaux) n'est pas lue : ils ne sont pas doublés |
+| R22 / R23 lecture en flux et détection des changements | fait, **méthode modifiée** | au lieu de 4 im/s + dichotomie à 25 im/s : une seule lecture à 12,5 im/s (réglable 4 à 25) de la bande seule, le masque est comparé à chaque image ; précision ± 0,08 s, sans second décodage |
+| R24 RapidOCR dans un environnement « ocr » | fait | **reconnaissance seule** sur des lignes découpées par le masque (25 ms par ligne au lieu de 1,5 s pour la détection complète). Repli `Windows.Media.Ocr` : **non fait** (non vérifiable ici, langue OCR anglaise rarement installée ; RapidOCR s'installe avec les autres moteurs) |
+| R25 prétraitement | fait | partie centrale de l'image pour ignorer le décor sur les côtés ; l'agrandissement est fait par RapidOCR (hauteur 48 px) |
+| R26 fusion des textes quasi identiques | fait | |
+| R27 nettoyage OCR | fait, **sans dictionnaire anglais** | règles l/I/1, 0/O, ponctuation, apostrophes + glossaire (lettres confondables) ; relecture DeepSeek en option (page Contrôle) ; confiance < 80 % signalée |
+| R28 panneaux, karaoké, crédits, logos écartés | fait | |
+| R29 `<nom> (EN, OCR).srt` réutilisé | fait | retrouvé comme fichier voisin |
+| R36 masquage à l'export (flou ou bandeau, seulement pendant les sous-titres) | fait | encodeurs : Media Foundation puis OpenH264 (libx264 seulement s'il est présent) |
+| R30 glossaire avec prononciation, noms proposés | fait | « terme = rendu \| prononciation » |
+| R31 traduction avec contexte | partiel | DeepSeek : contexte complet ; Opus-MT : phrases qui traversent plusieurs répliques déjà gérées (1.0) |
+| R32 DeepSeek orienté doublage | déjà présent (1.0) | |
+| Calage : `max_rate` 1,20, débordement 1,5 s | fait | |
+| Personnes : extrait le plus propre, fusion | fait | « Fusionner avec… » sur la page Personnes ; séparation par « Attribuer à → Nouvelle personne » (page Doublage) |
+| Compresseur léger sur la VF | fait | 2:1 au-dessus de -18 dBFS |
+| R34 vue Contrôle | fait | page « Contrôle » |
+| R35 réexport rapide | déjà présent | cache par réplique |
+
+### Mesures (sandbox Linux, 4 cœurs, sans carte graphique)
+
+- Chaîne réelle japonais + sous-titres anglais incrustés (25 s, Chatterbox multilingue pour la voix japonaise) :
+  langue détectée « japonais », 6 sous-titres lus sur 6 (5 à l'identique, 1 à 99 %), temps à ± 0,07 s, 6 répliques
+  doublées, **100 % de la parole couverte**, sous-titres d'origine floutés à l'export.
+- Lecture OCR : 3 min de vidéo 1080p lues en 14 s, 47 sous-titres exacts sur 47 (soit environ 2 min pour 22 min).
+- Tests automatisés : 83 tests, autotest 14 contrôles.
