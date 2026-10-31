@@ -66,7 +66,7 @@ def check(project: Project) -> int:
     """Met à jour ``issues`` de chaque réplique ; renvoie le nombre de répliques à vérifier."""
     n = 0
     for ln in project.lines:
-        ln.issues = [] if ln.checked else check_line(ln, project.settings.language)
+        ln.issues = [] if ln.checked else check_line(ln, project.text_language)
         n += bool(ln.issues)
     from . import coverage
 

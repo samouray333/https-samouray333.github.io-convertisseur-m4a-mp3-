@@ -275,3 +275,36 @@ def test_no_line_lost_and_vo_fallback(tmp_path, test_video, make_project):
     mix2, _ = audio.read_audio(pipeline.wf(pr, pipeline.MIX))
     assert level(mix2, sr, removed.start + 0.2, removed.end - 0.2) < 0.3 * level(mix, sr, removed.start + 0.2,
                                                                                removed.end - 0.2)
+
+
+@needs_ffmpeg
+def test_mask_hardsubs_only_while_shown(tmp_path, make_project):
+    from doublys.core import ffmpeg, media, pipeline
+    from doublys.selftest import make_hardsub_video
+
+    try:
+        media.video_encoder()
+    except ffmpeg.FFmpegError:
+        pytest.skip("aucun encodeur H.264")
+    video = make_hardsub_video(tmp_path / "Zyu.mp4", size="640x360", background="0x2a4060")
+    pr = make_project(video, "Zyu")
+    pr.settings.subtitles_only = True
+    pipeline.run_all(pr, pipeline.Job())
+    pr.export.mask_hardsubs = True
+    out = pipeline.export_files(pr, pipeline.Job(), out_dir=tmp_path / "out")[0]
+    top, bottom = pr.subs.zone
+
+    def band(path, t):
+        frames = media.extract_frames(path, t, 0.05, tmp_path / f"img{path.stem}{t}", 20.0, 640)
+        from PIL import Image
+
+        img = np.asarray(Image.open(frames[0]).convert("L")).astype(float)
+        h = img.shape[0]
+        return img[int(top * h) + 2:int(bottom * h) - 2]
+
+    def detail(x):  # énergie des contours : forte avec le texte et le bruit, faible une fois flouté
+        return float(np.abs(np.diff(x, axis=1)).mean())
+
+    shown, hidden = 2.0, 0.5  # sous-titre affiché de 1,0 à 3,4 s ; rien à 0,5 s
+    assert detail(band(out, shown)) < 0.35 * detail(band(video, shown))
+    assert detail(band(out, hidden)) > 0.6 * detail(band(video, hidden))  # hors sous-titre : image intacte

@@ -17,7 +17,8 @@ from .models import ExportOptions
 log = logging.getLogger(__name__)
 
 Progress = Callable[[float], None]
-H264_ENCODERS = ("libx264", "libopenh264", "h264_mf")
+# libx264 (GPL) n'est pas dans la version distribuée : Media Foundation (Windows) puis OpenH264
+H264_ENCODERS = ("libx264", "h264_mf", "libopenh264")
 LOUDNORM = "loudnorm=I=-16:TP=-1.5:LRA=11"
 
 
@@ -57,14 +58,42 @@ def video_encoder() -> str:
     raise FFmpegError("Aucun encodeur vidéo H.264 disponible (libx264, libopenh264 ou Media Foundation).")
 
 
-def encoder_args(enc: str, height: int = 1080, fast: bool = False) -> list[str]:
-    bitrate = "2M" if fast else ("4M" if height <= 720 else "8M" if height <= 1080 else "16M")
+def encoder_args(enc: str, height: int = 1080, fast: bool = False, bitrate: str = "") -> list[str]:
+    bitrate = bitrate or ("2M" if fast else ("4M" if height <= 720 else "8M" if height <= 1080 else "16M"))
     if enc == "libx264":
         return ["-c:v", "libx264", "-preset", "ultrafast" if fast else "medium", "-crf", "26" if fast else "20",
                 "-pix_fmt", "yuv420p"]
     if enc == "libopenh264":
         return ["-c:v", "libopenh264", "-b:v", bitrate, "-pix_fmt", "yuv420p"]
     return ["-c:v", enc, "-b:v", bitrate, "-pix_fmt", "yuv420p"]
+
+
+def merge_spans(spans, join: float = 0.5, limit: int = 400) -> list[tuple[float, float]]:
+    """Plages réunies quand elles se touchent presque ; au plus ``limit`` plages (ligne de commande courte)."""
+    out: list[list[float]] = []
+    for a, b in sorted((float(a), float(b)) for a, b in spans if float(b) > float(a)):
+        if out and a <= out[-1][1] + join:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    if len(out) > limit:
+        return merge_spans(out, join * 2, limit)
+    return [(a, b) for a, b in out]
+
+
+def mask_filter(zone: tuple[float, float], spans, video_h: int, style: str = "blur") -> str:
+    """Floute (ou couvre d'un bandeau) la bande des sous-titres d'origine, seulement pendant qu'ils sont
+    affichés."""
+    y0 = max(0, int(zone[0] * video_h) // 2 * 2)
+    bh = max(2, min(video_h - y0, int(round((zone[1] - zone[0]) * video_h)) // 2 * 2))
+    enable = "+".join(f"between(t,{a - 0.08:.2f},{b + 0.08:.2f})" for a, b in merge_spans(spans))
+    if not enable:
+        return ""
+    if style == "band":
+        return f"drawbox=x=0:y={y0}:w=iw:h={bh}:color=black@0.88:t=fill:enable='{enable}'"
+    radius = max(2, min(24, bh // 2 - 1))
+    return (f"split[mv][mc];[mc]crop=iw:{bh}:0:{y0},boxblur=luma_radius={radius}:luma_power=3:"
+            f"chroma_radius={max(1, radius // 2)}:chroma_power=2[mb];[mv][mb]overlay=0:{y0}:enable='{enable}'")
 
 
 def _subtitle_filter(name: str) -> str:
@@ -77,8 +106,10 @@ def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOpti
                  height: int = 1080, srt_fr: Path | None = None, srt_en: Path | None = None,
                  original_codec: str = "", progress: Progress | None = None,
                  cancel: threading.Event | None = None, normalize: bool | None = None,
-                 original_language: str = "en") -> Path:
+                 original_language: str = "en", mask: str = "", text_language: str = "") -> Path:
     """Vidéo copiée sans réencodage + piste VF (AAC normalisée), VO en option, sous-titres intégrés.
+
+    ``mask`` : filtre qui masque les sous-titres incrustés d'origine (la vidéo est alors réencodée).
 
     ``vf_audio`` vide : sous-titres seuls (VOSTFR), le son d'origine est gardé et les sous-titres français sont
     affichés par défaut."""
@@ -86,10 +117,13 @@ def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOpti
 
     iso = LANGUAGES.get(original_language, ("", "und"))[1]
     orig_name = language_name(original_language)
+    text_language = text_language or original_language
+    sub_iso = LANGUAGES.get(text_language, ("", "und"))[1]
+    sub_name = language_name(text_language)
     container = "mkv" if out.suffix.lower() == ".mkv" else "mp4"
     norm = opts.normalize if normalize is None else normalize
     burn = opts.burn_subtitles and srt_fr is not None
-    subs = [] if burn else [(p, lang) for p, lang in ((srt_fr, "fre"), (srt_en, iso)) if p is not None]
+    subs = [] if burn else [(p, lang) for p, lang in ((srt_fr, "fre"), (srt_en, sub_iso)) if p is not None]
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
         cwd = None
@@ -105,11 +139,15 @@ def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOpti
             args += ["-map", f"{first_sub + k}:0"]
         args += ["-map_metadata", "0", "-map_chapters", "0"]
         video_args = ["-c:v", "copy"]
+        chain = [mask] if mask else []
         if burn:
             local = Path(td) / f"fr{srt_fr.suffix.lower()}"
             shutil.copyfile(srt_fr, local)
             cwd = td
-            video_args = ["-vf", _subtitle_filter(local.name), *encoder_args(video_encoder(), height)]
+            chain.append(_subtitle_filter(local.name))
+        if chain:
+            video_args = ["-vf", ",".join(chain), *encoder_args(video_encoder(), height,
+                                                                bitrate=getattr(opts, "video_bitrate", ""))]
         copy_ok = container == "mkv" or original_codec in ("aac", "mp3", "ac3", "eac3")
         if vostfr:  # son d'origine copié tel quel (pas de normalisation : rien n'est mixé)
             a = (["-c:a:0", "copy"] if copy_ok else ["-c:a:0", "aac", "-b:a:0", opts.audio_bitrate or "192k"])
@@ -130,14 +168,14 @@ def export_video(video: Path, vf_audio: Path | None, out: Path, opts: ExportOpti
             codec = "mov_text" if container == "mp4" else ("ass" if sp.suffix.lower() == ".ass" else "srt")
             s += [f"-c:s:{k}", codec, f"-metadata:s:s:{k}",
                   f"language={lang}", f"-metadata:s:s:{k}",
-                  f"title={'Français' if lang == 'fre' else orig_name}", f"-disposition:s:{k}",
+                  f"title={'Français' if lang == 'fre' else sub_name}", f"-disposition:s:{k}",
                   "default" if vostfr and lang == "fre" else "0"]
         tail = ["-movflags", "+faststart"] if container == "mp4" else []
         cmd = args + video_args + a + s + tail + [str(out)]
         try:
             ffmpeg.run_ffmpeg(cmd, duration=duration or None, progress=progress, cancel=cancel, cwd=cwd)
         except FFmpegError as exc:
-            if burn:
+            if chain:
                 raise
             # codec vidéo refusé par le conteneur : réencodage en H.264
             log.warning("Copie de la vidéo impossible (%s) : réencodage", str(exc)[-300:])

@@ -72,6 +72,34 @@ class ExportPage(Page):
         sub.add(self.enc_info)
         self.body.addWidget(sub)
 
+        mk = Card()
+        mk.add(card_title("Sous-titres d'origine dans l'image", "Les sous-titres incrustés lus par Doublys restent "
+                          "visibles dans l'image : floutez-les pendant qu'ils sont affichés.", "image"))
+        self.t_mask = ToggleSwitch("Masquer les sous-titres d'origine (réencode la vidéo : plus long)")
+        self.t_mask.toggled.connect(self._save)
+        mk.add(self.t_mask)
+        mrow = QHBoxLayout()
+        self.mask_style = QComboBox()
+        self.mask_style.addItem("Flou", "blur")
+        self.mask_style.addItem("Bandeau sombre", "band")
+        self.mask_style.currentIndexChanged.connect(self._save)
+        self.vbitrate = QComboBox()
+        for b, t in (("4M", "Qualité standard (4 Mb/s)"), ("8M", "Haute qualité (8 Mb/s)"),
+                     ("12M", "Très haute qualité (12 Mb/s)")):
+            self.vbitrate.addItem(t, b)
+        self.vbitrate.currentIndexChanged.connect(self._save)
+        mrow.addWidget(label("Masque", "Muted"))
+        mrow.addWidget(self.mask_style)
+        mrow.addSpacing(12)
+        mrow.addWidget(label("Vidéo réencodée", "Muted"))
+        mrow.addWidget(self.vbitrate)
+        mrow.addStretch(1)
+        mk.add(mrow)
+        mk.add(label("Astuce : activez aussi « Incruster les sous-titres français » pour les mettre à la place.",
+                     "Hint", wrap=True))
+        self.mask_card = mk
+        self.body.addWidget(mk)
+
         self.aud = aud = Card()
         aud.add(card_title("Piste VF seule", "Le son français complet (voix + fond), sans l'image.", "volume"))
         row = QHBoxLayout()
@@ -146,6 +174,9 @@ class ExportPage(Page):
         self.t_burn.setChecked(o.burn_subtitles)
         self.t_colors.setChecked(o.subtitle_colors)
         self.t_ass.setChecked(o.ass_subtitles)
+        self.t_mask.setChecked(o.mask_hardsubs)
+        self.mask_style.setCurrentIndex(max(0, self.mask_style.findData(o.mask_style)))
+        self.vbitrate.setCurrentIndex(max(0, self.vbitrate.findData(o.video_bitrate)))
         self.audio_only.setCurrentIndex(max(0, self.audio_only.findData(o.audio_only)))
         self._loading = False
         self._ass_hint()
@@ -166,6 +197,9 @@ class ExportPage(Page):
         o.burn_subtitles = self.t_burn.isChecked()
         o.subtitle_colors = self.t_colors.isChecked()
         o.ass_subtitles = self.t_ass.isChecked()
+        o.mask_hardsubs = self.t_mask.isChecked()
+        o.mask_style = self.mask_style.currentData() or "blur"
+        o.video_bitrate = self.vbitrate.currentData() or "8M"
         o.audio_only = self.audio_only.currentData() or ""
         self._ass_hint()
         self.ctx.mark_dirty()
@@ -201,6 +235,7 @@ class ExportPage(Page):
         self.preview_btn.setVisible(not only)
         self.preview_btn.setEnabled(ready and not busy)
         self.aud.setVisible(not only)
+        self.mask_card.setVisible(pr is not None and pr.subs.kind == "ocr")
         self.t_vo.setVisible(not only)
         self.t_norm.setVisible(not only)
         self.t_sfr.setVisible(not only)  # sous-titres seuls : toujours intégrés (affichés par défaut)

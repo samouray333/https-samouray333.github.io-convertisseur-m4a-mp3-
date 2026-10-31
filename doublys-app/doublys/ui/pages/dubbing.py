@@ -9,15 +9,15 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
-                               QLabel, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QTableWidget,
-                               QTableWidgetItem)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame,
+                               QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox, QPlainTextEdit,
+                               QProgressBar, QTableWidget, QTableWidgetItem)
 
 from ... import paths
-from ...core import ai, audio, engines, media, mixer, pipeline, qc, refs, segment, subtitles, timing
+from ...core import ai, audio, coverage, engines, media, mixer, pipeline, qc, refs, segment, subsources, subtitles, timing
 from ...core import project as project_io
 from ...core.engines.neural import LOG_LISTENERS
-from ...core.models import LINE_STATES, STEP_LABELS, STEPS, VOICE_STEPS, Person
+from ...core.models import AUTO_LANGUAGE, LANGUAGES, LINE_STATES, STEP_LABELS, STEPS, VOICE_STEPS, Person
 from ...core.speakers import COLORS
 from ...core.textproc import format_duration
 from .. import icons, tasks, theme
@@ -30,10 +30,11 @@ log = logging.getLogger(__name__)
 
 COLS = ["#", "Début", "Durée", "Personne", "Original", "Français", "Calage", "État"]
 C_NUM, C_START, C_LEN, C_PERSON, C_EN, C_FR, C_FIT, C_STATE = range(len(COLS))
-STEP_SHORT = {"extract": "Extraction", "separate": "Séparation", "transcribe": "Transcription",
+STEP_SHORT = {"extract": "Extraction", "subtitles": "Sous-titres", "separate": "Séparation", "transcribe": "Transcription",
               "segment": "Répliques", "speakers": "Personnes", "translate": "Traduction", "voices": "Voix",
               "dub": "Doublage", "mix": "Mixage"}
-STATE_KIND = {"ok": "success", "tempo": "success", "rate": "info", "long": "warning", "error": "danger", "": "muted"}
+STATE_KIND = {"ok": "success", "tempo": "success", "rate": "info", "long": "warning", "error": "danger", "": "muted",
+              "skip": "muted"}
 
 
 def fmt_t(t: float) -> str:
@@ -114,6 +115,41 @@ class DubbingPage(Page):
         r0.addWidget(self.result_mode)
         r0.addStretch(1)
         run.add(r0)
+        rs = QHBoxLayout()
+        rs.addWidget(label("Texte", "Muted"))
+        self.source_combo = QComboBox()
+        self.source_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.source_combo.setMinimumContentsLength(14)
+        self.source_combo.setToolTip("D'où vient le texte des répliques : sous-titres de la vidéo (piste, fichier, "
+                                     "sous-titres incrustés dans l'image) ou reconnaissance de la voix (Whisper).")
+        self.source_combo.activated.connect(self._source_changed)
+        rs.addWidget(self.source_combo, 1)
+        self.zone_btn = button("Zone…", "image", tooltip="Bande de l'image où se trouvent les sous-titres incrustés")
+        self.zone_btn.clicked.connect(self._edit_zone)
+        rs.addWidget(self.zone_btn)
+        self.offset = QDoubleSpinBox()
+        self.offset.setRange(-30.0, 30.0)
+        self.offset.setSingleStep(0.1)
+        self.offset.setDecimals(2)
+        self.offset.setSuffix(" s")
+        self.offset.setToolTip("Décalage manuel des sous-titres (en plus du décalage trouvé automatiquement)")
+        self.offset.editingFinished.connect(self._offset_changed)
+        rs.addWidget(self.offset)
+        rs.addSpacing(10)
+        rs.addWidget(label("Audio", "Muted"))
+        self.audio_lang = QComboBox()
+        self.audio_lang.addItem("Détection automatique", AUTO_LANGUAGE)
+        for k, (name, _iso, _d, _e) in LANGUAGES.items():
+            self.audio_lang.addItem(name, k)
+        self.audio_lang.setToolTip("Langue parlée dans la vidéo : détectée automatiquement sur plusieurs extraits")
+        self.audio_lang.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.audio_lang.setMinimumContentsLength(9)
+        self.offset.setMaximumWidth(96)
+        self.audio_lang.activated.connect(self._audio_lang_changed)
+        rs.addWidget(self.audio_lang)
+        run.add(rs)
+        self.lang_info = label("", "Hint", wrap=True)
+        run.add(self.lang_info)
         r1 = QHBoxLayout()
         self.auto_btn = button("Créer la VF automatiquement", "wand", "primary")
         self.auto_btn.setMinimumHeight(46)
@@ -135,6 +171,12 @@ class DubbingPage(Page):
         self.bar.setTextVisible(False)
         self.bar.setFixedHeight(8)
         run.add(self.bar)
+        self.coverage_lbl = QLabel()
+        self.coverage_lbl.setTextFormat(Qt.RichText)
+        self.coverage_lbl.setCursor(Qt.PointingHandCursor)
+        self.coverage_lbl.setToolTip("Ouvrir la page Contrôle")
+        self.coverage_lbl.linkActivated.connect(lambda _l: self.ctx.navigate("review"))
+        run.add(self.coverage_lbl)
         r2 = QHBoxLayout()
         self.status = label("Prêt.", "Muted", wrap=True)
         self.eta = label("", "Faint")
@@ -271,6 +313,7 @@ class DubbingPage(Page):
         self.result_mode.blockSignals(True)
         self.result_mode.setCurrentIndex(1 if pr is not None and pr.settings.subtitles_only else 0)
         self.result_mode.blockSignals(False)
+        self._fill_sources()
         self.fill_steps()
         self.fill_table()
         self._update_buttons()
@@ -342,6 +385,10 @@ class DubbingPage(Page):
                 self.status.setText(f"Temps de calcul estimé sur cet ordinateur : environ {format_eta(est)} "
                                     "(l'ordinateur ne se mettra pas en veille ; vous pouvez arrêter et reprendre).")
         self.result_mode.setEnabled(has and not running)
+        for w in (self.source_combo, self.audio_lang, self.offset):
+            w.setEnabled(has and not running)
+        self.zone_btn.setEnabled(has and not running and self.project.subs.kind in ("ocr", "auto"))
+        self._update_coverage()
         only = has and self.project.settings.subtitles_only
         self.open_btn.setText("Ouvrir la vidéo sous-titrée" if only else "Ouvrir la vidéo doublée")
 
@@ -381,6 +428,170 @@ class DubbingPage(Page):
 
         self._start("Création des sous-titres" if pr.settings.subtitles_only else "Création de la VF", plan, work)
 
+    # -- texte de départ et langue ---------------------------------------------------------
+    def _fill_sources(self) -> None:
+        """Choix du texte : automatique, pistes et fichiers trouvés, sous-titres de l'image, voix seule."""
+        pr = self.project
+        combo = self.source_combo
+        combo.blockSignals(True)
+        combo.clear()
+        if pr is None:
+            combo.blockSignals(False)
+            return
+        subs = pr.subs
+        combo.addItem("Automatique (sous-titres s'il y en a)", {"kind": "auto"})
+        seen = set()
+        cands = [dict(c) for c in subs.candidates]
+        if not cands and Path(pr.source_video).exists():
+            try:
+                found = subsources.find_tracks(Path(pr.source_video)) + subsources.find_files(Path(pr.source_video))
+                cands = [c.to_dict() for c in found]
+            except Exception:  # noqa: BLE001 - vidéo illisible : la liste reste courte
+                cands = []
+        if subs.kind == "file" and subs.path and not any(c.get("path") == subs.path for c in cands):
+            cands.append({"kind": "file", "path": subs.path, "track": -1, "language": subs.language,
+                          "label": f"Fichier « {Path(subs.path).name} »"})
+        if not any(c.get("kind") == "ocr" for c in cands):
+            cands.append({"kind": "ocr", "track": -1, "path": "", "language": "en",
+                          "label": "Sous-titres incrustés dans l'image (lecture OCR)"})
+        for c in cands:
+            key = (c.get("kind"), c.get("track"), c.get("path"))
+            if key in seen:
+                continue
+            seen.add(key)
+            combo.addItem(c.get("label") or c.get("kind"), c)
+        combo.addItem("Choisir un fichier de sous-titres…", {"kind": "pick"})
+        combo.addItem("Voix seule (Whisper, sans sous-titres)", {"kind": "none"})
+        idx = 0
+        for i in range(combo.count()):
+            d = combo.itemData(i) or {}
+            if d.get("kind") == subs.kind and (subs.kind not in ("track", "file") or
+                                               (d.get("track") == subs.track if subs.kind == "track"
+                                                else d.get("path") == subs.path)):
+                idx = i
+                break
+        if not pr.settings.use_subtitles:
+            idx = combo.count() - 1
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+        self.offset.blockSignals(True)
+        self.offset.setValue(subs.offset)
+        self.offset.blockSignals(False)
+        self.offset.setVisible(subs.kind in ("track", "file", "ocr"))
+        self.zone_btn.setVisible(subs.kind in ("ocr", "auto"))
+        self.audio_lang.blockSignals(True)
+        self.audio_lang.setCurrentIndex(max(0, self.audio_lang.findData(pr.settings.source_language)))
+        self.audio_lang.blockSignals(False)
+        st = pr.settings
+        info = []
+        if st.detected_language:
+            from ...core.models import language_name
+
+            info.append(f"Audio détecté : {language_name(st.detected_language).lower()}"
+                        + (f" ({st.language_confidence:.0%})" if st.language_confidence else ""))
+        if subs.kind in ("track", "file", "ocr") and subs.count:
+            info.append(f"{subs.count} sous-titres ({subs.language or '?'})")
+            if subs.auto_offset:
+                info.append(f"décalage automatique {subs.auto_offset:+.2f} s")
+        self.lang_info.setText(" · ".join(info))
+        self.lang_info.setVisible(bool(info))
+
+    def _source_changed(self) -> None:
+        pr = self.project
+        if pr is None:
+            return
+        d = dict(self.source_combo.currentData() or {})
+        if d.get("kind") == "pick":
+            start = str(Path(pr.source_video).parent)
+            path, _ = QFileDialog.getOpenFileName(self, "Fichier de sous-titres", start,
+                                                  "Sous-titres (*.srt *.ass *.ssa *.vtt);;Tous (*)")
+            if not path:
+                self._fill_sources()
+                return
+            d = {"kind": "file", "path": path, "track": -1, "language": subsources.lang_from_name(path)}
+        self.ctx.checkpoint("texte de départ")
+        subs = pr.subs
+        pr.settings.use_subtitles = d.get("kind") != "none"
+        subs.kind = d.get("kind", "auto")
+        subs.track = int(d.get("track", -1) if d.get("track") is not None else -1)
+        subs.path = d.get("path", "") or ""
+        if d.get("language"):
+            subs.language = d["language"]
+        pr.invalidate_from("subtitles")
+        self.ctx.mark_dirty()
+        self._fill_sources()
+        self.fill_steps()
+        self._update_buttons()
+
+    def _offset_changed(self) -> None:
+        pr = self.project
+        if pr is None:
+            return
+        delta = round(self.offset.value() - pr.subs.offset, 3)
+        if abs(delta) < 0.001:
+            return
+        self.ctx.checkpoint("décalage des sous-titres")
+        pr.subs.offset = self.offset.value()
+        for ln in pr.lines:  # répliques venues des sous-titres : décalées, voix à recaler
+            if ln.source in ("track", "file", "ocr"):
+                ln.start = round(max(0.0, ln.start + delta), 3)
+                ln.end = round(max(ln.start + 0.2, ln.end + delta), 3)
+                ln.audio_key = ""
+        pr.mark_step("dub", False)
+        pr.mark_step("mix", False)
+        coverage.update(pr)
+        self.ctx.mark_dirty()
+        self.fill_table()
+        self.fill_steps()
+
+    def _audio_lang_changed(self) -> None:
+        pr = self.project
+        if pr is None:
+            return
+        lang = self.audio_lang.currentData()
+        if lang == pr.settings.source_language:
+            return
+        self.ctx.checkpoint("langue de la vidéo")
+        pr.settings.source_language = lang
+        pr.invalidate_from("transcribe")
+        self.ctx.mark_dirty()
+        self.fill_steps()
+        self._update_buttons()
+
+    def _edit_zone(self) -> None:
+        pr = self.project
+        if pr is None:
+            return
+        from ..dialogs.zone import ZoneDialog
+
+        dlg = ZoneDialog(self, pr)
+        if dlg.exec() and dlg.zone is not None:
+            self.ctx.checkpoint("zone des sous-titres")
+            pr.subs.zone = list(dlg.zone)
+            pr.subs.kind = "ocr"
+            pr.settings.use_subtitles = True
+            pr.invalidate_from("subtitles")
+            self.ctx.mark_dirty()
+            self._fill_sources()
+            self.fill_steps()
+            self._update_buttons()
+
+    def _update_coverage(self) -> None:
+        pr = self.project
+        if pr is None or not pr.lines:
+            self.coverage_lbl.setText("")
+            self.coverage_lbl.hide()
+            return
+        try:
+            text, problems = coverage.summary(pr)
+        except Exception:  # noqa: BLE001
+            text, problems = f"{len(pr.lines)} répliques", 0
+        color = theme.CURRENT.success if not problems else theme.CURRENT.warning
+        mark = "✔" if not problems else "⚠"
+        self.coverage_lbl.setText(f'<a href="review" style="color:{color}; text-decoration:none; font-weight:600;">'
+                                  f"{mark} {text}</a>")
+        self.coverage_lbl.show()
+
     def _mode_changed(self) -> None:
         pr = self.project
         if pr is None:
@@ -398,6 +609,9 @@ class DubbingPage(Page):
     def _missing_engines(self, steps: list[str]) -> list[str]:
         out = []
         need = {"separate": "analysis", "speakers": "analysis", "transcribe": "whisper"}
+        st, subs = self.project.settings, self.project.subs
+        if st.use_subtitles and subs.kind in ("auto", "ocr"):
+            need["subtitles"] = "ocr"  # lecture des sous-titres incrustés (si la vidéo en a)
         if self.project.settings.translator != "deepseek":
             need["translate"] = "analysis"
         for s in steps:
@@ -456,6 +670,7 @@ class DubbingPage(Page):
             self.fill_steps()
             self.status.setText("Prêt.")
             return
+        self._fill_sources()
         self._update_buttons()
         self.fill_steps()
         self.fill_table()
@@ -472,7 +687,11 @@ class DubbingPage(Page):
                 self.open_btn.show()
                 long_ = sum(1 for ln in self.project.lines if ln.state == "long")
                 extra = f" {long_} réplique(s) à raccourcir (filtre « à revoir »)." if long_ else ""
-                self.ctx.toast("La version française est prête !" + extra, "success", 8000)
+                _text, problems = coverage.summary(self.project)
+                if problems:
+                    extra += f" {problems} point(s) à vérifier dans Contrôle."
+                self.ctx.toast("La version française est prête !" + extra, "success" if not problems else "warning",
+                               9000)
             else:
                 self.status.setText("Terminé.")
         else:
@@ -544,6 +763,13 @@ class DubbingPage(Page):
                 it.setFlags(it.flags() & ~Qt.ItemIsEditable)
             if c == C_PERSON and person is not None:
                 it.setForeground(QColor(person.color))
+            if c == C_EN and ln.source:
+                origin = {"track": "piste de sous-titres", "file": "fichier de sous-titres",
+                          "ocr": f"sous-titre lu dans l'image (confiance {ln.ocr_conf:.0%})",
+                          "manual": "réplique ajoutée à la main"}.get(ln.source, ln.source)
+                it.setToolTip(f"Texte : {origin}")
+            if ln.no_dub and c in (C_EN, C_FR):
+                it.setForeground(QColor(theme.CURRENT.faint))
             if c == C_STATE:
                 kind = "warning" if ln.issues else STATE_KIND.get(ln.state, "muted")
                 color = {"success": theme.CURRENT.success, "warning": theme.CURRENT.warning,
@@ -661,12 +887,32 @@ class DubbingPage(Page):
             a = m.addAction(b.icon(), b.accessibleName() or b.text(), lambda k=key: self.action(k))
             a.setEnabled(b.isEnabled())
         if not self.ctx.runner.running:
+            keep = all(x.no_dub for x in sel)
+            m.addAction(icons.icon("volume", theme.CURRENT.text, 16),
+                        "Doubler à nouveau" if keep else "Ne pas doubler (garder la voix d'origine)",
+                        lambda: self._set_no_dub(sel, not keep))
             sub = m.addMenu(icons.icon("users", theme.CURRENT.text, 16), "Attribuer à")
             for p in self.project.people:
                 sub.addAction(p.name, lambda p=p: self._assign(sel, p.id))
             sub.addSeparator()
             sub.addAction("Nouvelle personne", lambda: self._assign(sel, None))
         m.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _set_no_dub(self, lines, value: bool) -> None:
+        self.ctx.checkpoint("ne pas doubler" if value else "doubler à nouveau")
+        for ln in lines:
+            ln.no_dub = value
+            ln.audio_key = ""
+            if value:
+                ln.audio, ln.state, ln.message = "", "skip", "Non doublée : la voix d'origine reste."
+            elif ln.state == "skip":
+                ln.state, ln.message = "", ""
+        self.project.mark_step("dub", False)
+        self.project.mark_step("mix", False)
+        qc.check(self.project)
+        self.ctx.mark_dirty()
+        self.fill_table()
+        self.fill_steps()
 
     def _assign(self, lines, person_id) -> None:
         pr = self.project

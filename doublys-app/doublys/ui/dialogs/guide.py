@@ -15,13 +15,14 @@ STEPS = [
      "sans Internet."),
     ("film", "2. Glisser une vidéo",
      "Glissez la vidéo sur l'accueil (plusieurs vidéos : elles partent dans la file d'attente). Elle reste à sa place ; "
-     "le projet est créé dans Documents\\Doublys. Langue de la vidéo : Paramètres (anglais par défaut, ou détection "
-     "automatique)."),
+     "le projet est créé dans Documents\\Doublys. La langue parlée est détectée toute seule ; s'il y a des sous-titres "
+     "(piste, fichier .srt à côté, ou sous-titres incrustés dans l'image), leur texte est utilisé."),
     ("wand", "3. Créer la VF automatiquement",
      "Page Doublage : un clic. Le temps estimé s'affiche ; l'ordinateur ne se met pas en veille et vous pouvez arrêter "
      "puis reprendre à tout moment sans rien perdre."),
     ("alert", "4. Vérifier ce qui est signalé",
-     "Cochez « Seulement les répliques à vérifier » : mots mal compris, traduction douteuse, personne incertaine, "
+     "Page Contrôle : passages où quelqu'un parle sans VF, voix en échec, sous-titres mal lus. Sur la page Doublage, "
+     "cochez « Seulement les répliques à vérifier » : mots mal compris, traduction douteuse, personne incertaine, "
      "réplique trop longue. Double-cliquez sur le français pour le corriger, faites glisser une réplique sur la forme "
      "d'onde pour la recaler, double-cliquez sur son numéro pour la voir avec l'image. Ctrl+Z annule."),
     ("users", "5. Les personnes et les séries",

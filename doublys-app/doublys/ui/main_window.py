@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 NAV = [
     ("home", "Accueil", "home"),
     ("dubbing", "Doublage", "film"),
+    ("review", "Contrôle", "shield"),
     ("people", "Personnes", "users"),
     ("export", "Export", "package"),
     ("queue", "File d'attente", "list"),
@@ -163,11 +164,13 @@ class MainWindow(QMainWindow):
         from .pages.home import HomePage
         from .pages.people import PeoplePage
         from .pages.queuepage import QueuePage
+        from .pages.review import ReviewPage
         from .pages.settings import SettingsPage
 
         self.pages = {
             "home": HomePage(self.ctx, self),
             "dubbing": DubbingPage(self.ctx, self),
+            "review": ReviewPage(self.ctx, self),
             "people": PeoplePage(self.ctx),
             "export": ExportPage(self.ctx),
             "queue": QueuePage(self.ctx, self),
@@ -373,8 +376,30 @@ class MainWindow(QMainWindow):
     def open_any(self, path: str) -> None:
         if Path(path).suffix.lower() == PROJECT_EXT:
             self.open_project(path)
+        elif Path(path).suffix.lower() in (".srt", ".ass", ".ssa", ".vtt"):
+            self.use_subtitle_file(path)
         else:
             self.new_project_from_video(path)
+
+    def use_subtitle_file(self, path: str) -> None:
+        """Fichier de sous-titres glissé sur l'appli : il donne le texte des répliques du projet ouvert."""
+        pr = self.ctx.project
+        if pr is None:
+            self.ctx.toast("Ouvrez d'abord la vidéo, puis glissez son fichier de sous-titres.", "info", 5000)
+            return
+        if self.ctx.runner.running:
+            self.ctx.toast("Attendez la fin du traitement en cours.", "warning")
+            return
+        from ..core import subsources
+
+        self.ctx.checkpoint("sous-titres")
+        pr.subs.kind, pr.subs.path = "file", str(Path(path))
+        pr.subs.language = subsources.lang_from_name(path)
+        pr.invalidate_from("subtitles")
+        self.ctx.mark_dirty()
+        self.ctx.project_changed.emit()
+        self.show_page("dubbing")
+        self.ctx.toast(f"Sous-titres « {Path(path).name} » choisis : relancez la création de la VF.", "success", 5000)
 
     # -- navigation --------------------------------------------------------------------
     def show_page(self, key: str) -> None:

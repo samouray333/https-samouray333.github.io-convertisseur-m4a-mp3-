@@ -35,6 +35,26 @@ def _spin(lo: float, hi: float, step: float, decimals: int = 2, suffix: str = ""
     return s
 
 
+
+def glossary_row(g: list) -> str:
+    """[terme, rendu, prononciation] → « terme = rendu | prononciation »."""
+    term = str(g[0])
+    fr = str(g[1]) if len(g) > 1 else ""
+    pron = str(g[2]) if len(g) > 2 else ""
+    row = f"{term} = {fr}" if fr and fr != term else term
+    return f"{row} | {pron}" if pron else row
+
+
+def parse_glossary_row(row: str) -> list | None:
+    if not row.strip():
+        return None
+    main, _bar, pron = row.partition("|")
+    src, _sep, fr = main.partition("=")
+    item = [src.strip(), fr.strip() or src.strip()]
+    if pron.strip():
+        item.append(pron.strip())
+    return item if item[0] else None
+
 class SettingsPage(Page):
     name = "settings"
 
@@ -54,6 +74,22 @@ class SettingsPage(Page):
         r = 0
         self.t_sep = ToggleSwitch("Séparer les voix de la musique et des bruits (recommandé)")
         g.addWidget(self.t_sep, r, 0, 1, 2)
+        r += 1
+        self.t_subs = ToggleSwitch("Prendre le texte dans les sous-titres existants (piste, fichier ou sous-titres "
+                                   "incrustés dans l'image)")
+        g.addWidget(self.t_subs, r, 0, 1, 2)
+        r += 1
+        self.ocr_fps = _spin(4, 25, 0.5, 1, " images/s")
+        self.ocr_fps.setToolTip("Images analysées par seconde pour lire les sous-titres incrustés : plus haut = début "
+                                "et fin plus précis, un peu plus lent.")
+        g.addWidget(label("Lecture des sous-titres incrustés", "Muted"), r, 0)
+        g.addWidget(self.ocr_fps, r, 1)
+        r += 1
+        self.t_vo = ToggleSwitch("Là où il n'y a pas de VF, remettre la voix d'origine (sinon : silence)")
+        g.addWidget(self.t_vo, r, 0, 1, 2)
+        r += 1
+        self.t_shouts = ToggleSwitch("Garder les cris d'origine (passages parlés courts sans sous-titre)")
+        g.addWidget(self.t_shouts, r, 0, 1, 2)
         r += 1
         self.duck = _spin(-40, -6, 1, 0, " dB")
         g.addWidget(label("Sans séparation : voix d'origine baissée de", "Muted"), r, 0)
@@ -128,8 +164,8 @@ class SettingsPage(Page):
         r += 1
         self.glossary = QPlainTextEdit()
         self.glossary.setPlaceholderText("Un terme par ligne. « terme » le garde tel quel ; « terme = rendu français » "
-                                         "impose une traduction.\nExemples :\n変身 = Henshin\nGokaiger\nRed Ranger = "
-                                         "Ranger Rouge")
+                                         "impose une traduction ; « | prononciation » la fait dire ainsi.\nExemples :"
+                                         "\nDaizyujin | Daïzyoudjine\nGokaiger\nRed Ranger = Ranger Rouge")
         self.glossary.setFixedHeight(96)
         g.addWidget(label("Mots à ne pas traduire\n(noms, attaques…)", "Muted"), r, 0, Qt.AlignTop)
         g.addWidget(self.glossary, r, 1)
@@ -137,7 +173,12 @@ class SettingsPage(Page):
         dub.add(g)
         self.dub_card = dub
         self.body.addWidget(dub)
-        for w in (self.t_sep, self.t_keep, self.t_level, self.t_expr, self.t_dyn):
+        self.suggest_btn = button("Proposer les noms propres", "sparkles",
+                                  tooltip="Noms qui reviennent dans les sous-titres ou la transcription")
+        self.suggest_btn.clicked.connect(self._suggest_terms)
+        g.addWidget(self.suggest_btn, r + 1, 1, Qt.AlignLeft)
+        for w in (self.t_sep, self.t_keep, self.t_level, self.t_expr, self.t_dyn, self.t_subs, self.t_vo,
+                  self.t_shouts):
             w.toggled.connect(self._save_project)
         for w in (self.lang, self.whisper, self.translator):
             w.currentIndexChanged.connect(self._save_project)
@@ -145,7 +186,8 @@ class SettingsPage(Page):
         self._gtimer = QTimer(self)
         self._gtimer.setSingleShot(True)
         self._gtimer.timeout.connect(self._save_project)
-        for w in (self.duck, self.pause, self.max_line, self.threshold, self.max_rate, self.cps, self.keep_db):
+        for w in (self.duck, self.pause, self.max_line, self.threshold, self.max_rate, self.cps, self.keep_db,
+                  self.ocr_fps):
             w.editingFinished.connect(self._save_project)
         self.max_spk.editingFinished.connect(self._save_project)
 
@@ -322,11 +364,14 @@ class SettingsPage(Page):
         st = pr.settings
         self._loading = True
         self.t_sep.setChecked(st.separate)
+        self.t_subs.setChecked(st.use_subtitles)
+        self.ocr_fps.setValue(st.ocr_fps)
+        self.t_vo.setChecked(st.vo_fallback)
+        self.t_shouts.setChecked(st.keep_original_shouts)
         self.duck.setValue(st.no_separation_duck_db)
         self.lang.setCurrentIndex(max(0, self.lang.findData(st.source_language)))
         self.whisper.setCurrentIndex(max(0, self.whisper.findData(st.whisper_model)))
-        self.glossary.setPlainText("\n".join(f"{a} = {b}" if b and b != a else a for a, b in
-                                             ((g[0], g[1] if len(g) > 1 else "") for g in st.glossary if g)))
+        self.glossary.setPlainText("\n".join(glossary_row(g) for g in st.glossary if g))
         self.translator.setCurrentIndex(max(0, self.translator.findData(st.translator)))
         self.pause.setValue(st.pause_split)
         self.max_line.setValue(st.max_line)
@@ -349,6 +394,10 @@ class SettingsPage(Page):
         st = pr.settings
         before = dict(vars(st))
         st.separate = self.t_sep.isChecked()
+        st.use_subtitles = self.t_subs.isChecked()
+        st.ocr_fps = self.ocr_fps.value()
+        st.vo_fallback = self.t_vo.isChecked()
+        st.keep_original_shouts = self.t_shouts.isChecked()
         st.no_separation_duck_db = self.duck.value()
         lang = self.lang.currentData()
         if lang != st.source_language:
@@ -360,12 +409,7 @@ class SettingsPage(Page):
                 self._loading = False
                 self.ctx.toast("Modèle Whisper « medium » choisi : bien plus précis pour cette langue.", "info", 5000)
         st.whisper_model = self.whisper.currentData()
-        terms = []
-        for row in self.glossary.toPlainText().splitlines():
-            if row.strip():
-                src, _sep, fr = row.partition("=")
-                terms.append([src.strip(), fr.strip() or src.strip()])
-        st.glossary = terms
+        st.glossary = [t for t in (parse_glossary_row(row) for row in self.glossary.toPlainText().splitlines()) if t]
         st.translator = self.translator.currentData()
         st.pause_split = self.pause.value()
         st.max_line = self.max_line.value()
@@ -383,7 +427,8 @@ class SettingsPage(Page):
             return
         self.ctx.push_undo("réglages du doublage", snap)
         # première étape touchée par le changement : elle et les suivantes seront refaites
-        first = {"separate": "separate", "whisper_model": "transcribe", "source_language": "transcribe",
+        first = {"use_subtitles": "subtitles", "ocr_fps": "subtitles", "vo_fallback": "mix",
+                 "separate": "separate", "whisper_model": "transcribe", "source_language": "transcribe",
                  "detected_language": "transcribe", "glossary": "translate", "pause_split": "segment",
                  "max_line": "segment", "speaker_threshold": "speakers", "max_speakers": "speakers",
                  "translator": "translate", "chars_per_second": "translate", "max_rate": "dub",
@@ -391,13 +436,34 @@ class SettingsPage(Page):
                  "no_separation_duck_db": "mix"}
         from ...core.models import STEPS
 
-        steps = [first[k] for k in changed if k in first]
-        if steps:
-            step = min(steps, key=STEPS.index)
-            if step == "separate" and not st.separate:
-                step = "transcribe"
+        steps = {first[k] for k in changed if k in first}
+        if "separate" in steps and not st.separate:
+            steps = (steps - {"separate"}) | {"transcribe"}
+        for step in sorted(steps, key=STEPS.index):  # chaque étape touchée et celles qui en dépendent
             pr.invalidate_from(step)
+        if "keep_original_shouts" in changed:
+            from ...core import coverage
+
+            coverage.update(pr)
         self.ctx.mark_dirty()
+
+    def _suggest_terms(self) -> None:
+        from ...core import glossary as glossary_lib
+
+        pr = self.ctx.project
+        if pr is None or not pr.lines:
+            self.ctx.toast("Lancez d'abord l'analyse (répliques) : les noms sont pris dans le texte d'origine.", "info")
+            return
+        known = [g[0] for g in pr.settings.glossary if g]
+        terms = glossary_lib.suggest_terms([ln.en for ln in pr.lines], known)[:20]
+        if not terms:
+            self.ctx.toast("Aucun nouveau nom propre trouvé.", "info")
+            return
+        text = self.glossary.toPlainText().rstrip()
+        self.glossary.setPlainText((text + "\n" if text else "") + "\n".join(terms))
+        self._save_project()
+        self.ctx.toast(f"{len(terms)} nom(s) ajouté(s) au glossaire : ajoutez une prononciation si besoin "
+                       "(« Daizyujin | Daïzyoudjine »).", "success", 6000)
 
     def _glossary_timer_start(self) -> None:
         if not self._loading:

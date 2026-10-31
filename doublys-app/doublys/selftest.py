@@ -124,7 +124,14 @@ class FakeWhisper(_FakeTool):
         from .core import audio
 
         data, sr = audio.read_audio(path)
-        db = audio.frame_rms_db(data, sr, 20.0)
+        # énergie dans la bande de la voix (100 à 4000 Hz) : le fond grave n'est pas de la parole
+        win = int(sr * 0.02)
+        n = len(data) // win
+        frames = data[:n * win].reshape(n, win) * np.hanning(win)
+        spec = np.abs(np.fft.rfft(frames, axis=1)) ** 2
+        f = np.fft.rfftfreq(win, 1 / sr)
+        band = spec[:, (f > 100) & (f < 4000)].sum(axis=1)
+        db = 10 * np.log10(np.maximum(band, 1e-12))
         # seuil bas : passages plus faibles retenus (comme Silero avec un seuil plus bas)
         on = np.append(db > (db.max() - (30 if threshold < 0.5 else 20)), False)
         regions, start = [], None

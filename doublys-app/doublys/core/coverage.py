@@ -183,3 +183,62 @@ def summary(project: Project) -> tuple[str, int]:
     talk = total(speech)
     pct = 100.0 * (1.0 - total([[g["start"], g["end"]] for g in gaps]) / talk) if talk > 0 else 100.0
     return f"{len(lines)} répliques, {pct:.0f} % de la parole couverte · " + ", ".join(parts), problems
+
+
+# ---------------------------------------------------------------------------------------
+# Actions sur un passage parlé sans VF
+# ---------------------------------------------------------------------------------------
+def _invalidate_audio(project: Project) -> None:
+    project.mark_step("dub", False)
+    project.mark_step("mix", False)
+
+
+def nearest_line(project: Project, start: float, end: float, max_dist: float = 1.5):
+    """Réplique la plus proche d'un passage (à moins de ``max_dist`` secondes), ou None."""
+    best, dist = None, max_dist
+    for ln in project.lines:
+        d = max(0.0, ln.start - end, start - ln.end)
+        if d <= dist:
+            best, dist = ln, d
+    return best
+
+
+def extend_neighbor(project: Project, start: float, end: float):
+    """La réplique voisine (le sous-titre d'à côté) est élargie pour couvrir le passage, sans empiéter sur les
+    autres répliques. Renvoie la réplique, ou None s'il n'y en a pas assez près."""
+    ln = nearest_line(project, start, end)
+    if ln is None:
+        return None
+    others = sorted((x for x in project.lines if x is not ln), key=lambda x: x.start)
+    lo = max([x.end + 0.02 for x in others if x.end <= ln.start + 0.01] + [0.0])
+    hi = min([x.start - 0.02 for x in others if x.start >= ln.end - 0.01] + [1e9])
+    ln.start = round(max(lo, min(ln.start, start)), 3)
+    ln.end = round(min(hi, max(ln.end, end)), 3)
+    ln.audio_key = ""  # créneau changé : voix à refaire
+    _invalidate_audio(project)
+    update(project)
+    return ln
+
+
+def add_line(project: Project, start: float, end: float, en: str = "", fr: str = "", source: str = "manual"):
+    """Nouvelle réplique sur un passage ; la personne est celle de la réplique la plus proche."""
+    from .models import Line
+
+    near = nearest_line(project, start, end, max_dist=1e9)
+    ln = Line(start=round(start, 3), end=round(end, 3), en=en.strip(), fr=fr.strip(), fr_edited=bool(fr.strip()),
+              source=source, person_id=near.person_id if near is not None else "")
+    if not ln.person_id and project.people:
+        ln.person_id = project.people[0].id
+    project.lines.append(ln)
+    project.lines.sort(key=lambda x: x.start)
+    _invalidate_audio(project)
+    update(project)
+    return ln
+
+
+def set_state(project: Project, start: float, end: float, state: str) -> None:
+    """« open » (à traiter), « ignored » (ne pas doubler : bruit, cri) ou « vo » (voix d'origine gardée)."""
+    for g in project.gaps:
+        if abs(g["start"] - start) < 0.01 and abs(g["end"] - end) < 0.01:
+            g["state"] = state
+    update(project)

@@ -45,6 +45,7 @@ CHUNK_SECONDS = 600.0
 MIX = "vf_mix.wav"
 VF_VOICES = "vf_voix.wav"
 CUES = "sous-titres.json"  # sous-titres retenus (texte des répliques)
+OCR_SPANS = "sous-titres-image.json"  # moments où un texte est affiché dans la bande (masquage à l'export)
 SUBS_DIR = "sous-titres"  # pistes extraites
 MAX_ATTEMPTS = 3  # essais de synthèse d'une réplique avant la voix de secours
 
@@ -210,6 +211,8 @@ def step_subtitles(project: Project, job: Job) -> str:
                                              st.ocr_fps, glossary_terms(project),
                                              progress=lambda f, m: job.progress(0.1 + 0.85 * f, m), cancel=job.cancel)
         coverage.save_dropped(project, "ocr", ocr_dropped)
+        spans = [[c.start, c.end] for c in raw] + [[d["start"], d["end"]] for d in ocr_dropped]
+        wf(project, OCR_SPANS).write_text(json.dumps(sorted(spans)), encoding="utf-8")
         srt = src.with_name(f"{src.stem} (EN, OCR).srt")
         try:
             ocr.write_srt(raw, srt)
@@ -537,7 +540,7 @@ def _translate_some(project: Project, job: Job, lines: list[Line], avail: list[f
         client = ai.client_from_settings()
         items = [{"en": ln.en, "person": (project.person(ln.person_id).name if project.person(ln.person_id) else ""),
                   "budget": timing.char_budget(avail[i], s.chars_per_second)} for i, ln in enumerate(lines)]
-        extra = {"source": language_name(s.language).lower(), "glossary": glossary(project)}
+        extra = {"source": language_name(project.text_language).lower(), "glossary": glossary(project)}
         # tout le contexte est envoyé, seules les répliques demandées sont mises à jour
         if only is not None:
             sub = [items[i] for i in todo]
@@ -554,7 +557,7 @@ def _translate_some(project: Project, job: Job, lines: list[Line], avail: list[f
             result = {i: res[i] for i in todo}
     else:
         to_fr = TRANSLATORS.get(s.translator if s.translator in ("opus", "opus_big") else "opus_big")[1]
-        lang = s.language
+        lang = project.text_language
         _name, _iso, direct, to_en = LANGUAGES.get(lang, ("", "", "", "Helsinki-NLP/opus-mt-mul-en"))
         tool = _tool("analysis")
         job.progress(0.0, "Chargement du traducteur…")
@@ -865,7 +868,7 @@ def export_files(project: Project, job: Job, out_dir: Path | None = None, previe
         if want_fr or o.srt_files:
             srt_fr = subtitles.write_srt(project.lines, srt_dir / f"{base}.fr.srt", "fr", colors)
         if o.subtitles_en or o.srt_files:
-            srt_en = subtitles.write_srt(project.lines, srt_dir / f"{base}.{project.settings.language}.srt", "orig",
+            srt_en = subtitles.write_srt(project.lines, srt_dir / f"{base}.{project.text_language}.srt", "orig",
                                          colors)
         if o.srt_files:
             files += [p for p in (srt_fr, srt_en) if p is not None]
@@ -877,17 +880,24 @@ def export_files(project: Project, job: Job, out_dir: Path | None = None, previe
                                              v.width, v.height, project.display_title)
             if srt_en is not None and o.container == "mkv":
                 srt_en = subtitles.write_ass(project.lines, project.people,
-                                             wd / f"sous-titres.{project.settings.language}.ass", "orig", colors,
+                                             wd / f"sous-titres.{project.text_language}.ass", "orig", colors,
                                              v.width, v.height, project.display_title)
     ext = ".mkv" if o.container == "mkv" else ".mp4"
     suffix = "VOSTFR" if vostfr else "VF"
     target = (project_io.work_dir(project) / f"apercu{ext}") if preview else out_dir / f"{base} ({suffix}){ext}"
+    mask = ""
+    if not preview and o.mask_hardsubs and project.subs.kind == "ocr" and wf(project, OCR_SPANS).exists():
+        spans = json.loads(wf(project, OCR_SPANS).read_text(encoding="utf-8"))
+        mask = media.mask_filter(tuple(project.subs.zone), spans, project.video.height or 1080, o.mask_style)
+        if mask:
+            job.log(f"Sous-titres d'origine masqués ({'flou' if o.mask_style == 'blur' else 'bandeau'}) : "
+                    "la vidéo est réencodée, l'export est plus long.")
     media.export_video(Path(project.source_video), None if vostfr else mix_path, target, o, project.video.duration,
-                       project.video.height or 1080,
+                       project.video.height or 1080, mask=mask,
                        srt_fr=None if preview else (srt_fr if want_fr else None),
                        srt_en=None if preview else (srt_en if o.subtitles_en else None),
                        original_codec=project.video.audio_codec, normalize=False if preview else None,
-                       original_language=project.settings.language,
+                       original_language=project.settings.language, text_language=project.text_language,
                        progress=lambda f: job.progress(f * (0.85 if o.audio_only and not preview and not vostfr
                                                             else 1.0),
                                                        "Préparation de la vidéo"),

@@ -389,6 +389,14 @@ class Project:
     def display_title(self) -> str:
         return self.title or (self.path.stem if self.path else "") or "Projet sans titre"
 
+    @property
+    def text_language(self) -> str:
+        """Langue du texte d'origine des répliques : celle des sous-titres s'ils donnent le texte (anglais sur un
+        épisode japonais), sinon celle de l'audio."""
+        if self.subs.kind in ("track", "file", "ocr") and self.subs.count > 0 and self.subs.language:
+            return self.subs.language
+        return self.settings.language
+
     def person(self, person_id: str) -> Person | None:
         return next((p for p in self.people if p.id == person_id), None)
 
