@@ -35,6 +35,7 @@ DARK = 70  # luminance maximale du contour
 SAMPLE_WIDTH = 640
 MAX_WIDTH = 1280  # largeur de la bande analysée (1080p réduit, 720p tel quel)
 BATCH = 64  # sous-titres par fichier envoyé à l'OCR
+LAST_REDO = ""  # dernière lecture : sous-titres relus avec la détection complète (journal, banc d'essai)
 
 Progress = Callable[[float, str], None]
 
@@ -69,7 +70,8 @@ def similar(a: np.ndarray, b: np.ndarray, tol: float = 0.25) -> bool:
         return sa == sb
     da, db = dilate(a, 1), dilate(b, 1)
     diff = int((a & ~db).sum()) + int((b & ~da).sum())
-    return diff <= tol * (sa + sb)
+    # rapporté au plus petit des deux : un sous-titre qui apparaît sur un décor déjà chargé reste un changement
+    return diff <= tol * 2 * min(sa, sb)
 
 
 # ---------------------------------------------------------------------------------------
@@ -199,13 +201,14 @@ def _split_run(rows: np.ndarray, run: list[int]) -> list[list[int]]:
     prof = rows[a:b].astype(float)
     lo, hi = int(h * 0.3), int(h * 0.7)
     k = lo + int(np.argmin(prof[lo:hi]))
-    if prof[k] > 0.25 * prof.max():
+    if prof[k] > 0.35 * prof.max():
         return [run]
     return [p for part in ([a, a + k], [a + k + 1, b]) for p in _split_run(rows, part)]
 
 
-def cut_lines(g: np.ndarray, max_lines: int = 3) -> list[np.ndarray]:
-    """Lignes de texte d'une bande (niveaux de gris) : bandes horizontales riches en texte, recadrées."""
+def cut_lines(g: np.ndarray, max_lines: int = 3, report: list | None = None) -> list[np.ndarray]:
+    """Lignes de texte d'une bande (niveaux de gris) : bandes horizontales riches en texte, recadrées.
+    ``report`` reçoit le nombre de lignes candidates laissées de côté (doute : sous-titre peut-être incomplet)."""
     m = text_mask(g, near=3)
     rows = m.sum(axis=1)
     if rows.max(initial=0) < 4:
@@ -222,8 +225,10 @@ def cut_lines(g: np.ndarray, max_lines: int = 3) -> list[np.ndarray]:
         else:
             i += 1
     merged: list[list[int]] = []
-    for a, b in runs:  # accents, jambages : quelques pixels d'écart
-        if merged and a - merged[-1][1] <= 3:
+    for a, b in runs:  # accents, jambages : petit morceau à quelques pixels d'une ligne (deux lignes pleines restent
+        # séparées même si leurs contours se touchent presque)
+        if merged and a - merged[-1][1] <= 3 and min(b - a, merged[-1][1] - merged[-1][0]) < \
+                0.4 * max(b - a, merged[-1][1] - merged[-1][0]):
             merged[-1][1] = b
         else:
             merged.append([a, b])
@@ -241,6 +246,8 @@ def cut_lines(g: np.ndarray, max_lines: int = 3) -> list[np.ndarray]:
                 block.insert(0, r)
             else:
                 break
+        if report is not None:
+            report.append(len(lines) - len(block))
         lines = block
     out = []
     for a, b in lines[:max_lines]:
@@ -263,6 +270,9 @@ class Segment:
     start: float
     end: float
     names: list[str] = field(default_factory=list)  # lignes envoyées à l'OCR
+    heights: list[int] = field(default_factory=list)  # hauteur de chaque ligne découpée
+    left_out: int = 0  # lignes candidates laissées de côté par le découpage
+    band: tuple[str, str] = ("", "")  # (fichier, nom) de la bande entière, relue en cas de doute
 
 
 def scan(video: Path, duration: float, vw: int, vh: int, zone: tuple[float, float], fps: float, out_dir: Path,
@@ -284,7 +294,12 @@ def scan(video: Path, duration: float, vw: int, vh: int, zone: tuple[float, floa
     c0, c1 = int(tw / 2 * 0.2), int(tw / 2 * 0.8)
     segments: list[Segment] = []
     batch: dict[str, np.ndarray] = {}
+    bands: dict[str, np.ndarray] = {}
     files: list[Path] = []
+    band_files: list[Path] = []
+
+    def band_file() -> Path:
+        return Path(out_dir) / f"bandes{len(band_files):04d}.npz"
 
     def flush():
         if batch:
@@ -292,6 +307,11 @@ def scan(video: Path, duration: float, vw: int, vh: int, zone: tuple[float, floa
             np.savez(f, **batch)
             files.append(f)
             batch.clear()
+        if bands:
+            f = band_file()
+            np.savez_compressed(f, **bands)
+            band_files.append(f)
+            bands.clear()
 
     cur = None  # [début, fin, masque de référence, meilleure image, nombre de pixels]
 
@@ -299,11 +319,18 @@ def scan(video: Path, duration: float, vw: int, vh: int, zone: tuple[float, floa
         if c is None or c[1] - c[0] < 0.2:
             return
         seg = Segment(round(c[0], 3), round(c[1], 3))
-        for j, crop in enumerate(cut_lines(c[3])):
+        report: list[int] = []
+        crops = cut_lines(c[3], report=report)
+        seg.left_out = sum(report)
+        for j, crop in enumerate(crops):
             name = f"s{len(segments)}_l{j}"
             batch[name] = crop
             seg.names.append(name)
+            seg.heights.append(int(crop.shape[0]))
         if seg.names:
+            key = f"s{len(segments)}"
+            bands[key] = c[3]
+            seg.band = (str(band_file()), key)
             segments.append(seg)
         if len(batch) >= BATCH:
             flush()
@@ -403,6 +430,9 @@ def build_cues(segments: list[Segment], texts: dict[str, list], duration: float,
         conf = min(p[1] for p in parts)
         short = len(_norm(text))
         # un seul signe : un élément du décor ; « Ha ! », « No ! » sont gardés s'ils sont nets
+        if not re.search(r"[^\W\d_]", text):  # que des chiffres ou des signes : compteur, numéro du décor
+            dropped.append({"start": seg.start, "end": seg.end, "text": text[:120], "reason": "pas de lettres (décor)"})
+            continue
         if short <= 1 or conf < 0.4 or (short <= 2 and conf < 0.6):
             dropped.append({"start": seg.start, "end": seg.end, "text": text[:120],
                             "reason": f"lecture illisible (confiance {conf:.0%})"})
@@ -447,16 +477,88 @@ def build_cues(segments: list[Segment], texts: dict[str, list], duration: float,
     return kept, dropped
 
 
+def doubtful(segments: list[Segment], texts: dict[str, list]) -> list[Segment]:
+    """Sous-titres à relire avec la détection complète : lecture peu sûre, ligne vide, ou ligne découpée bien plus
+    haute qu'une ligne normale (deux lignes collées, décor mêlé au texte)."""
+    sure = sorted(h for s in segments for n, h in zip(s.names, s.heights) if float(texts.get(n, ["", 0])[1]) >= 0.95)
+    line_h = sure[len(sure) // 2] if sure else 0
+    out = []
+    for s in segments:
+        read = [(str(texts.get(n, [""])[0]).strip(), float(texts.get(n, ["", 0.0])[1])) for n in s.names]
+        good = [c for t, c in read if t]
+        long_enough = s.end - s.start >= 0.6  # un vrai sous-titre reste affiché ; le décor change vite
+        tall = line_h > 0 and any(h > 1.6 * line_h for h in s.heights)
+        if not good:
+            if long_enough:
+                out.append(s)
+        elif min(good) < 0.8 or tall or (s.left_out and long_enough):
+            out.append(s)
+    return out
+
+
+def lines_from_boxes(boxes: list) -> list[tuple[str, float]]:
+    """Boîtes de la détection → lignes (de haut en bas), seulement le bloc de lignes du bas (le sous-titre)."""
+    boxes = [b for b in boxes if str(b[0]).strip() and float(b[1]) >= 0.6]
+    rows: list[list] = []  # [haut, bas, [(gauche, texte, confiance)]]
+    for text, conf, top, bottom, left in sorted(boxes, key=lambda b: (b[2] + b[3]) / 2):
+        mid = (top + bottom) / 2
+        row = next((r for r in rows if r[0] <= mid <= r[1]), None)
+        if row is None:
+            rows.append([top, bottom, [(left, str(text).strip(), float(conf))]])
+        else:
+            row[0], row[1] = min(row[0], top), max(row[1], bottom)
+            row[2].append((left, str(text).strip(), float(conf)))
+    if not rows:
+        return []
+    rows.sort(key=lambda r: r[0])
+    block = [rows[-1]]
+    for r in reversed(rows[:-1]):
+        if block[0][0] - r[1] <= 1.0 * max(r[1] - r[0], block[0][1] - block[0][0]):
+            block.insert(0, r)
+        else:
+            break
+    out = []
+    for _top, _bottom, items in block:
+        items.sort()
+        out.append((" ".join(t for _l, t, _c in items), min(c for _l, _t, c in items)))
+    return out
+
+
 def read_hardsubs(video: Path, duration: float, vw: int, vh: int, zone: tuple[float, float], tool, fps: float = 12.5,
                   terms: list[str] | None = None, progress: Progress | None = None,
                   cancel: threading.Event | None = None) -> tuple[list[Cue], list[dict]]:
-    """Chaîne complète : lecture de la bande, OCR des lignes, sous-titres."""
+    """Chaîne complète : lecture de la bande, OCR rapide des lignes, relecture complète des cas douteux."""
     with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
         segs, files = scan(video, duration, vw, vh, zone, fps, Path(td),
-                           (lambda v, m: progress(v * 0.6, m)) if progress else None, cancel)
+                           (lambda v, m: progress(v * 0.55, m)) if progress else None, cancel)
         if not segs:
             return [], []
-        texts = tool.ocr_lines(files, on_progress=(lambda v, m: progress(0.6 + 0.4 * v, m)) if progress else None)
+        texts = tool.ocr_lines(files, on_progress=(lambda v, m: progress(0.55 + 0.15 * v, m)) if progress else None)
+        redo = doubtful(segs, texts) if hasattr(tool, "ocr_full") else []
+        global LAST_REDO
+        LAST_REDO = f"{len(redo)} sur {len(segs)}"
+        if redo:
+            # bandes des cas douteux regroupées, relues avec la détection des lignes (plus lente, plus sûre)
+            todo, cache = [], {}
+            for k in range(0, len(redo), BATCH):
+                pack = {}
+                for s in redo[k:k + BATCH]:
+                    f, key = s.band
+                    if f not in cache:
+                        with np.load(f) as z:
+                            cache = {f: {n: z[n] for n in z.files}}
+                    pack[key] = cache[f][key]
+                out = Path(td) / f"relire{k // BATCH:04d}.npz"
+                np.savez(out, **pack)
+                todo.append(out)
+            boxes = tool.ocr_full(todo, on_progress=(lambda v, m: progress(0.7 + 0.3 * v, m)) if progress else None)
+            for s in redo:
+                lines = lines_from_boxes(boxes.get(s.band[1], []))
+                if not lines:
+                    continue
+                s.names = [f"{s.band[1]}_d{j}" for j in range(len(lines))]
+                for name, (text, conf) in zip(s.names, lines):
+                    texts[name] = [text, conf]
     return build_cues(segs, texts, duration, terms)
 
 

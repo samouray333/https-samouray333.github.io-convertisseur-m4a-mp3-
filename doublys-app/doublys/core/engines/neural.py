@@ -702,6 +702,10 @@ class OcrTool(WhisperTool):
         """Lignes découpées (tableaux gris dans des .npz) → {nom: [texte, confiance]}."""
         return self._call("ocr_lines", 6 * 3600, on_progress, files=[str(f) for f in files]).get("texts", {})
 
+    def ocr_full(self, files: list[Path], on_progress=None) -> dict[str, list]:
+        """Bandes entières (cas douteux) → {nom: [[texte, confiance, haut, bas, gauche], …]}."""
+        return self._call("ocr_full", 6 * 3600, on_progress, files=[str(f) for f in files]).get("boxes", {})
+
 
 class AnalysisTool(WhisperTool):
     """Environnement « analyse » : séparation des voix, empreintes vocales, traduction Opus-MT."""

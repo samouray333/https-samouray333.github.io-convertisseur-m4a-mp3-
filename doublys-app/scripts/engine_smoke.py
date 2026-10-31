@@ -243,6 +243,8 @@ def full(device: str, mode: str, translator: str, minutes: float = 0.0, lang: st
         cues = pipeline.load_cues(pr)
         if len(cues) != len(expected_subs):
             errors.append(f"{len(cues)} sous-titres lus au lieu de {len(expected_subs)}")
+            for c in cues:
+                log(f"  lu [{c.start:6.2f}-{c.end:6.2f}] ({c.conf:.0%}) « {c.text} »")
         for c, (a, b, t) in zip(cues, expected_subs):
             ratio = difflib.SequenceMatcher(a=c.text.replace("\n", " "), b=t.replace("\n", " ")).ratio()
             log(f"  OCR [{c.start:6.2f}-{c.end:6.2f}] attendu [{a:6.2f}-{b:6.2f}] {ratio:.0%} « {c.text} »")
@@ -399,6 +401,7 @@ def ocr_bench(device: str, minutes: float) -> int:
         log("ÉCHEC : bande des sous-titres non trouvée")
         return 1
     tz = time.time() - t0
+    log(f"Bande des sous-titres : {zone.top:.3f} à {zone.bottom:.3f} (présents sur {zone.presence:.0%} des images)")
     found, dropped = ocr.read_hardsubs(video, info.duration, info.width, info.height, (zone.top, zone.bottom),
                                        engines.get_tool("ocr"), 12.5,
                                        progress=lambda f, m: log(f"  {f * 100:5.1f} % {m}") if int(f * 1000) % 100 == 0
@@ -413,6 +416,10 @@ def ocr_bench(device: str, minutes: float) -> int:
         if best is not None and difflib.SequenceMatcher(a=best.text, b=c[2]).ratio() > 0.9 and \
                 abs(best.start - c[0]) <= 0.15:
             good += 1
+        else:
+            got = f"{best.start:.2f}-{best.end:.2f} {best.text!r}" if best is not None else "rien"
+            log(f"  attendu {c[0]:.2f}-{c[1]:.2f} {c[2]!r} ; lu {got}")
+    log(f"Relus avec la détection complète : {getattr(ocr, 'LAST_REDO', '?')}")
     log(f"OCR de {minutes:.0f} min : {total / 60:.1f} min (zone {tz:.0f} s) ; {len(found)} sous-titres lus, "
         f"{good}/{len(cues)} exacts (texte ≥ 90 %, début à ± 0,15 s), {len(dropped)} écartés")
     limit = minutes / 22 * 10 * 60

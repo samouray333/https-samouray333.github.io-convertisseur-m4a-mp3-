@@ -968,6 +968,8 @@ class OcrBackend(Backend):
         from rapidocr_onnxruntime import RapidOCR
 
         self.engine = RapidOCR()
+        # détection : la bande est réduite (côté le plus long ≤ 960 px) au lieu d'être agrandie : 3 fois plus rapide
+        self.full_engine = RapidOCR(det_limit_type="max", det_limit_side_len=960)
         return {"device": "cpu"}
 
     def ocr_lines(self, req):
@@ -993,12 +995,35 @@ class OcrBackend(Backend):
             progress((k + 1) / total, f"{done} lignes lues")
         return {"texts": out}
 
+    def ocr_full(self, req):
+        """{"files": [.npz]} : bande entière, détection des lignes puis lecture → {nom: [[texte, confiance, haut,
+        bas, gauche], …]} (cas douteux : lignes collées, décor chargé)."""
+        import numpy as np
+
+        out = {}
+        files = list(req.get("files") or [])
+        for k, f in enumerate(files):
+            with np.load(f) as z:
+                for name in z.files:
+                    img = z[name]
+                    if img.ndim == 2:
+                        img = np.repeat(img[:, :, None], 3, axis=2)
+                    res, _ = self.full_engine(np.ascontiguousarray(img), use_cls=False)
+                    boxes = []
+                    for box, text, conf in res or []:
+                        ys = [float(pt[1]) for pt in box]
+                        xs = [float(pt[0]) for pt in box]
+                        boxes.append([str(text), round(float(conf), 3), min(ys), max(ys), min(xs)])
+                    out[name] = boxes
+            progress((k + 1) / max(1, len(files)), f"{len(out)} sous-titres relus")
+        return {"boxes": out}
+
 
 BACKENDS = {"dummy": DummyBackend, "xtts": XttsBackend, "chatterbox": ChatterboxBackend, "kokoro": KokoroBackend,
             "chatterbox_vc": ChatterboxVCBackend, "whisper": WhisperBackend, "rvc": RVCBackend,
             "analysis": AnalysisBackend, "ocr": OcrBackend}
 COMMANDS = ("convert", "transcribe", "transcribe_words", "vad", "detect_language", "separate", "embed", "translate",
-            "ocr_lines")
+            "ocr_lines", "ocr_full")
 
 
 # =======================================================================================
