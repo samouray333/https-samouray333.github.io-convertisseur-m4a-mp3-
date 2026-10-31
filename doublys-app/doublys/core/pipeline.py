@@ -31,7 +31,7 @@ from .engines import EngineError, ServiceBlocked
 from .engines.neural import WorkerDied
 from .ffmpeg import Cancelled
 from .models import (AUTO_LANGUAGE, LANGUAGES, STEP_LABELS, TRANSLATORS, Line, Project, VoiceProfile,
-                     language_name)
+                     language_name, new_id)
 
 log = logging.getLogger(__name__)
 
@@ -207,7 +207,16 @@ def step_subtitles(project: Project, job: Job) -> str:
     elif chosen.kind == "file":
         raw = subsources.load_file(Path(chosen.path))
     else:
-        tool = _tool("ocr")
+        tool = engines.get_tool("ocr")
+        if tool is None or not tool.is_ready():
+            from . import winocr
+
+            if not winocr.available():
+                raise StepError("Sous-titres incrustés trouvés dans l'image : installez le moteur « OCR » (page "
+                                "Moteurs IA) pour les lire, ou choisissez « Voix seule » dans la liste Texte. "
+                                + winocr.status_message())
+            job.log("Moteur OCR non installé : lecture de secours avec l'OCR de Windows (moins précise).")
+            tool = winocr.WindowsOcrTool()
         v = project.video
         raw, ocr_dropped = ocr.read_hardsubs(src, v.duration, v.width, v.height, tuple(subs.zone), tool,
                                              st.ocr_fps, glossary_terms(project),
@@ -458,6 +467,84 @@ def step_segment(project: Project, job: Job) -> str:
     return f"{len(lines)} répliques" + (f" (texte : {src})" if src and has_cues(project) else "")
 
 
+SPLIT_DISTANCE = 0.7  # distance (cosinus) entre les deux moitiés d'une réplique au-delà de laquelle ce sont deux voix
+SPLIT_MIN_SIDE = 0.7  # chaque partie doit durer au moins 0,7 s pour que son empreinte soit fiable
+
+
+def _pause_inside(ln: Line, talk: list) -> float | None:
+    """Meilleur endroit où couper une réplique : le plus grand silence intérieur (entre deux mots, ou dans la parole
+    repérée), avec au moins 0,7 s de parole de chaque côté ; None s'il n'y en a pas."""
+    best, best_gap = None, 0.15
+    words = segment.to_words(ln.words)
+    for w0, w1 in zip(words, words[1:]):
+        gap = w1.start - w0.end
+        if gap > best_gap and w0.end - ln.start >= SPLIT_MIN_SIDE and ln.end - w1.start >= SPLIT_MIN_SIDE:
+            best, best_gap = (w0.end + w1.start) / 2, gap
+    if best is None and talk:
+        inner = [r for r in talk if r[1] > ln.start and r[0] < ln.end]
+        for r0, r1 in zip(inner, inner[1:]):
+            gap = r1[0] - r0[1]
+            mid = (r0[1] + r1[0]) / 2
+            if gap > best_gap and mid - ln.start >= SPLIT_MIN_SIDE and ln.end - mid >= SPLIT_MIN_SIDE:
+                best, best_gap = mid, gap
+    return best
+
+
+def _split_text(text: str, frac: float) -> tuple[str, str] | None:
+    """Texte d'un sous-titre coupé en deux à la fin de phrase la plus proche de ``frac`` (part du temps)."""
+    import re
+
+    cuts = [m.end() for m in re.finditer(r"[.!?…]+[\"')\]»”]*\s+", text)]
+    if not cuts:
+        return None
+    k = min(cuts, key=lambda c: abs(c / max(1, len(text)) - frac))
+    a, b = text[:k].strip(), text[k:].strip()
+    return (a, b) if a and b else None
+
+
+def split_speaker_changes(project: Project, job: Job, tool, voice16: Path) -> int:
+    """Répliques où deux personnes parlent l'une après l'autre (échanges rapides, pause courte) : les empreintes des
+    deux moitiés sont comparées ; très différentes, la réplique est coupée en deux. Sinon une « personne » mélange
+    deux voix et le regroupement se trompe."""
+    talk = coverage.load_speech(project) or []
+    cands = []
+    for ln in project.lines:
+        if ln.length >= 2 * SPLIT_MIN_SIDE + 0.2 and not ln.fr_edited and not ln.no_dub:
+            t = _pause_inside(ln, talk)
+            if t is not None:
+                cands.append((ln, t))
+    if not cands:
+        return 0
+    segs = [seg for ln, t in cands for seg in ((ln.start, t), (t, ln.end))]
+    job.progress(0.0, "Recherche des changements de voix…")
+    emb = _guard(job, tool.embed, voice16, segs)
+    done = 0
+    for k, (ln, t) in enumerate(cands):
+        a, b = np.asarray(emb[2 * k], dtype=float), np.asarray(emb[2 * k + 1], dtype=float)
+        dist = 1.0 - float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+        if dist <= SPLIT_DISTANCE:
+            continue
+        if ln.words:
+            parts = segment.split_line(ln, t)
+            if parts is None:
+                continue
+            first, second = parts
+        else:  # sous-titre : coupé à la fin de phrase la plus proche, sinon laissé entier
+            texts = _split_text(ln.en, (t - ln.start) / max(0.1, ln.length))
+            if texts is None:
+                continue
+            first = dataclasses.replace(ln, id=new_id("l_"), end=round(t, 3), en=texts[0], fr="", fr_edited=False)
+            second = dataclasses.replace(ln, id=new_id("l_"), start=round(t, 3), en=texts[1], fr="",
+                                         fr_edited=False)
+        first.source = second.source = ln.source
+        first.ocr_conf = second.ocr_conf = ln.ocr_conf
+        i = project.lines.index(ln)
+        project.lines[i:i + 1] = [first, second]
+        job.log(f"Réplique à {ln.start:.1f} s : deux voix différentes, coupée en deux à {t:.1f} s")
+        done += 1
+    return done
+
+
 def step_speakers(project: Project, job: Job) -> str:
     s = project.settings
     if not project.lines:
@@ -465,6 +552,7 @@ def step_speakers(project: Project, job: Job) -> str:
     _voice, voice16 = speech_source(project)
     tool = _tool("analysis")
     job.progress(0.0, "Chargement du modèle d'empreintes vocales…")
+    split = split_speaker_changes(project, job, tool, voice16)
     segs = [(ln.start, ln.end) for ln in project.lines]
     emb = _guard(job, tool.embed, voice16, segs, on_progress=lambda v, m: job.progress(v, m))
     embeddings = {ln.id: e for ln, e in zip(project.lines, emb)}
@@ -479,6 +567,8 @@ def step_speakers(project: Project, job: Job) -> str:
         matched = series_lib.apply_to_project(project)
         if matched:
             found = f", dont {matched} personnage(s) de la série « {project.series} » reconnu(s)"
+    if split:
+        found += f" ; {split} réplique(s) à deux voix coupée(s)"
     return f"{len(project.people)} personne(s){found}"
 
 

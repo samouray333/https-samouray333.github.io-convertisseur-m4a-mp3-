@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 import time
@@ -274,20 +275,26 @@ def series_test(device: str) -> int:
     work = Path(tempfile.mkdtemp(prefix="doublys-serie-"))
     settings().set("projects_dir", str(work / "projets"))
     series.delete("Série de test")
-    steps = ["extract", "separate", "transcribe", "segment", "speakers", "translate", "voices"]
+    steps = ["extract", "subtitles", "separate", "transcribe", "segment", "speakers", "translate", "voices"]
 
     def episode(lang: str, title: str):
         (work / title).mkdir(parents=True, exist_ok=True)
         video, truth = make_video(work / title, 0.0, lang)
         pr = project_io.create_project(video, work / "projets", title)
         pr.series = "Série de test"
+        pr.settings.pause_split = float(os.environ.get("DOUBLYS_TEST_PAUSE", pr.settings.pause_split))
         for st in steps:
             pipeline.run_step(pr, st, pipeline.Job(on_log=log))
-        voice_of = {}
-        for ln in pr.lines:
-            mid = (ln.start + ln.end) / 2
-            who = next((v for a, b, v in truth if a - 0.3 <= mid <= b + 0.3), None)
-            voice_of.setdefault(ln.person_id, who)
+        votes: dict[str, dict] = {}
+        for ln in pr.lines:  # voix réelle de chaque personne : celle qui parle le plus dans ses répliques
+            for a, b, v in truth:
+                common = min(b, ln.end) - max(a, ln.start)
+                if common > 0:
+                    votes.setdefault(ln.person_id, {}).setdefault(v, 0.0)
+                    votes[ln.person_id][v] += common
+        voice_of = {pid: max(d, key=d.get) for pid, d in votes.items()}
+        log(f"{title} : {len(pr.lines)} répliques, {len(pr.people)} personnes "
+            f"({', '.join(f'{p.name}={voice_of.get(p.id)}' for p in pr.people)})")
         return pr, voice_of
 
     ep1, v1 = episode("en4", "Episode 1")

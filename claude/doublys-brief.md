@@ -472,10 +472,10 @@ Les tests lourds (OCR réel, langue, performance) vont dans le job optionnel « 
 | R20 génériques chantés (style, karaoké, musique dominante ≥ 60 s, plages « ne pas doubler ») | fait | plages et zone OCR gardées par série |
 | R21 bande détectée et réglable à la souris | fait | bouton « Zone… » ; la zone du haut (panneaux) n'est pas lue : ils ne sont pas doublés |
 | R22 / R23 lecture en flux et détection des changements | fait, **méthode modifiée** | au lieu de 4 im/s + dichotomie à 25 im/s : une seule lecture à 12,5 im/s (réglable 4 à 25) de la bande seule, le masque est comparé à chaque image ; précision ± 0,08 s, sans second décodage |
-| R24 RapidOCR dans un environnement « ocr » | fait | **reconnaissance seule** sur des lignes découpées par le masque (25 ms par ligne au lieu de 1,5 s pour la détection complète). Repli `Windows.Media.Ocr` : **non fait** (non vérifiable ici, langue OCR anglaise rarement installée ; RapidOCR s'installe avec les autres moteurs) |
+| R24 RapidOCR dans un environnement « ocr » | fait | **reconnaissance seule** sur des lignes découpées par le masque (25 ms par ligne au lieu de 1,5 s pour la détection complète). Repli `Windows.Media.Ocr` : **fait (1.2.3)**, par Windows PowerShell, utilisé si RapidOCR n'est pas installé et que la langue anglaise de reconnaissance est présente ; message clair sinon ; vérifié par l'autotest Windows |
 | R25 prétraitement | fait | partie centrale de l'image pour ignorer le décor sur les côtés ; l'agrandissement est fait par RapidOCR (hauteur 48 px) |
 | R26 fusion des textes quasi identiques | fait | |
-| R27 nettoyage OCR | fait, **sans dictionnaire anglais** | règles l/I/1, 0/O, ponctuation, apostrophes + glossaire (lettres confondables) ; relecture DeepSeek en option (page Contrôle) ; confiance < 80 % signalée |
+| R27 nettoyage OCR | fait ; **vocabulaire (1.2.3)** : mots anglais courants + mots lus avec certitude dans l'épisode + glossaire (lettres confondues, une lettre fausse dans un nom, mots collés) au lieu d'un dictionnaire complet | règles l/I/1, 0/O, ponctuation, apostrophes + glossaire (lettres confondables) ; relecture DeepSeek en option (page Contrôle) ; confiance < 80 % signalée |
 | R28 panneaux, karaoké, crédits, logos écartés | fait | |
 | R29 `<nom> (EN, OCR).srt` réutilisé | fait | retrouvé comme fichier voisin |
 | R36 masquage à l'export (flou ou bandeau, seulement pendant les sous-titres) | fait | encodeurs : Media Foundation puis OpenH264 (libx264 seulement s'il est présent) |
@@ -495,3 +495,12 @@ Les tests lourds (OCR réel, langue, performance) vont dans le job optionnel « 
   doublées, **100 % de la parole couverte**, sous-titres d'origine floutés à l'export.
 - Lecture OCR : 3 min de vidéo 1080p lues en 14 s, 47 sous-titres exacts sur 47 (soit environ 2 min pour 22 min).
 - Tests automatisés : 83 tests, autotest 14 contrôles.
+
+### 1.2.3 : échecs corrigés
+
+- Test « séries » en échec sous Windows : la transcription y avait réuni deux personnes dans une même réplique
+  (11 répliques au lieu de 17), si bien qu'une « personne » mélangeait deux voix. Les répliques assez longues avec un
+  silence intérieur sont maintenant comparées moitié par moitié (empreintes vocales) et coupées si ce sont deux voix
+  (distance > 0,7) ; vérifié avec les vrais moteurs : 6 fusions forcées sur 6 recoupées, 4 personnes exactes.
+- OCR : sous-titres sur deux lignes, décor chargé, chiffres du décor (1.2.2) ; banc d'essai Windows : 339/339 sur
+  22 min en 3,5 min.

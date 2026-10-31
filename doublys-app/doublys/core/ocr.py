@@ -405,6 +405,72 @@ def _confusable(word: str) -> str:
     return w.translate(str.maketrans({"l": "i", "1": "i", "|": "i", "0": "o"}))
 
 
+# mots anglais très courants : base du vocabulaire qui sert à corriger les lectures douteuses (complétée par les mots
+# lus avec certitude dans l'épisode et par le glossaire de la série)
+COMMON_WORDS = set("""a about after again against all almost also always am an and another any are around as ask at
+away back bad be beat because been before behind being believe best better between big both brother but by call came
+can can't cannot careful come coming could couldn't dad day dead did didn't die do does doesn't don't done down
+each earth end enemy enough even ever every everyone everything evil eyes face fight find fine first for forget
+friend friends from get give go going gone good got great had hand happened has have haven't he he's head hear
+heart help her here hero him his hold home how hurry i i'll i'm i've if in into is isn't it it's just keep kill
+know last late leave let let's life like listen little live long look lost love made make man many may maybe me
+mean might mind mom monster more mother much must my name need never new next no not nothing now of off oh okay
+old on once one only or other our out over people place please power protect quick quickly ready really right run
+said save say see seems she should show so some someone something soon sorry stay still stop strong such sure take
+tell than thank thanks that that's the their them then there these they they're thing think this those though
+three through time to today together too town tried true try trust two under understand until up us use very wait
+want was wasn't way we we're well were what what's when where which while who why will win with without won't
+world would wrong yeah yes yet you you're your""".split())
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[A-Za-z0-9|][A-Za-z0-9|']*", text)
+
+
+def vocabulary_fix(cues: list[Cue], terms: list[str] | None = None, sure: float = 0.95) -> int:
+    """Lectures douteuses corrigées avec le vocabulaire de l'épisode : mots courants, mots lus avec certitude au
+    moins deux fois, noms du glossaire. Un mot inconnu devient le mot connu qui ne s'en distingue que par des
+    lettres que l'OCR confond (l/I/1, 0/O, rn/m), ou deux mots connus collés sont séparés. Renvoie le nombre de
+    corrections."""
+    from collections import Counter
+
+    seen: Counter[str] = Counter(w.lower() for c in cues if c.conf >= sure for w in _tokens(c.text))
+    known = set(COMMON_WORDS) | {w for w, n in seen.items() if n >= 2} | {t.lower() for t in terms or []}
+    by_shape: dict[str, str] = {}
+    for w in sorted(known, key=lambda k: -seen.get(k, 0)):
+        by_shape.setdefault(_confusable(w), w)
+    proper = {t.lower(): t for t in terms or []}
+    names = {t.lower() for t in terms or []} | {w for w, n in seen.items() if n >= 2 and len(w) >= 4}
+    fixed = 0
+    for c in cues:
+        if c.conf >= sure:
+            continue
+
+        def repl(m):
+            nonlocal fixed
+            w = m.group(0)
+            low = w.lower()
+            if low in known or len(w) < 2:
+                return w
+            good = by_shape.get(_confusable(w))
+            if good is None and len(low) >= 4:  # une seule lettre fausse dans un nom ou un mot de l'épisode
+                near = [k for k in names if len(k) == len(low) and sum(x != y for x, y in zip(k, low)) == 1]
+                good = near[0] if len(near) == 1 else None
+            if good is None:  # deux mots collés (espace manquant)
+                for k in range(2, len(low) - 1):
+                    if low[:k] in known and low[k:] in known and len(low[k:]) >= 2:
+                        good = f"{low[:k]} {low[k:]}"
+                        break
+            if good is None:
+                return w
+            fixed += 1
+            good = proper.get(good, good)
+            return good[:1].upper() + good[1:] if w[:1].isupper() else good
+
+        c.text = re.sub(r"[A-Za-z0-9|][A-Za-z0-9|']*", repl, c.text)
+    return fixed
+
+
 def _norm(t: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", t.lower())
 
@@ -465,6 +531,7 @@ def build_cues(segments: list[Segment], texts: dict[str, list], duration: float,
         if j > i and cues[j].end - cues[i].start > 10.0:
             fast[i:j + 1] = True
         i = j + 1
+    vocabulary_fix(cues, terms)
     kept = []
     for c, quick in zip(cues, fast):
         if _norm(c.text) in permanent:

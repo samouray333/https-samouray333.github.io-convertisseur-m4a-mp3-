@@ -343,3 +343,43 @@ def test_deepseek_ocr_correction():
 
     out = ai.correct_ocr(["Hello.", "We have to st0p Bandcra."], Client(), ["Geki", "Bandora"])
     assert out == ["Hello.", "We have to stop Bandora."]
+
+
+@needs_ffmpeg
+def test_two_voices_in_one_line_are_split(tmp_path, test_video, make_project):
+    """Deux personnes l'une après l'autre dans une même réplique (pause courte) : coupée avant le regroupement."""
+    from doublys.core import pipeline, segment
+    from doublys.selftest import SCRIPT
+
+    pr = make_project(test_video)
+    pr.settings.use_subtitles = False
+    for step in ("extract", "subtitles", "separate", "transcribe", "segment"):
+        pipeline.run_step(pr, step, pipeline.Job())
+    assert len(pr.lines) == len(SCRIPT)
+    mixed = segment.merge_lines(pr.lines[0], pr.lines[1])  # voix grave puis voix aiguë
+    pr.lines[0:2] = [mixed]
+    pipeline.run_step(pr, "speakers", pipeline.Job())
+    assert len(pr.lines) == len(SCRIPT) and len(pr.people) == 2
+    low = {ln.person_id for ln, (_s, _d, f0) in zip(pr.lines, SCRIPT) if f0 < 200}
+    high = {ln.person_id for ln, (_s, _d, f0) in zip(pr.lines, SCRIPT) if f0 > 200}
+    assert len(low) == 1 and len(high) == 1 and low != high
+
+
+def test_vocabulary_fix():
+    from doublys.core import ocr
+    from doublys.core.subsources import Cue
+
+    cues = [Cue(0, 1, "We have to stop Bandora!", conf=0.99), Cue(2, 3, "Bandora is here, Geki.", conf=0.98),
+            Cue(4, 5, "Stop Bandcra. l0ok, Zyurangerlate.", conf=0.7), Cue(6, 7, "Zyuranger go!", conf=0.99),
+            Cue(8, 9, "Zyuranger now.", conf=0.99)]
+    assert ocr.vocabulary_fix(cues, ["Geki", "Bandora"]) == 3
+    assert cues[2].text == "Stop Bandora. look, Zyuranger late."
+    assert cues[0].text == "We have to stop Bandora!"  # lectures sûres inchangées
+
+
+def test_windows_ocr_fallback_off_windows():
+    from doublys.core import winocr
+
+    if winocr.paths.IS_WINDOWS:
+        pytest.skip("vérifié par l'autotest Windows")
+    assert not winocr.available() and "Windows" in winocr.status_message()

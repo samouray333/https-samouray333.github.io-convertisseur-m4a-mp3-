@@ -611,7 +611,11 @@ class DubbingPage(Page):
         need = {"separate": "analysis", "speakers": "analysis", "transcribe": "whisper"}
         st, subs = self.project.settings, self.project.subs
         if st.use_subtitles and subs.kind in ("auto", "ocr"):
-            need["subtitles"] = "ocr"  # lecture des sous-titres incrustés (si la vidéo en a)
+            from ...core import winocr
+
+            ocr_tool = engines.get_tool("ocr")
+            if not (ocr_tool is not None and ocr_tool.is_ready()) and not winocr.available():
+                need["subtitles"] = "ocr"  # lecture des sous-titres incrustés (si la vidéo en a)
         if self.project.settings.translator != "deepseek":
             need["translate"] = "analysis"
         for s in steps:

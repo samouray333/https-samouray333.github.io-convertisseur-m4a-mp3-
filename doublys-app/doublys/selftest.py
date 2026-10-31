@@ -515,6 +515,37 @@ def run_selftest(report_path: Path) -> int:
         assert worst <= 0.15, worst
         return f"bande {pr.subs.zone[0]:.0%}-{pr.subs.zone[1]:.0%}, {len(cues)} sous-titres, écart max {worst:.2f} s"
 
+    @check("OCR de Windows (lecture de secours)", critical=False)
+    def _():
+        from .core import winocr
+
+        if not paths.IS_WINDOWS:
+            return "ignoré : disponible uniquement sous Windows"
+        msg = winocr.status_message()
+        if not winocr.available():
+            return msg
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
+        from PySide6.QtWidgets import QApplication
+
+        holder["app"] = QApplication.instance() or QApplication(sys.argv[:1])  # polices : application Qt requise
+        img = QImage(640, 70, QImage.Format_Grayscale8)
+        img.fill(QColor(60, 60, 60))
+        painter = QPainter(img)
+        painter.setRenderHint(QPainter.Antialiasing)
+        path = QPainterPath()
+        font = QFont("Arial", 28)
+        font.setBold(True)
+        path.addText(20, 50, font, "We have to stop Bandora!")
+        painter.strokePath(path, QPen(Qt.black, 5))
+        painter.fillPath(path, Qt.white)
+        painter.end()
+        arr = np.frombuffer(img.constBits(), dtype=np.uint8).reshape(img.height(), img.bytesPerLine())[:, :640].copy()
+        np.savez(work / "winocr.npz", ligne=arr)
+        text = winocr.WindowsOcrTool().ocr_lines([work / "winocr.npz"]).get("ligne", [""])[0]
+        assert "Bandora" in text, text
+        return f"{msg} Lu : « {text} »"
+
     @check("voix Windows (SAPI)", critical=False)
     def _():
         from .core.engines.sapi import SapiEngine
