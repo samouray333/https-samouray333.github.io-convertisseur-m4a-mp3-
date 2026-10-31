@@ -1,6 +1,6 @@
 [project]
 name = "doublys"
-version = "1.2.0"
+version = "1.2.1"
 description = "Doublys (Echo Matras) : doublage automatique de vidéos de l'anglais vers le français, sur votre ordinateur."
 requires-python = ">=3.10"
 

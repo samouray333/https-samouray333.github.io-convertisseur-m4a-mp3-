@@ -677,8 +677,9 @@ class WhisperBackend(Backend):
         total = len(audio) / 16000
         pipe = BatchedInferencePipeline(model=self.model)
         # seuil de parole plus bas que celui par défaut (0,5) : voix sous la musique, cris courts, voix filtrées
-        vad = {"threshold": float(req.get("vad_threshold", 0.35)), "min_speech_duration_ms": 150,
-               "min_silence_duration_ms": 500, "speech_pad_ms": 200}
+        # (les autres réglages restent ceux du traitement par lots : morceaux coupés à 160 ms de silence, une phrase
+        # par morceau, ponctuation gardée)
+        vad = {"threshold": float(req.get("vad_threshold", 0.35)), "min_silence_duration_ms": 160}
         segments, info = pipe.transcribe(audio, language=lang, beam_size=int(req.get("beam_size", 1)),
                                          batch_size=int(req.get("batch_size", 8)), word_timestamps=True,
                                          vad_filter=True, vad_parameters=vad, condition_on_previous_text=False)

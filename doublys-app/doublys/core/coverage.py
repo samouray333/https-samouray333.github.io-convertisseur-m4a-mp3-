@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 SPEECH_FILE = "parole_couverture.json"  # passages parlés (seuil bas, son d'origine + voix isolée)
 DROPPED_FILE = "ecartes.json"  # éléments écartés du doublage, avec la raison
 MIN_GAP = 0.4  # un passage parlé plus court sans réplique n'est pas signalé
+EDGE = 0.25  # tolérance autour d'une réplique (fin des mots, souffle, marge du détecteur de parole)
 SHORT_SHOUT = 1.0  # « garder les cris d'origine » : passages plus courts gardés en VO
 VAD_OPTIONS = {"threshold": 0.35, "min_speech_ms": 150, "min_silence_ms": 300, "pad_ms": 100}
 GAP_STATES = {"open": "à traiter", "ignored": "ne pas doubler", "vo": "voix d'origine gardée"}
@@ -138,7 +139,7 @@ def update(project: Project, speech: list[list[float]] | None = None) -> list[di
     if speech is None:
         return project.gaps
     decided = [g for g in project.gaps if g.get("state") in ("ignored", "vo")]
-    base = [[ln.start, max(ln.end, ln.start + (ln.duration or 0.0))] for ln in project.lines]
+    base = [[ln.start - EDGE, max(ln.end, ln.start + (ln.duration or 0.0)) + EDGE] for ln in project.lines]
     base += [[float(a), float(b)] for a, b in project.no_dub_ranges]
     holes = [h for h in subtract(speech, base) if h[1] - h[0] >= MIN_GAP]
     dropped = load_dropped(project)

@@ -11,7 +11,7 @@ from PyInstaller.utils.win32.versioninfo import (FixedFileInfo, StringFileInfo, 
 
 ROOT = Path(SPECPATH).resolve().parent
 TOOLS = Path(SPECPATH).resolve() / "tools"
-VERSION = os.environ.get("APP_VERSION", "1.2.0")
+VERSION = os.environ.get("APP_VERSION", "1.2.1")
 nums = tuple((list(map(int, VERSION.split("-")[0].split(".")[:3])) + [0, 0, 0, 0])[:4])
 
 version_info = VSVersionInfo(

@@ -281,6 +281,23 @@ def burn_hardsubs(video: Path, target: Path, cues) -> Path:
     with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
         for i, f in enumerate(fonts):
             shutil.copy(f, Path(td) / f"police{i}.ttf")
+        if len(cues) > 30:  # beaucoup de sous-titres : un fichier ASS (la ligne de commande Windows est limitée)
+            from .core.subtitles import ass_time
+
+            w, h = int(v["width"]), int(v["height"])
+            rows = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "", "[V4+ Styles]",
+                    "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+                    "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
+                    "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                    f"Style: Default,Arial,{fs},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,"
+                    f"{max(2, fs // 14)},0,2,20,20,{int(fs * 0.6)},1", "", "[Events]",
+                    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+            rows += [f"Dialogue: 0,{ass_time(a)},{ass_time(b)},Default,,0,0,0,,{t.replace(chr(10), chr(92) + 'N')}"
+                     for a, b, t in cues]
+            (Path(td) / "st.ass").write_text("\n".join(rows) + "\n", encoding="utf-8")
+            ffmpeg.run_ffmpeg(["-i", str(Path(video).resolve()), "-vf", "subtitles=st.ass:fontsdir=.", "-c:v",
+                               "mpeg4", "-q:v", "5", "-c:a", "copy", str(Path(target).resolve())], cwd=td)
+            return target
         filters = []
         for k, (a, b, text) in enumerate(cues):
             rows = text.split("\n")

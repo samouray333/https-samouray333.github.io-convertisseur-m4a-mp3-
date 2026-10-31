@@ -101,12 +101,12 @@ class ZoneInfo:
     thumb: np.ndarray | None = field(default=None, repr=False)  # image où la bande est la plus remplie
 
 
-def detect_zone(video: Path, duration: float, vw: int, vh: int, samples: int = 60,
+def detect_zone(video: Path, duration: float, vw: int, vh: int, samples: int = 80,
                 cancel: threading.Event | None = None) -> ZoneInfo | None:
     """Bande du bas où apparaissent des sous-titres incrustés ; None s'il n'y en a pas."""
     if duration <= 0 or vw <= 0 or vh <= 0:
         return None
-    samples = max(12, min(samples, int(duration / 10)))  # vidéo courte : moins d'images suffisent
+    samples = max(40, min(samples, int(duration / 5)))  # assez d'images pour voir aussi les sous-titres à 2 lignes
     w = SAMPLE_WIDTH
     h = _even(vh * w / vw)
     masks, frames = [], []
@@ -153,9 +153,18 @@ def detect_zone(video: Path, duration: float, vw: int, vh: int, samples: int = 6
     if not centers or abs(float(np.median(centers)) - 0.5) > 0.12 or float(np.median(widths)) < 0.1:
         return None
     margin = 0.04
-    # une seule ligne vue le plus souvent : place pour une deuxième ligne au-dessus
-    extra = 0.08 if (r1 - r0) / h < 0.08 else 0.0
-    top = max(0.4, r0 / h - margin - extra)
+    # hauteur d'une ligne de texte : la bande garde toujours la place d'une ligne de plus au-dessus (sous-titres à
+    # deux lignes moins fréquents, peut-être absents de l'échantillon) ; une ligne coupée serait mal lue
+    runs, start = [], None
+    for y in range(r0, r1 + 1):
+        on = y < r1 and freq[y] >= 0.12
+        if on and start is None:
+            start = y
+        elif not on and start is not None:
+            runs.append(y - start)
+            start = None
+    line_h = max(runs) if runs else r1 - r0
+    top = max(0.4, (r0 - 1.6 * line_h) / h - margin)
     bottom = min(1.0, r1 / h + margin)
     k = int(np.argmax(stack[:, r0:r1].sum(axis=(1, 2))))
     return ZoneInfo(round(top, 3), round(bottom, 3), round(float(present.mean()), 3), frames[k])
@@ -178,6 +187,21 @@ def _central_span(cols_on: np.ndarray, gap: int) -> tuple[int, int] | None:
     groups.append((start, cols[-1]))
     mid = len(cols_on) / 2
     return min(groups, key=lambda g_: 0 if g_[0] <= mid <= g_[1] else min(abs(g_[0] - mid), abs(g_[1] - mid)))
+
+
+def _split_run(rows: np.ndarray, run: list[int]) -> list[list[int]]:
+    """Deux lignes très proches (contours qui se touchent) forment une seule bande : on la coupe au creux le plus
+    marqué de sa moitié centrale. Une vraie ligne n'a pas de tel creux (le corps des lettres est plein)."""
+    a, b = run
+    h = b - a
+    if h < 24:
+        return [run]
+    prof = rows[a:b].astype(float)
+    lo, hi = int(h * 0.3), int(h * 0.7)
+    k = lo + int(np.argmin(prof[lo:hi]))
+    if prof[k] > 0.25 * prof.max():
+        return [run]
+    return [p for part in ([a, a + k], [a + k + 1, b]) for p in _split_run(rows, part)]
 
 
 def cut_lines(g: np.ndarray, max_lines: int = 3) -> list[np.ndarray]:
@@ -205,8 +229,19 @@ def cut_lines(g: np.ndarray, max_lines: int = 3) -> list[np.ndarray]:
             merged.append([a, b])
     if not merged:
         return []
+    merged = [part for r in merged for part in _split_run(rows, r)]
     tallest = max(b - a for a, b in merged)
     lines = [r for r in merged if r[1] - r[0] >= max(8, 0.45 * tallest)]
+    # un sous-titre est un bloc de lignes serrées : on part de la ligne du bas et on remonte tant que l'écart reste
+    # faible ; un élément du décor plus haut, séparé par un grand vide, est laissé de côté
+    if len(lines) > 1:
+        block = [lines[-1]]
+        for r in reversed(lines[:-1]):
+            if block[0][0] - r[1] <= 0.8 * max(r[1] - r[0], block[0][1] - block[0][0]):
+                block.insert(0, r)
+            else:
+                break
+        lines = block
     out = []
     for a, b in lines[:max_lines]:
         hgt = b - a
@@ -355,6 +390,9 @@ def build_cues(segments: list[Segment], texts: dict[str, list], duration: float,
     for seg in segments:
         parts = [texts.get(n, ["", 0.0]) for n in seg.names]
         parts = [(str(p[0]).strip(), float(p[1])) for p in parts if str(p[0]).strip()]
+        best = max((c for _t, c in parts), default=0.0)
+        if best >= 0.75:  # ligne bien moins nette que les autres : un morceau du décor
+            parts = [x for x in parts if x[1] >= max(0.5, best - 0.3)]
         if not parts:
             continue
         rows = [fix_text(p[0], terms) for p in parts]
