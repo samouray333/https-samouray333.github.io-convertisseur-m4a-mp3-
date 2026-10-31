@@ -524,26 +524,17 @@ def run_selftest(report_path: Path) -> int:
         msg = winocr.status_message()
         if not winocr.available():
             return msg
-        from PySide6.QtCore import Qt
-        from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
-        from PySide6.QtWidgets import QApplication
+        from .core import ocr
 
-        holder["app"] = QApplication.instance() or QApplication(sys.argv[:1])  # polices : application Qt requise
-        img = QImage(640, 70, QImage.Format_Grayscale8)
-        img.fill(QColor(60, 60, 60))
-        painter = QPainter(img)
-        painter.setRenderHint(QPainter.Antialiasing)
-        path = QPainterPath()
-        font = QFont("Arial", 28)
-        font.setBold(True)
-        path.addText(20, 50, font, "We have to stop Bandora!")
-        painter.strokePath(path, QPen(Qt.black, 5))
-        painter.fillPath(path, Qt.white)
-        painter.end()
-        arr = np.frombuffer(img.constBits(), dtype=np.uint8).reshape(img.height(), img.bytesPerLine())[:, :640].copy()
-        np.savez(work / "winocr.npz", ligne=arr)
+        # vraie image : un sous-titre de la vidéo de test (écrit par FFmpeg avec une police de Windows)
+        video = make_hardsub_video(work / "winocr.mp4", size="1280x720", background="0x2a4060")
+        g = ocr.frame_at(video, 2.0, 1280, 720)
+        assert g is not None, "image illisible"
+        lines = ocr.cut_lines(g[int(0.6 * 720):])
+        assert lines, "aucune ligne trouvée dans l'image"
+        np.savez(work / "winocr.npz", ligne=lines[-1])
         text = winocr.WindowsOcrTool().ocr_lines([work / "winocr.npz"]).get("ligne", [""])[0]
-        assert "Bandora" in text, text
+        assert "believe" in text.lower(), f"lu : « {text} »"
         return f"{msg} Lu : « {text} »"
 
     @check("voix Windows (SAPI)", critical=False)
