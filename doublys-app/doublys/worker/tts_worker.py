@@ -676,14 +676,18 @@ class WhisperBackend(Backend):
         offset = a / 16000
         total = len(audio) / 16000
         pipe = BatchedInferencePipeline(model=self.model)
+        # seuil de parole plus bas que celui par défaut (0,5) : voix sous la musique, cris courts, voix filtrées
+        vad = {"threshold": float(req.get("vad_threshold", 0.35)), "min_speech_duration_ms": 150,
+               "min_silence_duration_ms": 500, "speech_pad_ms": 200}
         segments, info = pipe.transcribe(audio, language=lang, beam_size=int(req.get("beam_size", 1)),
                                          batch_size=int(req.get("batch_size", 8)), word_timestamps=True,
-                                         vad_filter=True, condition_on_previous_text=False)
-        words, segs = [], []
-        dropped = 0
+                                         vad_filter=True, vad_parameters=vad, condition_on_previous_text=False)
+        words, segs, dropped = [], [], []
         for seg in segments:
-            if is_hallucination(seg):
-                dropped += 1
+            why = is_hallucination(seg)
+            if why:
+                dropped.append([round(seg.start + offset, 3), round(seg.end + offset, 3), (seg.text or "").strip(),
+                                why])
                 continue
             segs.append([round(seg.start + offset, 3), round(seg.end + offset, 3), seg.text.strip()])
             for w in seg.words or []:
@@ -691,31 +695,59 @@ class WhisperBackend(Backend):
             if total:
                 progress(seg.end / total, f"{len(words)} mots reconnus")
         if dropped:
-            log(f"{dropped} passage(s) incompréhensible(s) ou répétitif(s) ignoré(s)")
-        return {"words": words, "segments": segs, "duration": total, "language": info.language}
+            log(f"{len(dropped)} passage(s) incompréhensible(s) ou répétitif(s) écarté(s) (listés dans Contrôle)")
+        return {"words": words, "segments": segs, "duration": total, "language": info.language,
+                "language_probability": float(getattr(info, "language_probability", 0.0) or 0.0),
+                "dropped": dropped}
+
+    def detect_language(self, req):
+        """Langue parlée, votée sur plusieurs extraits [[début, fin], …] d'un WAV 16 kHz."""
+        import numpy as np
+        import soundfile as sf
+
+        votes: dict[str, float] = {}
+        details = []
+        for a, b in req.get("spans") or []:
+            audio, _ = sf.read(req["path"], start=int(float(a) * 16000), stop=int(float(b) * 16000),
+                               dtype="float32", always_2d=True)
+            audio = np.ascontiguousarray(audio.mean(axis=1))
+            if len(audio) < 16000:
+                continue
+            try:
+                lang, prob, _all = self.model.detect_language(audio)
+            except (AttributeError, TypeError):  # faster-whisper plus ancien : détection par la transcription
+                _segs, info = self.model.transcribe(audio[:16000 * 30], beam_size=1)
+                lang, prob = info.language, info.language_probability
+            votes[lang] = votes.get(lang, 0.0) + float(prob)
+            details.append([round(float(a), 2), lang, round(float(prob), 3)])
+        if not votes:
+            return {"language": "", "probability": 0.0, "details": details}
+        best = max(votes, key=votes.get)
+        return {"language": best, "probability": round(votes[best] / max(1, len(details)), 3), "details": details}
 
 
-def is_hallucination(seg) -> bool:
-    """Passage inventé par Whisper : texte qui tourne en boucle, ou bruit pris pour de la parole."""
+def is_hallucination(seg) -> str:
+    """Passage inventé par Whisper : texte qui tourne en boucle, ou bruit pris pour de la parole. Renvoie la
+    raison (vide si le passage est gardé)."""
     import re
     import zlib
 
     text = (seg.text or "").strip()
     if not text:
-        return True
+        return "texte vide"
     ratio = getattr(seg, "compression_ratio", None)
     if ratio is None and len(text) > 20:
         raw = text.encode("utf-8")
         ratio = len(raw) / max(1, len(zlib.compress(raw)))
     if ratio is not None and ratio > 2.4:
-        return True
+        return "texte répétitif"
     # même groupe de mots répété en boucle (un cri court comme « Go! Go! Go! » reste permis)
     sep = r"[\s、,。.!！?？]*"
     if re.search(rf"(.{{5,30}}?)(?:{sep}\1){{3,}}", text) or re.search(rf"(.{{1,4}}?)(?:{sep}\1){{7,}}", text):
-        return True
-    if getattr(seg, "no_speech_prob", 0.0) > 0.7 and getattr(seg, "avg_logprob", 0.0) < -1.0:
-        return True
-    return False
+        return "texte en boucle"
+    if getattr(seg, "no_speech_prob", 0.0) > 0.9 and getattr(seg, "avg_logprob", 0.0) < -1.0:
+        return "bruit pris pour de la parole"
+    return ""
 
 
 def vad_regions(req):
@@ -724,7 +756,10 @@ def vad_regions(req):
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
     audio = decode_audio(req["path"], sampling_rate=16000)
-    opts = VadOptions(min_silence_duration_ms=int(req.get("min_silence_ms", 600)), speech_pad_ms=200)
+    opts = VadOptions(threshold=float(req.get("threshold", 0.5)),
+                      min_speech_duration_ms=int(req.get("min_speech_ms", 250)),
+                      min_silence_duration_ms=int(req.get("min_silence_ms", 600)),
+                      speech_pad_ms=int(req.get("pad_ms", 200)))
     ts = get_speech_timestamps(audio, opts)
     return {"speech": [[round(t["start"] / 16000, 2), round(t["end"] / 16000, 2)] for t in ts],
             "duration": len(audio) / 16000}
@@ -924,10 +959,45 @@ class AnalysisBackend(Backend):
 
 
 
+class OcrBackend(Backend):
+    """Lecture des sous-titres incrustés : RapidOCR (modèles PP-OCR en ONNX), reconnaissance seule sur des lignes
+    déjà découpées par l'application (beaucoup plus rapide que la détection complète)."""
+
+    def load(self, device, options):
+        from rapidocr_onnxruntime import RapidOCR
+
+        self.engine = RapidOCR()
+        return {"device": "cpu"}
+
+    def ocr_lines(self, req):
+        """{"files": [chemin .npz, …]} : chaque tableau (image grise d'une ligne) → [texte, confiance]."""
+        import numpy as np
+
+        out = {}
+        files = list(req.get("files") or [])
+        done = 0
+        total = sum(1 for _ in files) or 1
+        for k, f in enumerate(files):
+            with np.load(f) as z:
+                for name in z.files:
+                    img = z[name]
+                    if img.ndim == 2:
+                        img = np.repeat(img[:, :, None], 3, axis=2)
+                    res, _ = self.engine(np.ascontiguousarray(img), use_det=False, use_cls=False, use_rec=True)
+                    text, conf = ("", 0.0)
+                    if res:
+                        text, conf = str(res[0][0]), float(res[0][1])
+                    out[name] = [text, round(conf, 3)]
+                    done += 1
+            progress((k + 1) / total, f"{done} lignes lues")
+        return {"texts": out}
+
+
 BACKENDS = {"dummy": DummyBackend, "xtts": XttsBackend, "chatterbox": ChatterboxBackend, "kokoro": KokoroBackend,
             "chatterbox_vc": ChatterboxVCBackend, "whisper": WhisperBackend, "rvc": RVCBackend,
-            "analysis": AnalysisBackend}
-COMMANDS = ("convert", "transcribe", "transcribe_words", "vad", "separate", "embed", "translate")
+            "analysis": AnalysisBackend, "ocr": OcrBackend}
+COMMANDS = ("convert", "transcribe", "transcribe_words", "vad", "detect_language", "separate", "embed", "translate",
+            "ocr_lines")
 
 
 # =======================================================================================

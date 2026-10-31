@@ -102,12 +102,19 @@ LINE_STATES = {
     "rate": "débit augmenté",
     "long": "trop longue",
     "error": "erreur",
+    "skip": "non doublée",
 }
 
-STEPS = ["extract", "separate", "transcribe", "segment", "speakers", "translate", "voices", "dub", "mix"]
+STEPS = ["extract", "subtitles", "separate", "transcribe", "segment", "speakers", "translate", "voices", "dub", "mix"]
+# étapes dont chaque étape dépend : en refaire une rend caduques celles qui en dépendent (et elles seules)
+STEP_DEPENDS = {"extract": (), "subtitles": ("extract",), "separate": ("extract",),
+                "transcribe": ("separate", "subtitles"), "segment": ("transcribe", "subtitles"),
+                "speakers": ("segment",), "translate": ("segment", "speakers"), "voices": ("speakers",),
+                "dub": ("translate", "voices"), "mix": ("dub",)}
 VOICE_STEPS = ("voices", "dub", "mix")  # inutiles en mode « sous-titres seuls »
 STEP_LABELS = {
     "extract": "Extraction du son",
+    "subtitles": "Sous-titres existants",
     "separate": "Séparation voix / fond",
     "transcribe": "Transcription (Whisper)",
     "segment": "Découpage en répliques",
@@ -178,6 +185,12 @@ class Line:
     speaker_margin: float = 1.0  # écart avec la personne la plus proche après elle
     issues: list = field(default_factory=list)  # contrôle qualité : [[code, message], …]
     checked: bool = False  # vérifiée à la main : plus signalée
+    source: str = ""  # origine du texte : "" (Whisper) | track | file | ocr | manual
+    src_start: float = -1.0  # temps d'origine du sous-titre (avant recalage)
+    src_end: float = -1.0
+    ocr_conf: float = 1.0  # confiance de la lecture des sous-titres incrustés
+    no_dub: bool = False  # à ne pas doubler (générique chanté, cri gardé en VO) : la voix d'origine reste
+    attempts: int = 0  # essais de synthèse de la dernière production
 
     @classmethod
     def from_dict(cls, d):
@@ -217,7 +230,7 @@ class DubSettings:
     separate: bool = True  # sinon : VO baissée sous la VF
     no_separation_duck_db: float = -18.0
     whisper_model: str = "small"
-    source_language: str = "en"  # code de LANGUAGES ou « auto » (détectée par Whisper)
+    source_language: str = "auto"  # code de LANGUAGES ou « auto » (détectée par Whisper)
     detected_language: str = ""  # langue trouvée par Whisper quand source_language vaut « auto »
     glossary: list = field(default_factory=list)  # [[terme d'origine, rendu en français], …] (noms, attaques…)
     pause_split: float = 0.7  # silence qui coupe une réplique (s)
@@ -228,10 +241,10 @@ class DubSettings:
     translator: str = "opus_big"
     chars_per_second: float = 14.5
     voice_mode: str = DEFAULT_VOICE_MODE
-    max_rate: float = 1.30  # débit maximal demandé au moteur
+    max_rate: float = 1.20  # débit maximal demandé au moteur
     max_tempo: float = 1.12  # accélération maximale sans nouvelle synthèse
     gap_before_next: float = 0.1
-    overhang: float = 1.0  # la VF peut dépasser la fin de la réplique d'origine de 1 s au plus
+    overhang: float = 1.5  # la VF peut déborder de 1,5 s sur le silence qui suit la réplique d'origine
     keep_original_voice: bool = False  # voix d'origine laissée faible sous la VF
     original_voice_db: float = -20.0
     match_level: bool = True  # niveau de la VF aligné sur la voix d'origine
@@ -240,6 +253,11 @@ class DubSettings:
     expressive_db: float = 6.0  # à partir de combien de dB au-dessus de la voix habituelle
     expressive_max: int = 25  # au plus N répliques par vidéo (environ 25 s de calcul chacune sans GPU)
     subtitles_only: bool = False  # sous-titres français seulement : pas de voix française (VOSTFR)
+    vo_fallback: bool = True  # voix d'origine remise là où il n'y a pas de VF (jamais de trou)
+    keep_original_shouts: bool = False  # cris courts sans sous-titre : voix d'origine gardée
+    use_subtitles: bool = True  # texte pris dans les sous-titres existants (pistes, fichier, image) s'il y en a
+    ocr_fps: float = 12.5  # images par seconde analysées pour les sous-titres incrustés
+    language_confidence: float = 0.0  # probabilité de la langue détectée
 
     @classmethod
     def from_dict(cls, d):
@@ -264,6 +282,9 @@ class ExportOptions:
     srt_files: bool = True
     burn_subtitles: bool = False
     subtitle_colors: bool = True  # une couleur par personne (choisie dans la page Personnes)
+    mask_hardsubs: bool = True  # sous-titres incrustés d'origine floutés pendant qu'ils sont affichés
+    mask_style: str = "blur"  # blur | band
+    video_bitrate: str = "8M"  # débit de la vidéo réencodée (masquage, incrustation)
     ass_subtitles: bool = True  # sous-titres ASS stylés : piste ASS dans les MKV et incrustation
     audio_only: str = ""  # "" | wav | mp3 : piste VF seule
     output_dir: str = ""
@@ -291,6 +312,26 @@ class VideoInfo:
 
 
 @dataclass
+class SubtitleSource:
+    """Sous-titres existants qui donnent le texte des répliques."""
+
+    kind: str = "auto"  # auto (à détecter) | none | track | file | ocr
+    track: int = -1  # index de la piste de sous-titres (ffprobe : 0:s:N)
+    path: str = ""  # fichier choisi, ou fichier extrait / lu
+    language: str = ""  # code court (en, fr, ja…)
+    label: str = ""  # description affichée
+    zone: list = field(default_factory=lambda: [0.0, 0.0])  # bande des sous-titres incrustés (haut, bas) en fraction
+    offset: float = 0.0  # décalage manuel (s)
+    auto_offset: float = 0.0  # décalage trouvé automatiquement (s)
+    count: int = 0  # sous-titres retenus
+    candidates: list = field(default_factory=list)  # sources trouvées : [{kind, track, path, language, label}]
+
+    @classmethod
+    def from_dict(cls, d):
+        return _from_dict(cls, d)
+
+
+@dataclass
 class Project:
     title: str = ""
     source_video: str = ""
@@ -302,10 +343,13 @@ class Project:
     steps: dict[str, dict] = field(default_factory=dict)  # étape -> {"done": True, "date": …}
     last_export: str = ""
     series: str = ""  # série (casting réutilisé d'un épisode à l'autre)
+    subs: SubtitleSource = field(default_factory=SubtitleSource)
+    gaps: list = field(default_factory=list)  # passages parlés sans VF : [{start, end, state, text}]
+    no_dub_ranges: list = field(default_factory=list)  # plages à ne pas doubler : [[début, fin], …]
     id: str = field(default_factory=lambda: new_id("prj_"))
     created: str = field(default_factory=now_iso)
     modified: str = field(default_factory=now_iso)
-    format_version: int = 1
+    format_version: int = 2
     path: Path | None = field(default=None, compare=False, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
@@ -326,10 +370,19 @@ class Project:
             steps=dict(d.get("steps", {})),
             last_export=d.get("last_export", ""),
             series=d.get("series", ""),
+            subs=SubtitleSource.from_dict(d.get("subs")),
+            gaps=list(d.get("gaps", [])),
+            no_dub_ranges=list(d.get("no_dub_ranges", [])),
         )
         for key in ("id", "created", "modified", "format_version"):
             if key in d:
                 setattr(p, key, d[key])
+        if int(p.format_version or 1) < 2:
+            # projet Doublys 1.0 / 1.1 : pas d'étape « sous-titres » ; on ne refait pas ce qui est déjà fait
+            if p.step_done("extract"):
+                p.steps["subtitles"] = {"done": True, "date": now_iso(), "detail": "projet 1.x : Whisper seul"}
+                p.subs.kind = "none"
+            p.format_version = 2
         return p
 
     @property
@@ -352,10 +405,16 @@ class Project:
             self.steps.pop(step, None)
 
     def invalidate_from(self, step: str) -> None:
-        """Une étape refaite rend les suivantes caduques (leurs données sont gardées jusqu'au nouveau calcul)."""
-        if step in STEPS:
-            for s in STEPS[STEPS.index(step):]:
-                self.steps.pop(s, None)
+        """Une étape refaite rend caduques celles qui en dépendent (leurs données sont gardées jusqu'au nouveau
+        calcul) ; les autres restent faites (changer de sous-titres ne refait pas la séparation)."""
+        if step not in STEPS:
+            return
+        todo = {step}
+        for s in STEPS:  # ordre des étapes : les dépendances sont toujours avant
+            if any(d in todo for d in STEP_DEPENDS.get(s, ())):
+                todo.add(s)
+        for s in todo:
+            self.steps.pop(s, None)
 
     def active_steps(self) -> list[str]:
         """Étapes utiles : sans séparation si elle est désactivée, sans voix ni mixage pour les sous-titres seuls."""

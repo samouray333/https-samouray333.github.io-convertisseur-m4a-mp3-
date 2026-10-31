@@ -19,7 +19,7 @@ from .. import icons, theme
 from ..widgets import Badge, Card, DropZone, button, card_title, label
 from .base import Page
 
-REQUIRED = ["analysis", "whisper", "kokoro", "chatterbox"]  # chaîne complète hors ligne (mode par défaut)
+REQUIRED = ["analysis", "whisper", "ocr", "kokoro", "chatterbox"]  # chaîne complète hors ligne (mode par défaut)
 
 
 class HeroBanner(QFrame):

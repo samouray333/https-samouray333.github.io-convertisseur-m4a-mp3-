@@ -13,7 +13,9 @@ ISSUE_LABELS = {
     "overlap": "voix mêlées ou bruit",
     "long": "trop longue",
     "error": "erreur de voix",
+    "ocr": "lecture des sous-titres douteuse",
 }
+LOW_OCR = 0.80
 LOW_WORD = 0.35  # confiance de Whisper sous laquelle un mot est douteux
 LOW_MEAN = 0.6
 _CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
@@ -22,6 +24,11 @@ _LOOP = re.compile(r"(\b\w+(?:\W+\w+){0,3}\b)(?:\W+\1\b){3,}", re.IGNORECASE)
 
 def check_line(line: Line, language: str = "en") -> list[list[str]]:
     issues: list[list[str]] = []
+    if line.no_dub:
+        return issues
+    if line.source == "ocr" and line.ocr_conf < LOW_OCR:
+        issues.append(["ocr", f"Sous-titre lu dans l'image avec une confiance de {line.ocr_conf:.0%} : relisez "
+                              "le texte d'origine."])
     probs = [float(w[3]) for w in line.words if len(w) > 3 and w[3] is not None]
     if probs:
         doubtful = [str(w[2]).strip() for w in line.words if len(w) > 3 and w[3] is not None and w[3] < LOW_WORD]
@@ -61,6 +68,12 @@ def check(project: Project) -> int:
     for ln in project.lines:
         ln.issues = [] if ln.checked else check_line(ln, project.settings.language)
         n += bool(ln.issues)
+    from . import coverage
+
+    try:
+        coverage.update(project)  # passages parlés sans VF (rapide : comparaison d'intervalles)
+    except Exception:  # noqa: BLE001 - projet sans dossier de travail (tests)
+        pass
     return n
 
 

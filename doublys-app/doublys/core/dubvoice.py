@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -116,16 +117,43 @@ def voice_key(project: Project, person: Person) -> str:
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
 
 
-def speech_text(text: str) -> str:
+def pronunciations(project: Project) -> list[tuple[str, str]]:
+    """Glossaire de la série : [terme, rendu français, prononciation] → (mot écrit, mot à faire dire)."""
+    out = []
+    for g in project.settings.glossary:
+        if not g or len(g) < 3 or not str(g[2]).strip():
+            continue
+        for written in {str(g[0]).strip(), str(g[1]).strip()} - {""}:
+            out.append((written, str(g[2]).strip()))
+    return out
+
+
+def speech_text(text: str, lexicon: list[tuple[str, str]] | None = None) -> str:
+    for written, spoken in lexicon or []:
+        text = re.sub(rf"(?<!\w){re.escape(written)}(?!\w)", spoken, text, flags=re.IGNORECASE)
     return normalize_for_speech(text, NormalizeOptions(language="fr"))
 
 
-def synthesize(voice: VoiceProfile, text: str, rate: float = 1.0, seed: int | None = None) -> tuple[np.ndarray, int]:
+def fallback_profile(project: Project, person: Person, current: VoiceProfile) -> VoiceProfile | None:
+    """Voix de secours quand la voix de la personne échoue : Kokoro hors ligne, sinon voix Microsoft."""
+    kokoro = engines.get_engine("kokoro")
+    if current.engine != "kokoro" and kokoro is not None and kokoro.is_ready():
+        return VoiceProfile(name=person.name, engine="kokoro", engine_voice="ff_siwis", language="fr",
+                            gender=person.gender)
+    edge = engines.get_engine("edge")
+    if current.engine != "edge" and edge is not None and edge.is_ready():
+        return VoiceProfile(name=person.name, engine="edge", language="fr", gender=person.gender,
+                            engine_voice=EDGE_BY_GENDER.get(person.gender, EDGE_BY_GENDER[""]))
+    return None
+
+
+def synthesize(voice: VoiceProfile, text: str, rate: float = 1.0, seed: int | None = None,
+               lexicon: list[tuple[str, str]] | None = None) -> tuple[np.ndarray, int]:
     """Synthèse d'un texte français → (mono float32, fréquence)."""
     eng = engines.get_engine(voice.engine)
     if eng is None:
         raise EngineError(f"Moteur « {voice.engine} » indisponible.")
-    spoken = speech_text(text)
+    spoken = speech_text(text, lexicon)
     if not spoken:
         raise EngineError("Texte français vide.")
     with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:

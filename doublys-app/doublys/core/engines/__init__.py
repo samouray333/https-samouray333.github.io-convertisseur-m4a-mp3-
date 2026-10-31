@@ -69,6 +69,10 @@ def get_tool(tool_id: str):
             from .neural import AnalysisTool
 
             _tools[tool_id] = AnalysisTool()
+        if tool_id not in _tools and tool_id == "ocr":
+            from .neural import OcrTool
+
+            _tools[tool_id] = OcrTool()
         return _tools.get(tool_id)
 
 
@@ -79,7 +83,7 @@ def register_tool(tool_id: str, tool) -> None:
 
 
 def all_tools() -> list:
-    return [t for t in (get_tool("analysis"), get_tool("whisper")) if t is not None]
+    return [t for t in (get_tool("analysis"), get_tool("whisper"), get_tool("ocr")) if t is not None]
 
 
 def shutdown_all() -> None:

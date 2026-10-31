@@ -100,6 +100,12 @@ SPECS: dict[str, EngineSpec] = {
         pin_torch=True,
         size_gpu="≈ 5 Go", size_cpu="≈ 1,2 Go", model_size="0,2 à 1 Go",
     ),
+    "ocr": EngineSpec(
+        id="ocr",
+        # lecture des sous-titres incrustés : modèles PP-OCRv4 (Apache 2.0) fournis dans le paquet
+        packages=["rapidocr_onnxruntime==1.4.4", "onnxruntime==1.31.1"],
+        size_gpu="≈ 0,35 Go", size_cpu="≈ 0,35 Go", model_size="0,02 Go",
+    ),
     "kokoro": EngineSpec(
         id="kokoro",
         packages=["kokoro-onnx==0.6.1", "soundfile"],
@@ -450,6 +456,8 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
                            "'module perth incomplet'; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",
              "kokoro": "import kokoro_onnx, onnxruntime; print('onnxruntime', onnxruntime.__version__)",
              "whisper": "import faster_whisper, ctranslate2; print('ctranslate2', ctranslate2.__version__)",
+             "ocr": "import numpy, onnxruntime; from rapidocr_onnxruntime import RapidOCR; RapidOCR(); "
+                    "print('onnxruntime', onnxruntime.__version__)",
              "analysis": "import torch, demucs, speechbrain, transformers, sentencepiece; "
                          "from demucs.apply import apply_model; from speechbrain.inference.speaker import "
                          "EncoderClassifier; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",

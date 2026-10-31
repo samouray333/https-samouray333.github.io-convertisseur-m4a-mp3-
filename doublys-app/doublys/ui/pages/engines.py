@@ -267,7 +267,7 @@ class EnginesPage(Page):
 
         eng = card.eng
         eid = eng.info.id
-        if eid in ("whisper", "analysis"):
+        if eid in ("whisper", "analysis", "ocr"):
             self._test_tool(card)
             return
         if eid == "rvc":
@@ -329,6 +329,26 @@ class EnginesPage(Page):
             t = np.arange(sr * 3) / sr
             sig = (0.2 * np.sin(2 * np.pi * 150 * t) * (0.6 + 0.4 * np.sin(2 * np.pi * 3 * t))).astype(np.float32)
             wav = audio.write_audio(d / "essai.wav", sig, sr, subtype="PCM_16")
+            if card.eng.info.id == "ocr":
+                from PySide6.QtCore import Qt
+                from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
+
+                img = QImage(520, 64, QImage.Format_Grayscale8)
+                img.fill(QColor(70, 70, 70))
+                painter = QPainter(img)
+                painter.setRenderHint(QPainter.Antialiasing)
+                path = QPainterPath()
+                font = QFont("Arial", 26)
+                font.setBold(True)
+                path.addText(16, 44, font, "Let's go, Doublys!")
+                painter.strokePath(path, QPen(Qt.black, 5))
+                painter.fillPath(path, Qt.white)
+                painter.end()
+                ptr = img.constBits()
+                arr = np.frombuffer(ptr, dtype=np.uint8).reshape(img.height(), img.bytesPerLine())[:, :img.width()]
+                np.savez(d / "essai.npz", ligne=arr.copy())
+                text, conf = card.eng.ocr_lines([d / "essai.npz"]).get("ligne", ["", 0.0])
+                return f"texte lu « {text} » (confiance {conf:.0%})"
             if card.eng.info.id == "whisper":
                 card.eng.transcribe_words(wav, "en", settings().get("asr_model", "small"))
                 return "modèle chargé, transcription possible"

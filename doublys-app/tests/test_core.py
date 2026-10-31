@@ -91,7 +91,7 @@ def test_keep_names_after_regrouping():
 
 # -- calage --------------------------------------------------------------------------------
 def test_slots():
-    s = DubSettings()
+    s = DubSettings(overhang=1.0)
     lines = [Line(start=0.0, end=2.0), Line(start=2.5, end=4.0), Line(start=10.0, end=11.0)]
     assert timing.slots(lines, s, 20.0) == pytest.approx([2.4, 2.5, 2.0])
     assert timing.char_budget(2.0) == 29
@@ -130,7 +130,7 @@ def test_fit_tempo_rate_long(fit_settings):
         return _tone(2.6 / rate)
 
     res = timing.fit(synth, 2.0, fit_settings)
-    assert res.state == "rate" and calls[1] == pytest.approx(1.3) and res.duration <= 2.08
+    assert res.state == "rate" and calls[1] == pytest.approx(1.2) and res.duration <= 2.08
     res = timing.fit(lambda rate: _tone(4.0 / rate), 2.0, fit_settings)
     assert res.state == "long" and "raccourcis" in res.message
 
@@ -161,7 +161,7 @@ def test_project_roundtrip(tmp_path):
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["lines"][0]["fr"] == "Salut" and "path" not in data
     back = project_io.load_project(path)
-    assert back.lines[0].en == "Hi" and back.step_done("extract") and back.next_step() == "separate"
+    assert back.lines[0].en == "Hi" and back.step_done("extract") and back.next_step() == "subtitles"
     back.invalidate_from("extract")
     assert back.steps == {}
 

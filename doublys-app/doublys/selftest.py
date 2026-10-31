@@ -111,15 +111,22 @@ class FakeAnalysis(_FakeTool):
 class FakeWhisper(_FakeTool):
     """Repère les passages sonores et y place des mots (une phrase par passage)."""
 
+    language = "en"  # langue « détectée »
+
     def __init__(self):
         super().__init__("whisper")
 
-    def vad(self, path):
+    def detect_language(self, path, spans):
+        return {"language": self.language, "probability": 0.97, "details": [[a, self.language, 0.97]
+                                                                             for a, _b in spans]}
+
+    def vad(self, path, threshold=0.5, min_speech_ms=250, min_silence_ms=600, pad_ms=200):
         from .core import audio
 
         data, sr = audio.read_audio(path)
         db = audio.frame_rms_db(data, sr, 20.0)
-        on = np.append(db > (db.max() - 20), False)
+        # seuil bas : passages plus faibles retenus (comme Silero avec un seuil plus bas)
+        on = np.append(db > (db.max() - (30 if threshold < 0.5 else 20)), False)
         regions, start = [], None
         for i, v in enumerate(on):
             if v and start is None:
@@ -151,7 +158,27 @@ class FakeWhisper(_FakeTool):
                     words.append([round(off + start + k * step, 3), round(off + start + (k + 1) * step - 0.05, 3),
                                   w, 0.9])
                 start = None
-        return {"words": words, "segments": [], "duration": len(data) / sr, "language": "en"}
+        return {"words": words, "segments": [], "duration": len(data) / sr, "language": self.language,
+                "dropped": []}
+
+
+class FakeOcr(_FakeTool):
+    """« Lecture » de test : le texte d'une ligne est déduit de sa largeur (les vidéos de test écrivent des
+    sous-titres de longueurs différentes) ; la confiance est fixe."""
+
+    def __init__(self):
+        super().__init__("ocr")
+        self.calls = 0
+
+    def ocr_lines(self, files, on_progress=None):
+        out = {}
+        for f in files:
+            with np.load(f) as z:
+                for name in z.files:
+                    self.calls += 1
+                    h, w = z[name].shape[:2]
+                    out[name] = [f"Subtitle line of {w} by {h} pixels.", 0.95]
+        return out
 
 
 def make_test_video(target: Path) -> Path:
@@ -174,12 +201,71 @@ def make_test_video(target: Path) -> Path:
     return target
 
 
+# sous-titres anglais incrustés de la vidéo de test (calés sur les « répliques » de SCRIPT)
+HARDSUBS = [(1.0, 3.4, "I can't believe it, Geki!"), (4.2, 6.0, "Let's go, Zyuranger!"),
+            (6.6, 9.6, "We have to stop Bandora\nbefore it is too late."), (10.4, 12.6, "The Dragon is here."),
+            (13.4, 15.0, "Ha!")]
+FONT_CANDIDATES = {
+    "win": ["C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/timesbd.ttf", "C:/Windows/Fonts/verdanab.ttf",
+            "C:/Windows/Fonts/arial.ttf"],
+    "other": ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+              "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+              "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+              "/System/Library/Fonts/Supplemental/Arial Bold.ttf"],
+}
+
+
+def test_fonts() -> list[Path]:
+    """Polices disponibles pour écrire des sous-titres de test (plusieurs styles si possible)."""
+    found = [Path(f) for f in FONT_CANDIDATES["win" if paths.IS_WINDOWS else "other"] if Path(f).exists()]
+    return found[:3]
+
+
+def make_hardsub_video(target: Path, cues=None, size: str = "1280x720", noisy: bool = True,
+                       background: str = "testsrc2") -> Path:
+    """Vidéo de test avec sous-titres blancs à contour noir incrustés (une ou deux lignes, plusieurs polices, décor
+    chargé) sur la voix de test : de quoi vérifier la lecture des sous-titres et leurs temps."""
+    import shutil
+
+    from .core import ffmpeg
+
+    cues = HARDSUBS if cues is None else cues
+    fonts = test_fonts()
+    if not fonts:
+        raise RuntimeError("Aucune police trouvée pour écrire les sous-titres de test.")
+    sound = make_test_video(target.with_name(target.stem + "_son.mp4"))
+    w, h = (int(x) for x in size.split("x"))
+    fs = max(16, h // 18)
+    with tempfile.TemporaryDirectory(dir=paths.temp_dir()) as td:
+        filters = []
+        for i, f in enumerate(fonts):
+            shutil.copy(f, Path(td) / f"police{i}.ttf")
+        for k, (a, b, text) in enumerate(cues):
+            rows = text.split("\n")
+            for j, row in enumerate(rows):
+                (Path(td) / f"t{k}_{j}.txt").write_text(row, encoding="utf-8")
+                y = f"h-{int(fs * 1.6 * (len(rows) - j) + fs * 0.6)}"
+                filters.append(f"drawtext=fontfile=police{k % len(fonts)}.ttf:textfile=t{k}_{j}.txt:fontsize={fs}:"
+                               f"fontcolor=white:borderw={max(2, fs // 14)}:bordercolor=black:x=(w-tw)/2:y={y}:"
+                               f"enable='between(t,{a:.2f},{b - 0.01:.2f})'")
+        base = (f"testsrc2=size={size}:rate=25:duration={DURATION}" if background == "testsrc2" else
+                f"color=c={background}:size={size}:rate=25:duration={DURATION}")
+        vf = (",noise=alls=8:allf=t" if noisy else "") + "," + ",".join(filters)
+        ffmpeg.run_ffmpeg(["-f", "lavfi", "-i", base, "-i", str(sound), "-map", "0:v", "-map", "1:a",
+                           "-vf", vf.lstrip(","), "-c:v", "mpeg4", "-q:v", "6", "-c:a", "copy", "-shortest",
+                           str(Path(target).resolve())], cwd=td)
+    sound.unlink(missing_ok=True)
+    sound.with_suffix(".wav").unlink(missing_ok=True)
+    return target
+
+
 def install_fakes() -> None:
     from .core import engines
 
     engines.register_engine(make_tone_engine("edge"))
     engines.register_tool("analysis", FakeAnalysis())
     engines.register_tool("whisper", FakeWhisper())
+    engines.register_tool("ocr", FakeOcr())
 
 
 # ---------------------------------------------------------------------------------------

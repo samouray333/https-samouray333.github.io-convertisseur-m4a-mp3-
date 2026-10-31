@@ -19,7 +19,8 @@ def test_active_steps_without_voices():
     pr = _project()
     assert "dub" in pr.active_steps()
     pr.settings.subtitles_only = True
-    assert pr.active_steps() == ["extract", "separate", "transcribe", "segment", "speakers", "translate"]
+    assert pr.active_steps() == ["extract", "subtitles", "separate", "transcribe", "segment", "speakers",
+                                 "translate"]
     pr.settings.separate = False
     assert "separate" not in pr.active_steps()
     for s in pr.active_steps():

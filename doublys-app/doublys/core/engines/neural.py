@@ -337,6 +337,19 @@ ENGINE_INFOS["analysis"] = EngineInfo(
     quality=4, speed=3, accent="#FF8A65",
 )
 
+ENGINE_INFOS["ocr"] = EngineInfo(
+    id="ocr",
+    name="OCR — sous-titres incrustés",
+    tagline="Lecture des sous-titres dans l'image · Hors ligne",
+    description=(
+        "Lit les sous-titres incrustés dans l'image (par exemple des sous-titres anglais sur un épisode japonais) "
+        "pour en faire le texte des répliques : plus aucune dépendance à la reconnaissance vocale pour savoir ce qui "
+        "est dit. RapidOCR avec les modèles PP-OCRv4 (Apache 2.0), exécuté sur le processeur."
+    ),
+    requires_install=True, languages=["en", "+"], license="Apache 2.0",
+    quality=4, speed=5, accent="#AED581",
+)
+
 # Voix Microsoft utilisées comme base du clonage rapide (langue, timbre)
 FASTCLONE_BASES = {
     ("fr", "F"): "fr-FR-DeniseNeural", ("fr", "M"): "fr-FR-HenriNeural", ("fr", ""): "fr-FR-RemyMultilingualNeural",
@@ -652,9 +665,15 @@ class WhisperTool(WorkerEngine):
         return self._call("transcribe_words", 6 * 3600, on_progress, path=str(path), language=language,
                           model=model, start=start, end=end)
 
-    def vad(self, path: Path) -> list[list[float]]:
+    def vad(self, path: Path, threshold: float = 0.5, min_speech_ms: int = 250, min_silence_ms: int = 600,
+            pad_ms: int = 200) -> list[list[float]]:
         """Passages de parole [[début, fin], …] (WAV 16 kHz)."""
-        return self._call("vad", 3600, None, path=str(path)).get("speech", [])
+        return self._call("vad", 3600, None, path=str(path), threshold=threshold, min_speech_ms=min_speech_ms,
+                          min_silence_ms=min_silence_ms, pad_ms=pad_ms).get("speech", [])
+
+    def detect_language(self, path: Path, spans: list[list[float]]) -> dict:
+        """{"language", "probability", "details"} votés sur plusieurs extraits (WAV 16 kHz)."""
+        return self._call("detect_language", 1800, None, path=str(path), spans=spans)
 
     def transcribe(self, path: Path, language: str = "fr") -> str:
         for attempt in range(2):
@@ -668,6 +687,20 @@ class WhisperTool(WorkerEngine):
                     raise
         return ""
 
+
+
+class OcrTool(WhisperTool):
+    """Lecture des sous-titres incrustés (environnement « ocr »)."""
+
+    def __init__(self):
+        WorkerEngine.__init__(self, "ocr")
+
+    def load_options(self) -> dict:
+        return {}
+
+    def ocr_lines(self, files: list[Path], on_progress=None) -> dict[str, list]:
+        """Lignes découpées (tableaux gris dans des .npz) → {nom: [texte, confiance]}."""
+        return self._call("ocr_lines", 6 * 3600, on_progress, files=[str(f) for f in files]).get("texts", {})
 
 
 class AnalysisTool(WhisperTool):
