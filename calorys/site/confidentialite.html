@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calorys : politique de confidentialité</title>
+<style>
+  :root { --bg: #f4f7f5; --text: #14201a; --muted: #5b6b62; --card: #fff; --line: #dfe7e2; --accent: #0f9f6e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1310; --text: #e7efe9; --muted: #9db0a5; --card: #151d19; --line: #24302a; --accent: #3fcf98; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; } h2 { font-size: 1.15rem; margin: 28px 0 8px; color: var(--accent); }
+  .muted { color: var(--muted); } section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 4px 18px 12px; margin-top: 16px; }
+  a { color: var(--accent); } li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Politique de confidentialité de Calorys</h1>
+<p class="muted">Application Calorys, éditée par QMTech · Dernière mise à jour : 31 octobre 2026</p>
+
+<section>
+<h2>En bref</h2>
+<ul>
+  <li>Calorys fonctionne <b>sans compte</b> et <b>sans serveur QMTech</b> : tout ce que tu saisis reste sur ton appareil.</li>
+  <li><b>Aucune publicité, aucun outil de mesure d'audience, aucun traceur</b>, aucune vente ni location de données.</li>
+  <li>Quelques fonctions facultatives se connectent à Internet (catalogue, recherche Open Food Facts, analyse de photo par IA) : elles sont décrites ci-dessous.</li>
+</ul>
+</section>
+
+<section>
+<h2>1. Données enregistrées sur ton appareil</h2>
+<p>Pour calculer tes objectifs et tenir ton journal, Calorys enregistre <b>uniquement dans la mémoire de ton appareil</b> :</p>
+<ul>
+  <li>ton profil : prénom (facultatif), sexe, âge, taille, poids, niveau d'activité, objectif ;</li>
+  <li>ton journal : repas et aliments, eau, activités physiques, pesées, tour de taille, jeûnes, recettes, liste de courses ;</li>
+  <li>les photos que tu ajoutes à un repas ou un aliment ;</li>
+  <li>tes réglages (rappels, thème, programme suivi).</li>
+</ul>
+<p>QMTech n'a <b>aucun accès</b> à ces données. Tu peux les exporter (sauvegarde JSON, CSV), les effacer (Profil &gt; Tout effacer) ou les supprimer en désinstallant l'appli.</p>
+<p><b>Sauvegarde Android</b> : si la sauvegarde Google est activée sur ton téléphone, Android peut inclure les données de Calorys dans la sauvegarde chiffrée de ton compte Google, comme pour les autres applis. Ce service est géré par Google, pas par QMTech, et se désactive dans les réglages du téléphone.</p>
+</section>
+
+<section>
+<h2>2. Connexions à Internet (toutes facultatives)</h2>
+<ul>
+  <li><b>Catalogue des produits</b> : à ta demande, Calorys télécharge le catalogue Open Food Facts depuis GitHub (raw.githubusercontent.com). Aucune donnée personnelle n'est envoyée ; comme pour tout téléchargement, GitHub voit l'adresse IP.</li>
+  <li><b>Recherche en ligne et codes-barres</b> : quand le produit n'est pas dans le catalogue, le mot recherché ou le code-barres est envoyé à Open Food Facts (openfoodfacts.org), sans identifiant ni information sur toi.</li>
+  <li><b>Photos des produits</b> : les images des produits sont chargées depuis images.openfoodfacts.org quand une connexion est disponible.</li>
+  <li><b>Analyse d'une photo de repas par IA</b> : uniquement si tu saisis ta propre clé d'API Google Gemini et que tu lances l'analyse. La photo et la consigne d'analyse sont alors envoyées directement à Google, sans passer par QMTech, et sont traitées selon les <a href="https://ai.google.dev/gemini-api/terms">conditions de l'API Gemini</a> et les <a href="https://policies.google.com/privacy">règles de confidentialité de Google</a>. Selon l'offre de ta clé, Google peut utiliser ces contenus pour améliorer ses services.</li>
+  <li><b>Synchronisation entre ton téléphone et ton PC</b> : elle se fait directement entre tes appareils, sur ton réseau Wi-Fi local, chiffrée (AES-GCM) avec le code d'appairage. Elle ne passe par aucun serveur.</li>
+</ul>
+</section>
+
+<section>
+<h2>3. Autorisations Android</h2>
+<ul>
+  <li><b>Appareil photo</b> : lire les codes-barres et prendre des photos de repas. Les images restent sur l'appareil, sauf analyse IA lancée par toi.</li>
+  <li><b>Notifications, alarmes exactes, démarrage du téléphone</b> : afficher les rappels (repas, eau, jeûne, pesée) à l'heure choisie, et les reprogrammer après un redémarrage.</li>
+  <li><b>Internet</b> : les fonctions facultatives décrites au point 2.</li>
+  <li><b>Vibration</b> : retour tactile.</li>
+</ul>
+<p>Les rappels vocaux utilisent la synthèse vocale de ton téléphone ou de Windows, sur l'appareil.</p>
+</section>
+
+<section>
+<h2>4. Partage, conservation, sécurité</h2>
+<ul>
+  <li>QMTech ne collecte, ne partage et ne vend aucune donnée personnelle.</li>
+  <li>Les données restent sur ton appareil tant que tu ne les effaces pas ou que tu ne désinstalles pas l'appli.</li>
+  <li>Les échanges avec Open Food Facts, GitHub et Google se font en HTTPS ; la synchronisation locale est chiffrée.</li>
+</ul>
+</section>
+
+<section>
+<h2>5. Santé et public</h2>
+<p>Calorys est un outil de suivi de l'alimentation et du poids pour les adultes. Ce n'est pas un dispositif médical et il ne remplace pas l'avis d'un médecin ou d'un diététicien. Le jeûne intermittent est déconseillé aux mineurs, aux femmes enceintes ou allaitantes et aux personnes diabétiques ou ayant des troubles du comportement alimentaire.</p>
+</section>
+
+<section>
+<h2>6. Tes droits et contact</h2>
+<p>Comme QMTech ne détient aucune donnée te concernant, tes droits d'accès, de rectification et d'effacement (RGPD) s'exercent directement dans l'appli (export, modification, « Tout effacer »). Pour toute question, écris à QMTech à l'adresse e-mail indiquée sur la fiche Google Play de Calorys. Tu peux aussi saisir la CNIL (cnil.fr).</p>
+<p>Si cette politique change, la nouvelle version sera publiée à cette même adresse avec sa date de mise à jour.</p>
+</section>
+</main>
+</body>
+</html>

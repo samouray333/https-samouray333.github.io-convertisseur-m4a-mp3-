@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.5.1';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -1113,6 +1113,7 @@
     { live: true });
   }
 
+  const PRIVACY_URL = 'https://docs.google.com/document/d/1VvGzBh47u9nN8BlWkMAGq6YrBVnhbmG-kdH4GWH0DHY/view';
   function openAbout() {
     openSheet(() => sheetHead('À propos de Calorys', 'Version ' + APP_VERSION + ' · QMTech') + `<div class="prose">
       <p>Calorys est un compteur de calories et un journal alimentaire qui fonctionne entièrement hors ligne. Tes données restent sur ton appareil : pas de compte, pas de serveur, pas de publicité.</p>
@@ -1124,6 +1125,8 @@
       ${P.kind === 'windows' ? '<li><b>Neutralinojs</b> : licence MIT.</li>' : ''}</ul>
       <h4>Calculs</h4><p>Métabolisme de base : équation de Mifflin-St Jeor. Objectif : dépense journalière ajustée de 7 700 kcal par kg visé, sans descendre sous 1 200 kcal (femme) ou 1 500 kcal (homme).</p>
       <p class="muted">Calorys ne remplace pas l'avis d'un médecin ou d'un diététicien.</p>
+      <h4>Confidentialité</h4><p>Pas de compte, pas de publicité, pas de traceur : tes données restent sur ton appareil. Seules les fonctions facultatives (catalogue, recherche Open Food Facts, analyse photo par IA avec ta clé) se connectent à Internet.</p>
+      <p><button class="btn ghost" data-act="openLink" data-url="${PRIVACY_URL}">Lire la politique de confidentialité</button></p>
       ${P.kind === 'windows' ? `<h4>Raccourcis clavier</h4><p>← / → : jour précédent / suivant · N ou Ctrl+F : ajouter un aliment · T : aujourd'hui · Ctrl+S : sauvegarde · Échap : fermer.<br>Tu peux aussi glisser un fichier de sauvegarde .json dans la fenêtre pour le restaurer.</p>` : ''}
       </div>`);
   }
@@ -1532,7 +1535,7 @@ Règles:
     const out = [];
     if (st.allowed === false) out.push(['notif', 'Les notifications de Calorys sont bloquées sur ce téléphone.', 'Autoriser']);
     if (st.exact === false) out.push(['exact', 'Les alarmes à l\'heure exacte sont désactivées : les rappels peuvent arriver en retard.', 'Activer']);
-    if (st.battery === false) out.push(['battery', 'L\'économie de batterie peut retarder ou bloquer les rappels quand Calorys est fermé.', 'Ne pas restreindre']);
+    if (st.battery === false) out.push(['battery', 'L\'économie de batterie peut retarder ou bloquer les rappels quand Calorys est fermé.' + (st.batteryDirect === false ? ' Dans la liste, choisis « Toutes les applis », puis Calorys et « Ne pas optimiser ».' : ''), st.batteryDirect === false ? 'Ouvrir les réglages batterie' : 'Ne pas restreindre']);
     return out;
   }
   function syncReminders() {
@@ -1675,6 +1678,8 @@ Règles:
     programTick();
     // Retour des réglages Android : met à jour l'état des notifications.
     for (const sh of sheets) if (sh.opts.reminders) { readReminders(sh); sh.refresh(); }
+    // Les alarmes exactes ont pu être autorisées entre-temps : reprogramme.
+    if (window.CalorysNative && S.settings.reminders.on) syncReminders();
   });
   /* Avertit quand on note un aliment pendant la période de jeûne du programme. */
   function fastingWarning() {
@@ -2334,6 +2339,10 @@ Règles:
       toast(s.data.items.length + ' aliment(s) ajouté(s) au ' + mealLabel(s.data.meal).toLowerCase());
     },
     reminders: () => openReminders(),
+    openLink: el => {
+      const u = el.dataset.url;
+      if (P.kind === 'windows') { try { Neutralino.os.open(u); } catch (e) { /* ignore */ } } else if (P.kind === 'android') location.href = u; else window.open(u, '_blank', 'noopener');
+    },
     notifFix: el => { try { window.CalorysNative.openSettings(el.dataset.v); } catch (e) { /* ignore */ } },
     notifTest: () => {
       if (window.CalorysNative && window.CalorysNative.testNotif) { window.CalorysNative.testNotif(); return; }

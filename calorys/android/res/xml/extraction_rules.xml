@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Le catalogue (140 Mo, retéléchargeable) est exclu de la sauvegarde Google, pas du transfert d'appareil à appareil. -->
 <data-extraction-rules>
-    <cloud-backup><exclude domain="cache" path="." /></cloud-backup>
+    <cloud-backup>
+        <exclude domain="cache" path="." />
+        <exclude domain="file" path="catalog.db" />
+        <exclude domain="file" path="catalog.db.tmp" />
+        <exclude domain="file" path="catalog-dl" />
+    </cloud-backup>
     <device-transfer><exclude domain="cache" path="." /></device-transfer>
 </data-extraction-rules>

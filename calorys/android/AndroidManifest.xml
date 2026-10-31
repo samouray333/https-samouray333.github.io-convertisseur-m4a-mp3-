@@ -1,20 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.qmtech.calorys"
-    android:versionCode="11"
-    android:versionName="1.5.0">
+    android:versionCode="12"
+    android:versionName="1.5.1">
 
-    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Rappels à l'heure exacte (sinon Android peut les décaler d'une heure ou plus en veille). -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Rappels à l'heure exacte (sinon Android peut les décaler d'une heure ou plus en veille).
+         APK directe : droit accordé d'office. Play Store (FLAVOR=play) : USE_EXACT_ALARM et la demande
+         directe de batterie sont réservés à d'autres types d'applis, l'utilisateur active les alarmes exactes. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" /><!--apk-->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" /><!--apk-->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" /><!--apk-->
+    <!--play <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" /> play-->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <queries>
@@ -31,7 +34,8 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/extraction_rules"
         android:supportsRtl="false"
-        android:hardwareAccelerated="true">
+        android:hardwareAccelerated="true"
+        android:enableOnBackInvokedCallback="true">
 
         <activity
             android:name=".MainActivity"
@@ -51,6 +55,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

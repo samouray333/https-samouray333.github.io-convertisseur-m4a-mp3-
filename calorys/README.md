@@ -1,4 +1,4 @@
-# Calorys 1.5.0 (QMTech)
+# Calorys 1.5.1 (QMTech)
 
 Compteur de calories et coach nutritionnel, inspiré des fonctionnalités de YAZIO, écrit de zéro (aucun code, texte, image ni donnée de YAZIO). La version 1.1 fusionne Calorys avec le moteur de **Nutravyn** (QMTech) : objectif adaptatif, mode sèche pour les pesées officielles, séances de sports de combat avec RPE et gamification par ceintures.
 
@@ -32,7 +32,12 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 - **Eau automatique** : repères EFSA en boisson (environ 2 L pour un homme, 1,6 L pour une femme, ajustés au poids), plus la sueur estimée des séances du jour.
 - **Gamification** : ceintures de blanche à 2e dan, XP, séries, défis de la semaine, 9 badges. Seuls les comportements sont récompensés, jamais un déficit plus creux. Désactivable.
 
-**Nouveau en 1.5.0 : rappels vocaux**
+**Nouveau en 1.5.1 : prête pour le Play Store**
+- **Version Play Store** (`release/Calorys-1.5.1.aab`, Android App Bundle) : cible Android 16 (API 36), bouton retour compatible avec le retour prédictif, droits conformes aux règles Google (alarmes exactes activées par l'utilisateur, réglages batterie ouverts sans demande directe). Guide pas à pas, textes de la fiche, réponses aux questionnaires et visuels dans `play-store/` (voir `play-store/GUIDE-PLAY-STORE.md`).
+- **Politique de confidentialité** : bouton dans À propos, copie dans `site/confidentialite.html`.
+- **Sauvegarde Google réparée** : le catalogue (140 Mo) est exclu de la sauvegarde Android ; avant, il dépassait la limite de 25 Mo et rien n'était sauvegardé.
+
+**Rappels vocaux (1.5.0)**
 - **Lire les rappels à voix haute** (Profil > Rappels) : en plus de la notification, Calorys dit le rappel en français (« Hydratation : 300 millilitres », « Un grand verre d'eau avant le déjeuner »…). Au choix : le titre seulement ou le titre et les détails, avec un bouton « Écouter un exemple ».
 - Android : voix de synthèse du téléphone, même appli fermée, au volume des notifications. Rien n'est dit en silencieux, en vibreur, en « Ne pas déranger » ni pendant un appel.
 - Windows : voix française de Windows (Hortense, Julie ou Paul), même appli fermée. Navigateur : tant que Calorys est ouvert.
@@ -71,13 +76,14 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 
 | Fichier | Plateforme | Taille |
 |---|---|---|
-| `Calorys-1.5.0.apk` | Android 8.0 et plus (cible Android 15) | 1,3 Mo |
-| `Calorys-Setup-1.5.0.exe` | Windows 10/11, installeur | 1,8 Mo |
-| `Calorys-Portable-1.5.0.zip` | Windows 10/11, sans installation | 2,0 Mo |
+| `Calorys-1.5.1.apk` | Android 8.0 et plus (cible Android 16), installation directe | 1,4 Mo |
+| `Calorys-1.5.1.aab` | Version Play Store (à importer dans la Play Console) | 1,2 Mo |
+| `Calorys-Setup-1.5.1.exe` | Windows 10/11, installeur | 1,8 Mo |
+| `Calorys-Portable-1.5.1.zip` | Windows 10/11, sans installation | 2,0 Mo |
 
 Le catalogue de produits n'est pas dans ces fichiers : il se télécharge depuis l'appli (Profil > Catalogue produits hors ligne, ou depuis la recherche). Il est publié dans `catalog/` de ce dépôt.
 
-**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 11). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
+**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 12). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
 
 **Synchroniser** : sur le téléphone, Profil > Synchroniser mes appareils > « Ce téléphone sert d'hôte ». Sur le PC, même menu : saisis l'adresse et le code affichés, puis Synchroniser. Les deux appareils doivent être sur le même Wi-Fi.
 
@@ -140,6 +146,8 @@ KEYSTORE=/chemin/calorys-release.jks KS_PASS='mot de passe' ./build.sh
 ```
 
 Si ton `aapt2` refuse l'android.jar récent, ajoute `ANDROID_RES_JAR=/chemin/android-33/android.jar`. Avec le SDK officiel, ajoute `D8=/chemin/build-tools/35.0.0/d8`.
+
+Version Play Store (Android App Bundle, dans `android/build-play/`) : mêmes variables, plus `FLAVOR=play` et `BUNDLETOOL=/chemin/bundletool-all.jar` (https://github.com/google/bundletool/releases). Elle retire `USE_EXACT_ALARM` et `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` du manifeste (lignes marquées `<!--apk-->`).
 
 Windows (Linux ou WSL : neu, makensis, zip, et wine + rcedit pour l'icône) :
 

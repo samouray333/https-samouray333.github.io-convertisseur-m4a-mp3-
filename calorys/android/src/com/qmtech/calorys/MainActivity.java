@@ -29,6 +29,8 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.webkit.JavascriptInterface;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -104,6 +106,7 @@ public class MainActivity extends Activity {
         root.addView(web, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
         setupInsets();
+        registerBack();
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -253,7 +256,16 @@ public class MainActivity extends Activity {
 
     @Override
     @SuppressWarnings("deprecation")
-    public void onBackPressed() {
+    public void onBackPressed() { handleBack(); }
+
+    /* Android 13+ : retour (et retour prédictif d'Android 16) via OnBackInvokedDispatcher. */
+    private void registerBack() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                new OnBackInvokedCallback() { @Override public void onBackInvoked() { handleBack(); } });
+    }
+
+    private void handleBack() {
         web.evaluateJavascript("(window.calorysBack && window.calorysBack()) ? 'yes' : 'no'", new ValueCallback<String>() {
             @Override
             public void onReceiveValue(String v) {
@@ -481,6 +493,7 @@ public class MainActivity extends Activity {
                 o.put("allowed", nm != null && nm.areNotificationsEnabled());
                 o.put("exact", am != null && ReminderReceiver.canExact(am));
                 o.put("battery", pm != null && pm.isIgnoringBatteryOptimizations(getPackageName()));
+                o.put("batteryDirect", batteryDirect());
                 return o.toString();
             } catch (Exception e) { return "{}"; }
         }
@@ -491,6 +504,11 @@ public class MainActivity extends Activity {
             if (!Speaker.canSpeak(MainActivity.this)) return false;
             runOnUiThread(new Runnable() { @Override public void run() { Speaker.say(MainActivity.this, text, 20000, null); } });
             return true;
+        }
+
+        /** Version Play Store : pas de demande directe, on ouvre la liste des applis. */
+        private boolean batteryDirect() {
+            return checkSelfPermission("android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS") == PackageManager.PERMISSION_GRANTED;
         }
 
         @JavascriptInterface
@@ -505,7 +523,9 @@ public class MainActivity extends Activity {
                 @Override
                 public void run() {
                     Intent i;
-                    if ("battery".equals(what)) i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()));
+                    if ("battery".equals(what)) i = batteryDirect()
+                            ? new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()))
+                            : new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
                     else if ("exact".equals(what) && Build.VERSION.SDK_INT >= 31) i = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName()));
                     else i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName());
                     try { startActivity(i); }

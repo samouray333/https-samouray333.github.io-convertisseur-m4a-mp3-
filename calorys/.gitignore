@@ -1,4 +1,5 @@
 keystore/
 android/build/
+android/build-play/
 windows/build/
 release/Calorys-source-*.zip

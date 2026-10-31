@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Sauvegarde Google : le journal oui, le catalogue (140 Mo, retéléchargeable) non : au-delà de 25 Mo, Android ne sauvegarde rien. -->
 <full-backup-content>
     <exclude domain="cache" path="." />
+    <exclude domain="file" path="catalog.db" />
+    <exclude domain="file" path="catalog.db.tmp" />
+    <exclude domain="file" path="catalog-dl" />
 </full-backup-content>
