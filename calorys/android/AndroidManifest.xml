@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.qmtech.calorys"
-    android:versionCode="12"
-    android:versionName="1.5.1">
+    android:versionCode="13"
+    android:versionName="1.6.0">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
 
@@ -18,6 +18,10 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" /><!--apk-->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" /><!--apk-->
     <!--play <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" /> play-->
+    <!-- Balance connectée : lecture du poids et de la masse grasse dans Health Connect (Android 14+). -->
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <queries>
@@ -47,7 +51,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- « Partager » un rapport de balance (PDF, capture) ou un export CSV vers Calorys. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+            </intent-filter>
         </activity>
+
+        <!-- Health Connect : lien « Politique de confidentialité » sur l'écran des autorisations. -->
+        <activity-alias
+            android:name=".ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
         <receiver
             android:name=".ReminderReceiver"

@@ -16,6 +16,8 @@ import android.net.Uri;
 import android.app.AlarmManager;
 import android.app.NotificationManager;
 import android.os.Build;
+import android.util.Base64;
+import java.io.ByteArrayOutputStream;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.os.Bundle;
@@ -65,6 +67,8 @@ public class MainActivity extends Activity {
     static final int REQ_FILE = 10;
     static final int REQ_CAMERA_PERM = 11;
     static final int REQ_NOTIF_PERM = 12;
+    static final int REQ_HEALTH = 13;
+    static final String PRIVACY_URL = "https://docs.google.com/document/d/1VvGzBh47u9nN8BlWkMAGq6YrBVnhbmG-kdH4GWH0DHY/view";
 
     private FrameLayout root;
     private WebView web;
@@ -107,6 +111,8 @@ public class MainActivity extends Activity {
         setContentView(root);
         setupInsets();
         registerBack();
+        showPrivacyIfAsked(getIntent());
+        takeShare(getIntent());
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -244,6 +250,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_HEALTH) {
+            web.evaluateJavascript("window.__calorysHealth && window.__calorysHealth('perm')", null);
+            return;
+        }
         if (requestCode == REQ_CAMERA_PERM && pendingPermission != null) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 pendingPermission.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
@@ -257,6 +267,51 @@ public class MainActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() { handleBack(); }
+
+    /* Health Connect ouvre l'appli avec VIEW_PERMISSION_USAGE pour montrer la politique de confidentialité. */
+    /* Fichier partagé vers Calorys (rapport de balance, export CSV) : gardé jusqu'à ce que l'appli web le réclame. */
+    private volatile String sharedJson = null;
+
+    private void takeShare(Intent i) {
+        if (i == null || !Intent.ACTION_SEND.equals(i.getAction())) return;
+        final Uri u = i.getParcelableExtra(Intent.EXTRA_STREAM);
+        final String type = i.getType();
+        if (u == null) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    InputStream in = getContentResolver().openInputStream(u);
+                    ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                    byte[] buf = new byte[1 << 16];
+                    int n;
+                    try { while ((n = in.read(buf)) > 0) { bo.write(buf, 0, n); if (bo.size() > 15 * 1024 * 1024) throw new Exception("trop lourd"); } }
+                    finally { in.close(); }
+                    String name = u.getLastPathSegment() == null ? "fichier" : u.getLastPathSegment();
+                    JSONObject o = new JSONObject();
+                    o.put("name", name);
+                    o.put("mime", type == null ? "" : type);
+                    o.put("b64", Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP));
+                    sharedJson = o.toString();
+                    runOnUiThread(new Runnable() { @Override public void run() { web.evaluateJavascript("window.__calorysShared && window.__calorysShared()", null); } });
+                } catch (Exception e) {
+                    runOnUiThread(new Runnable() { @Override public void run() { Toast.makeText(MainActivity.this, "Fichier partagé illisible", Toast.LENGTH_LONG).show(); } });
+                }
+            }
+        }).start();
+    }
+
+    private void showPrivacyIfAsked(Intent i) {
+        if (i == null || !"android.intent.action.VIEW_PERMISSION_USAGE".equals(i.getAction())) return;
+        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL))); } catch (Exception e) { /* ignore */ }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        showPrivacyIfAsked(intent);
+        takeShare(intent);
+    }
 
     /* Android 13+ : retour (et retour prédictif d'Android 16) via OnBackInvokedDispatcher. */
     private void registerBack() {
@@ -496,6 +551,60 @@ public class MainActivity extends Activity {
                 o.put("batteryDirect", batteryDirect());
                 return o.toString();
             } catch (Exception e) { return "{}"; }
+        }
+
+        /** Fichier partagé en attente (JSON {name, mime, b64}) ou null ; une seule fois. */
+        @JavascriptInterface
+        public String takeShared() { String s = sharedJson; sharedJson = null; return s; }
+
+        /* ---- Balance connectée (Health Connect) ---- */
+        @JavascriptInterface
+        public String healthStatus() {
+            try {
+                JSONObject o = new JSONObject();
+                boolean ok = Health.available(MainActivity.this);
+                o.put("available", ok);
+                o.put("sdk", Build.VERSION.SDK_INT);
+                o.put("weight", ok && checkSelfPermission(Health.READ_WEIGHT) == PackageManager.PERMISSION_GRANTED);
+                o.put("fat", ok && checkSelfPermission(Health.READ_BODY_FAT) == PackageManager.PERMISSION_GRANTED);
+                return o.toString();
+            } catch (Exception e) { return "{}"; }
+        }
+
+        @JavascriptInterface
+        public void healthRequest() {
+            if (!Health.available(MainActivity.this)) return;
+            runOnUiThread(new Runnable() { @Override public void run() { requestPermissions(Health.permissions(), REQ_HEALTH); } });
+        }
+
+        @JavascriptInterface
+        public void healthSettings() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        startActivity(new Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS").putExtra(Intent.EXTRA_PACKAGE_NAME, getPackageName()));
+                    } catch (Exception e) {
+                        try { startActivity(new Intent("android.health.connect.action.HEALTH_HOME_SETTINGS")); } catch (Exception e2) { /* ignore */ }
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void healthRead(final double sinceMs) {
+            if (!Health.available(MainActivity.this)) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Health.read(MainActivity.this, (long) sinceMs, new Health.Done() {
+                        @Override
+                        public void done(String json) {
+                            web.evaluateJavascript("window.__calorysHealth && window.__calorysHealth('data', " + JSONObject.quote(json) + ")", null);
+                        }
+                    });
+                }
+            });
         }
 
         /** Lecture à voix haute immédiate (bouton « Tester la voix »). */

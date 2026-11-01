@@ -562,3 +562,4 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
 .wset .seg.wide { margin: 0; }
 .wset p { margin: 0; }
 .wset .nxt { display: grid; gap: 4px; }
+.row-btns { display: flex; gap: 8px; } .row-btns .btn { margin: 0; }

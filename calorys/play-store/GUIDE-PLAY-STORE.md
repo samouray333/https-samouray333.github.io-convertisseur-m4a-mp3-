@@ -4,7 +4,7 @@ Tout est prêt dans ce dossier. Il reste les clics dans la Play Console, dans l'
 
 | Fichier | À quoi il sert |
 |---|---|
-| `Calorys-1.5.1.aab` (dans `release/`) | L'appli à envoyer (Android App Bundle signé avec ta clé d'importation) |
+| `Calorys-1.6.0.aab` (dans `release/`) | L'appli à envoyer (Android App Bundle signé avec ta clé d'importation) |
 | `icone-512.png` | Icône de la fiche (512 × 512) |
 | `banniere-1024x500.png` | Bannière de la fiche (« Image de présentation ») |
 | `captures/01…08.png` | Captures d'écran téléphone (1080 × 2160) |
@@ -23,6 +23,14 @@ https://docs.google.com/document/d/1VvGzBh47u9nN8BlWkMAGq6YrBVnhbmG-kdH4GWH0DHY/
    **https://docs.google.com/document/d/1VvGzBh47u9nN8BlWkMAGq6YrBVnhbmG-kdH4GWH0DHY/view**
 
 Vérifie-la dans une fenêtre de navigation privée : elle doit s'ouvrir sans connexion.
+
+**Depuis la 1.6.0 (balance connectée)**, ajoute dans ce document, juste avant le paragraphe « QMTech n'a aucun accès à ces données », ce paragraphe (Google l'exige pour Health Connect) :
+
+> **Balance connectée (Health Connect, Android 14 et plus)** : si tu l'autorises, Calorys **lit** dans Health Connect le poids et la masse grasse enregistrés par l'appli de ta balance, pour les ajouter à ta courbe de poids. Calorys n'écrit rien dans Health Connect. Ces données sont utilisées uniquement pour afficher ton suivi dans l'appli, restent sur ton appareil, ne sont jamais transmises à QMTech ni à des tiers, et ne servent ni à la publicité ni à aucune autre fin. Tu peux retirer l'autorisation à tout moment dans Health Connect. L'utilisation des données reçues de Health Connect respecte les règles d'utilisation limitée des autorisations Health Connect.
+
+Dans la partie « Connexions à Internet », ajoute aussi : « **Lecture d'un rapport de balance par IA** : uniquement si tu le demandes, avec ta propre clé Gemini. Le rapport (PDF ou capture d'écran) est envoyé directement à Google pour en recopier les mesures, dans les mêmes conditions que l'analyse de photo ci-dessus. Tu vérifies les valeurs avant de les enregistrer. »
+
+Et dans la liste des autorisations : « **Health Connect (poids, masse grasse, historique)** : lire les pesées de ta balance connectée, y compris celles enregistrées avant l'autorisation. » La version complète à jour est dans `site/confidentialite.html`.
 
 ---
 
@@ -63,6 +71,8 @@ COMPTEUR DE CALORIES COMPLET
 OBJECTIF ADAPTATIF
 • Objectif calculé avec l'équation de Mifflin-St Jeor, puis ajusté à ta vraie dépense mesurée sur ton journal et tes pesées
 • Courbe de poids lissée pour ne pas paniquer à chaque variation d'eau
+• Balance connectée : tes pesées et ta masse grasse arrivent toutes seules via Health Connect (Fitdays, Renpho, Withings, Zepp, Huawei, Fitbit…), par import CSV, ou en partageant le rapport de ta balance (lu par IA)
+• Composition corporelle : masse grasse, masse maigre, muscle, eau, graisse viscérale et leur évolution
 • Mode sèche avec date de pesée pour les sportifs
 
 JEÛNE INTERMITTENT ET PROGRAMMES
@@ -137,6 +147,7 @@ Types de données à déclarer :
 | Type | Collecté | Partagé | Facultatif | Éphémère | Finalité |
 |---|---|---|---|---|---|
 | Photos et vidéos > **Photos** | Oui | Non | Oui (analyse IA lancée par l'utilisateur) | Non | Fonctionnalités de l'application |
+| Fichiers et documents > **Fichiers et documents** | Oui | Non | Oui (rapport de balance lu par l'IA, à la demande) | Non | Fonctionnalités de l'application |
 | Activité dans les applis > **Historique des recherches dans l'application** | Oui | Non | Oui (recherche en ligne Open Food Facts) | Non | Fonctionnalités de l'application |
 
 Tout le reste (santé, poids, repas, nom, position…) : **non collecté**, car ça ne quitte jamais le téléphone. La sauvegarde Android de Google ne compte pas comme collecte.
@@ -145,8 +156,17 @@ Tout le reste (santé, poids, repas, nom, position…) : **non collecté**, car 
 Non / Aucune / Non.
 
 ### Applis de santé (déclaration)
-Coche **Nutrition et gestion du poids** et **Activité physique et remise en forme**.
+Coche **Nutrition et gestion du poids** et **Activité physique et remise en forme**. Indique que l'appli utilise **Health Connect** (lecture du poids et de la masse grasse).
 Ce n'est **pas** un dispositif médical, pas de recherche sur des sujets humains, pas d'accès à Santé Connect.
+
+### Autorisations Health Connect (balance connectée)
+La Play Console demande une justification pour chaque autorisation Health Connect (Contenu de l'application > **Autorisations Health Connect**) :
+- **Lire le poids** (`READ_WEIGHT`) : « Calorys affiche la courbe de poids de l'utilisateur et ajuste son objectif calorique à son évolution réelle. Il importe les pesées de la balance connectée de l'utilisateur, écrites dans Health Connect par l'appli de la balance. »
+- **Lire la masse grasse** (`READ_BODY_FAT`) : « Affichée à côté de chaque pesée dans l'historique de poids, pour suivre la composition corporelle pendant une perte de poids. »
+- **Lire l'historique** (`READ_HEALTH_DATA_HISTORY`) : « À la première connexion, l'utilisateur récupère ses pesées passées pour avoir une courbe de poids complète et un objectif adaptatif juste dès le départ. »
+- Catégorie d'appli : **Nutrition / gestion du poids**. Les données ne quittent pas l'appareil, ne sont pas partagées et ne servent pas à la publicité.
+
+Dans **Sécurité des données**, rien ne change : le poids lu dans Health Connect reste sur le téléphone, ce n'est donc pas une « collecte ».
 
 ### Identifiant publicitaire
 **Non**, l'appli n'utilise pas l'identifiant publicitaire.
@@ -169,9 +189,9 @@ Un compte développeur personnel créé après novembre 2023 doit faire un **tes
 
 1. **Tester > Tests fermés > Créer un canal** (ou utiliser « Alpha »).
 2. **Testeurs** : crée une liste avec les adresses Gmail d'au moins 12 personnes (famille, amis, collègues avec un téléphone Android).
-3. **Créer une release** : importe `Calorys-1.5.1.aab`. Notes de version :
+3. **Créer une release** : importe `Calorys-1.6.0.aab`. Notes de version :
    ```
-   Première version de Calorys sur le Play Store : compteur de calories, jeûne intermittent, programmes, eau et rappels (aussi vocaux).
+   Première version de Calorys sur le Play Store : compteur de calories, jeûne intermittent, programmes, eau, rappels (aussi vocaux) et balance connectée via Health Connect.
    ```
 4. Envoie la release en examen (souvent 1 à 3 jours la première fois).
 5. Une fois validée, copie le **lien de participation** et envoie-le aux testeurs : chacun clique « Devenir testeur », puis installe Calorys depuis le Play Store **et la garde installée 14 jours**. Demande-leur de l'ouvrir de temps en temps.

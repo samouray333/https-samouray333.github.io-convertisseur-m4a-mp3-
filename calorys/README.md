@@ -1,4 +1,4 @@
-# Calorys 1.5.1 (QMTech)
+# Calorys 1.6.0 (QMTech)
 
 Compteur de calories et coach nutritionnel, inspiré des fonctionnalités de YAZIO, écrit de zéro (aucun code, texte, image ni donnée de YAZIO). La version 1.1 fusionne Calorys avec le moteur de **Nutravyn** (QMTech) : objectif adaptatif, mode sèche pour les pesées officielles, séances de sports de combat avec RPE et gamification par ceintures.
 
@@ -32,8 +32,15 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 - **Eau automatique** : repères EFSA en boisson (environ 2 L pour un homme, 1,6 L pour une femme, ajustés au poids), plus la sueur estimée des séances du jour.
 - **Gamification** : ceintures de blanche à 2e dan, XP, séries, défis de la semaine, 9 badges. Seuls les comportements sont récompensés, jamais un déficit plus creux. Désactivable.
 
-**Nouveau en 1.5.1 : prête pour le Play Store**
-- **Version Play Store** (`release/Calorys-1.5.1.aab`, Android App Bundle) : cible Android 16 (API 36), bouton retour compatible avec le retour prédictif, droits conformes aux règles Google (alarmes exactes activées par l'utilisateur, réglages batterie ouverts sans demande directe). Guide pas à pas, textes de la fiche, réponses aux questionnaires et visuels dans `play-store/` (voir `play-store/GUIDE-PLAY-STORE.md`).
+**Nouveau en 1.6.0 : balance connectée**
+- **Health Connect** (Android 14 et plus, Profil > Balance connectée) : Calorys lit le poids et la masse grasse que l'appli de ta balance (Fitdays, Renpho, Withings, Zepp Life, Huawei Santé, Fitbit, Samsung Health…) écrit dans Health Connect. Synchro automatique à chaque ouverture, tout l'historique à la première connexion.
+- **Import CSV** (Android et Windows) : exports Fitdays, Renpho, Withings, Garmin, Excel… Date, poids (kg ou lb) et masse grasse (%) sont reconnus automatiquement.
+- **Rapport de balance lu par IA** (PDF ou capture, avec ta clé Gemini) : pour les applis qui ne partagent rien, comme Fit Profile. Sur Android, « Partager » le rapport vers Calorys suffit. Tu vérifies les valeurs avant d'enregistrer.
+- **Composition corporelle** : masse grasse, muscle squelettique, eau, graisse viscérale, métabolisme de base, masse osseuse, âge métabolique (aussi en saisie manuelle dans « Nouvelle pesée ») ; carte dédiée dans Analyse avec masse grasse et masse maigre en kg et leur évolution.
+- Une pesée par jour (la première du matin, ou la dernière au choix). Une pesée saisie à la main n'est jamais remplacée. La masse grasse et l'appli d'origine s'affichent dans l'historique des pesées.
+
+**Prête pour le Play Store (1.5.1)**
+- **Version Play Store** (`release/Calorys-1.6.0.aab`, Android App Bundle) : cible Android 16 (API 36), bouton retour compatible avec le retour prédictif, droits conformes aux règles Google (alarmes exactes activées par l'utilisateur, réglages batterie ouverts sans demande directe). Guide pas à pas, textes de la fiche, réponses aux questionnaires et visuels dans `play-store/` (voir `play-store/GUIDE-PLAY-STORE.md`).
 - **Politique de confidentialité** : bouton dans À propos, copie dans `site/confidentialite.html`.
 - **Sauvegarde Google réparée** : le catalogue (140 Mo) est exclu de la sauvegarde Android ; avant, il dépassait la limite de 25 Mo et rien n'était sauvegardé.
 
@@ -76,14 +83,14 @@ Pas de compte, pas de serveur, pas d'abonnement. Tout fonctionne **hors ligne**,
 
 | Fichier | Plateforme | Taille |
 |---|---|---|
-| `Calorys-1.5.1.apk` | Android 8.0 et plus (cible Android 16), installation directe | 1,4 Mo |
-| `Calorys-1.5.1.aab` | Version Play Store (à importer dans la Play Console) | 1,2 Mo |
-| `Calorys-Setup-1.5.1.exe` | Windows 10/11, installeur | 1,8 Mo |
-| `Calorys-Portable-1.5.1.zip` | Windows 10/11, sans installation | 2,0 Mo |
+| `Calorys-1.6.0.apk` | Android 8.0 et plus (cible Android 16), installation directe | 1,4 Mo |
+| `Calorys-1.6.0.aab` | Version Play Store (à importer dans la Play Console) | 1,2 Mo |
+| `Calorys-Setup-1.6.0.exe` | Windows 10/11, installeur | 1,8 Mo |
+| `Calorys-Portable-1.6.0.zip` | Windows 10/11, sans installation | 2,0 Mo |
 
 Le catalogue de produits n'est pas dans ces fichiers : il se télécharge depuis l'appli (Profil > Catalogue produits hors ligne, ou depuis la recherche). Il est publié dans `catalog/` de ce dépôt.
 
-**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 12). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
+**Android** : ouvre l'APK sur le téléphone. La 1.3 s'installe par-dessus les versions précédentes sans perte de données (même clé de signature, versionCode 13). Si le catalogue de la 1.1 est installé, l'appli propose « Mettre à jour » pour récupérer les photos.
 
 **Synchroniser** : sur le téléphone, Profil > Synchroniser mes appareils > « Ce téléphone sert d'hôte ». Sur le PC, même menu : saisis l'adresse et le code affichés, puis Synchroniser. Les deux appareils doivent être sur le même Wi-Fi.
 

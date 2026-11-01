@@ -17,7 +17,7 @@
 <body>
 <main>
 <h1>Politique de confidentialité de Calorys</h1>
-<p class="muted">Application Calorys, éditée par QMTech · Dernière mise à jour : 31 octobre 2026</p>
+<p class="muted">Application Calorys, éditée par QMTech · Dernière mise à jour : 1er novembre 2026</p>
 
 <section>
 <h2>En bref</h2>
@@ -37,6 +37,7 @@
   <li>les photos que tu ajoutes à un repas ou un aliment ;</li>
   <li>tes réglages (rappels, thème, programme suivi).</li>
 </ul>
+<p><b>Balance connectée (Health Connect, Android 14 et plus)</b> : si tu l'autorises, Calorys <b>lit</b> dans Health Connect le poids et la masse grasse enregistrés par l'appli de ta balance, pour les ajouter à ta courbe de poids. Calorys n'écrit rien dans Health Connect. Ces données sont utilisées uniquement pour afficher ton suivi dans l'appli, restent sur ton appareil, ne sont jamais transmises à QMTech ni à des tiers, et ne servent ni à la publicité ni à aucune autre fin. Tu peux retirer l'autorisation à tout moment dans Health Connect. L'utilisation des données reçues de Health Connect respecte les règles d'utilisation limitée des autorisations Health Connect.</p>
 <p>QMTech n'a <b>aucun accès</b> à ces données. Tu peux les exporter (sauvegarde JSON, CSV), les effacer (Profil &gt; Tout effacer) ou les supprimer en désinstallant l'appli.</p>
 <p><b>Sauvegarde Android</b> : si la sauvegarde Google est activée sur ton téléphone, Android peut inclure les données de Calorys dans la sauvegarde chiffrée de ton compte Google, comme pour les autres applis. Ce service est géré par Google, pas par QMTech, et se désactive dans les réglages du téléphone.</p>
 </section>
@@ -48,6 +49,7 @@
   <li><b>Recherche en ligne et codes-barres</b> : quand le produit n'est pas dans le catalogue, le mot recherché ou le code-barres est envoyé à Open Food Facts (openfoodfacts.org), sans identifiant ni information sur toi.</li>
   <li><b>Photos des produits</b> : les images des produits sont chargées depuis images.openfoodfacts.org quand une connexion est disponible.</li>
   <li><b>Analyse d'une photo de repas par IA</b> : uniquement si tu saisis ta propre clé d'API Google Gemini et que tu lances l'analyse. La photo et la consigne d'analyse sont alors envoyées directement à Google, sans passer par QMTech, et sont traitées selon les <a href="https://ai.google.dev/gemini-api/terms">conditions de l'API Gemini</a> et les <a href="https://policies.google.com/privacy">règles de confidentialité de Google</a>. Selon l'offre de ta clé, Google peut utiliser ces contenus pour améliorer ses services.</li>
+  <li><b>Lecture d'un rapport de balance par IA</b> : uniquement si tu le demandes, avec ta propre clé Gemini. Le rapport (PDF ou capture d'écran) est envoyé directement à Google pour en recopier les mesures, dans les mêmes conditions que l'analyse de photo ci-dessus. Tu vérifies les valeurs avant de les enregistrer.</li>
   <li><b>Synchronisation entre ton téléphone et ton PC</b> : elle se fait directement entre tes appareils, sur ton réseau Wi-Fi local, chiffrée (AES-GCM) avec le code d'appairage. Elle ne passe par aucun serveur.</li>
 </ul>
 </section>
@@ -56,6 +58,7 @@
 <h2>3. Autorisations Android</h2>
 <ul>
   <li><b>Appareil photo</b> : lire les codes-barres et prendre des photos de repas. Les images restent sur l'appareil, sauf analyse IA lancée par toi.</li>
+  <li><b>Health Connect (poids, masse grasse, historique)</b> : lire les pesées de ta balance connectée, y compris celles enregistrées avant l'autorisation.</li>
   <li><b>Notifications, alarmes exactes, démarrage du téléphone</b> : afficher les rappels (repas, eau, jeûne, pesée) à l'heure choisie, et les reprogrammer après un redémarrage.</li>
   <li><b>Internet</b> : les fonctions facultatives décrites au point 2.</li>
   <li><b>Vibration</b> : retour tactile.</li>

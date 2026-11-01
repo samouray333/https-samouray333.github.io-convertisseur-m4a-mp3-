@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.5.1';
+  const APP_VERSION = '1.6.0';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -108,7 +108,8 @@
       shopping: [], favRecipes: [], program: null,
       settings: { theme: 'auto', accent: 'emerald', vivid: true, game: true, geminiKey: '', seenBelt: 'white', seenBadges: [],
         reminders: { on: false, meals: true, breakfast: '08:00', lunch: '12:30', dinner: '19:30', water: true, weigh: false, weighAt: '07:30', fastEnd: true,
-          waterMode: 'interval', waterEvery: 2, waterFrom: '08:00', waterTo: '20:00', waterTimes: '10:30, 15:00, 17:30', waterOverProgram: false, preMeal: false, voice: false, voiceMode: 'title' } }
+          waterMode: 'interval', waterEvery: 2, waterFrom: '08:00', waterTo: '20:00', waterTimes: '10:30, 15:00, 17:30', waterOverProgram: false, preMeal: false, voice: false, voiceMode: 'title' },
+        scale: { hc: false, last: 0, pick: 'first', apps: [] } }
     };
   }
   function migrate(s) {
@@ -120,6 +121,7 @@
     out.fasting = Object.assign(defaults().fasting, s.fasting || {});
     out.settings = Object.assign(defaults().settings, s.settings || {});
     out.settings.reminders = Object.assign(defaults().settings.reminders, (s.settings || {}).reminders || {});
+    out.settings.scale = Object.assign(defaults().settings.scale, (s.settings || {}).scale || {});
     // v1.0 -> v1.1 : "ajouter les calories des activités" (tout ou rien) devient un pourcentage (50 % conseillé).
     const sp = (s.profile || {});
     if (sp.exercisePct == null && sp.addExercise === false) out.profile.exercisePct = 0;
@@ -889,12 +891,269 @@
   }
 
   function lastWaist() { for (let i = S.weights.length - 1; i >= 0; i--) if (S.weights[i].waist) return S.weights[i].waist; return null; }
+  /* Mesures de composition corporelle (balances impédancemètres : Fit Profile, Fitdays, Renpho, Withings…). */
+  const BODY_FIELDS = [['fat', 'Masse grasse', '%', 2, 75], ['muscle', 'Muscle squelettique', 'kg', 10, 120], ['water', 'Eau corporelle', '%', 25, 80],
+    ['visc', 'Graisse viscérale', 'indice', 1, 60], ['bmr', 'Métabolisme de base', 'kcal', 800, 4000], ['bone', 'Masse osseuse', 'kg', 0.5, 8], ['mage', 'Âge métabolique', 'ans', 10, 100]];
+  const BODY_KEYS = BODY_FIELDS.map(x => x[0]);
+  function cleanBody(o) {
+    const r = {};
+    for (const [k, , , lo, hi] of BODY_FIELDS) { const v = typeof o[k] === 'number' ? o[k] : num(o[k]); if (v >= lo && v <= hi) r[k] = Math.round(v * 10) / 10; }
+    return r;
+  }
+
+  /* Rapport de balance (PDF ou capture d'écran) lu par Gemini, avec la clé de l'utilisateur. */
+  const REPORT_SCHEMA = { type: 'OBJECT', properties: { date: { type: 'STRING' }, time: { type: 'STRING' }, app: { type: 'STRING' }, weight_kg: { type: 'NUMBER' },
+    body_fat_pct: { type: 'NUMBER' }, skeletal_muscle_kg: { type: 'NUMBER' }, body_water_pct: { type: 'NUMBER' }, visceral_fat: { type: 'NUMBER' },
+    bmr_kcal: { type: 'NUMBER' }, bone_kg: { type: 'NUMBER' }, metabolic_age: { type: 'NUMBER' } }, required: ['weight_kg'] };
+  async function geminiReport(b64, mime) {
+    let r;
+    try {
+      r = await geminiPost({ contents: [{ role: 'user', parts: [{ text: 'Ce document est un rapport de balance impédancemètre. Recopie exactement les valeurs MESURÉES (pas les plages normales). ' +
+        'date au format AAAA-MM-JJ, time au format HH:MM, app = nom de l\'application si indiqué. body_fat_pct = pourcentage de graisse corporelle (PBF), skeletal_muscle_kg = muscle squelettique en kg, ' +
+        'body_water_pct = eau corporelle en %, visceral_fat = indice de graisse viscérale, bmr_kcal = métabolisme de base. Omet une valeur absente.' }, { inline_data: { mime_type: mime, data: b64 } }] }],
+        generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: REPORT_SCHEMA } });
+    } catch (e) { throw new Error('Pas de réseau.'); }
+    if (!r) throw new Error('Aucun modèle Gemini disponible actuellement.');
+    if (r.status === 429) throw new Error('Quota Gemini atteint pour aujourd\'hui.');
+    if (r.status === 400 || r.status === 403) throw new Error('Clé API refusée (' + r.status + '). ' + (await googleMsg(r)));
+    if (!r.ok) throw new Error('Lecture échouée (' + r.status + '). ' + (await googleMsg(r)));
+    let o;
+    try { const root = await r.json(); o = JSON.parse((((root.candidates || [])[0] || {}).content.parts[0].text || '').replace(/^```[a-z]*\n?|```$/g, '')); } catch (e) { throw new Error('Rapport illisible.'); }
+    if (!(o.weight_kg > 20 && o.weight_kg < 400)) throw new Error('Aucun poids trouvé dans ce document.');
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(o.date || '') && o.date <= today() ? o.date : today();
+    return Object.assign({ date, kg: Math.round(o.weight_kg * 100) / 100, app: (o.app || '').trim() },
+      cleanBody({ fat: o.body_fat_pct, muscle: o.skeletal_muscle_kg, water: o.body_water_pct, visc: o.visceral_fat, bmr: o.bmr_kcal, bone: o.bone_kg, mage: o.metabolic_age }));
+  }
+  function pickReportFile() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'application/pdf,image/*'; inp.hidden = true;
+    document.body.appendChild(inp);
+    inp.addEventListener('change', () => { const f = inp.files[0]; inp.remove(); if (f) readReportFile(f); });
+    inp.click();
+  }
+  async function readReportFile(f) {
+      const wait = openSheet(() => sheetHead('Lecture du rapport…', 'Gemini recopie les mesures de ta balance') + '<div class="dl busy"><i></i></div>');
+      try {
+        let b64, mime;
+        if (/pdf/i.test(f.type) || /\.pdf$/i.test(f.name)) {
+          if (f.size > 15e6) throw new Error('PDF trop lourd (15 Mo maximum).');
+          b64 = await new Promise((res, rej) => { const fr2 = new FileReader(); fr2.onload = () => res(String(fr2.result).split(',')[1]); fr2.onerror = rej; fr2.readAsDataURL(f); });
+          mime = 'application/pdf';
+        } else { b64 = (await shrinkImage(f, 2400)).split(',')[1]; mime = 'image/jpeg'; }
+        const res = await geminiReport(b64, mime);
+        closeSheet(wait);
+        openReportReview(res);
+      } catch (e) { closeSheet(wait); toast(e.message); }
+  }
+  /* Android : fichier partagé vers Calorys depuis une autre appli (Fit Profile, Fitdays…). */
+  window.__calorysShared = () => {
+    let o = null;
+    try { o = JSON.parse(window.CalorysNative.takeShared() || 'null'); } catch (e) { /* ignore */ }
+    if (!o || !o.b64) return;
+    if (!S.profile.onboarded) { toast('Termine d\'abord la configuration de Calorys.'); return; }
+    const bin = atob(o.b64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const f = new File([bytes], o.name || 'fichier', { type: o.mime || '' });
+    if (/csv|comma|text/i.test(o.mime) || /\.csv$/i.test(o.name)) { f.text().then(t => importScaleCsv(t, o.name)); return; }
+    if (!S.settings.geminiKey) { openGeminiKey(() => readReportFile(f)); return; }
+    readReportFile(f);
+  };
+  function openReportReview(m) {
+    openSheet(() => sheetHead('Rapport de balance', 'Vérifie les valeurs avant d\'enregistrer') + `<div class="form">
+      <div class="grid2"><label class="field"><span>Poids (kg)</span><input id="rr_kg" inputmode="decimal" value="${fr(m.kg)}"></label>
+      <label class="field"><span>Date</span><input id="rr_date" type="date" value="${m.date}" max="${today()}"></label></div>
+      <div class="grid2">${BODY_FIELDS.map(([k, l, u]) => `<label class="field"><span>${l} (${u})</span><input id="rr_${k}" inputmode="decimal" value="${m[k] != null ? fr(m[k]) : ''}"></label>`).join('')}</div>
+      <p class="muted small">Lu par Gemini${m.app ? ' dans un rapport ' + esc(m.app) : ''}. Les balances impédancemètres donnent des tendances : compare tes mesures dans le temps, à la même heure.</p></div>
+      <div class="sheet-actions"><button class="btn grow" data-act="saveReport">${icon('check')}Enregistrer la pesée</button></div>`, { data: { m } });
+  }
+
+  /* ---------- Balance connectée : Health Connect (Android 14+) et import CSV (partout) ---------- */
+  const SCALE_APPS = {
+    'com.fitdays.fitdays': 'Fitdays', 'com.qingniu.renpho': 'Renpho', 'com.renpho.health': 'Renpho', 'com.withings.wiscale2': 'Withings',
+    'com.xiaomi.hm.health': 'Zepp Life', 'com.huami.watch.hmwatchmanager': 'Zepp', 'com.mi.health': 'Mi Fitness', 'com.xiaomi.wearable': 'Mi Fitness',
+    'com.huawei.health': 'Huawei Santé', 'com.fitbit.FitbitMobile': 'Fitbit', 'com.google.android.apps.fitness': 'Google Fit',
+    'com.samsung.android.app.shealth': 'Samsung Health', 'com.eufylife.smarthome': 'eufy Life', 'com.garmin.android.apps.connectmobile': 'Garmin Connect',
+    'com.polar.polarflow': 'Polar Flow', 'com.omronhealthcare.omronconnect': 'Omron Connect', 'com.yolanda.health.qnscale': 'Feelfit', 'com.myfitnesspal.android': 'MyFitnessPal',
+    'cn.icomon.icofit': 'Fitdays', 'com.icomon.fitdays': 'Fitdays', 'com.lefu.healthu': 'Lefu', 'com.oppo.health': 'OPPO Santé', 'com.heytap.health.international': 'HeyTap Santé'
+  };
+  const scaleAppName = pkg => SCALE_APPS[pkg] || (pkg ? pkg.split('.').filter(x => !/^(com|android|app|apps|mobile|health|international|cn)$/.test(x)).pop() || pkg : 'Balance');
+  const hasHealth = () => !!(window.CalorysNative && window.CalorysNative.healthStatus);
+  function healthStatus() { try { return JSON.parse(window.CalorysNative.healthStatus()); } catch (e) { return {}; } }
+  function scaleSummary() {
+    const sc = S.settings.scale, n = S.weights.filter(w => w.src).length;
+    if (sc.hc) return 'Health Connect' + (sc.last ? ' · ' + new Date(sc.last).toLocaleDateString('fr-FR') : '');
+    return n ? n + ' pesée(s) importée(s)' : 'Health Connect ou fichier CSV';
+  }
+  /* Fusionne des mesures [{t (ms), kg, fat?, src}] : une pesée par jour (la première du matin ou la dernière).
+     Une pesée saisie à la main n'est jamais remplacée. */
+  function mergeScale(list, fats) {
+    const pick = S.settings.scale.pick, byDay = new Map();
+    for (const m of list) {
+      if (!(m.kg > 20 && m.kg < 400) || !(m.t > 0)) continue;
+      const k = dkey(new Date(m.t)), cur = byDay.get(k);
+      if (!cur || (pick === 'last' ? m.t > cur.t : m.t < cur.t)) byDay.set(k, m);
+    }
+    // Masse grasse : mesure la plus proche le même jour (même pesée en général).
+    const fatByDay = new Map();
+    for (const f of fats || []) { if (!(f.pct > 2 && f.pct < 75)) continue; const k = dkey(new Date(f.t)); (fatByDay.get(k) || fatByDay.set(k, []).get(k)).push(f); }
+    let added = 0, updated = 0;
+    const apps = new Set(S.settings.scale.apps);
+    const tday = today();
+    for (const [date, m] of byDay) {
+      if (date > tday) continue;
+      const ex = S.weights.find(w => w.date === date);
+      if (ex && !ex.src) continue;
+      const rec = { date, kg: Math.round(m.kg * 10) / 10, src: m.src };
+      if (m.fat > 0) rec.fat = Math.round(m.fat * 10) / 10;
+      const fl = fatByDay.get(date);
+      if (!rec.fat && fl) rec.fat = Math.round(fl.reduce((a, f) => Math.abs(f.t - m.t) < Math.abs(a.t - m.t) ? f : a).pct * 10) / 10;
+      if (ex && ex.waist) rec.waist = ex.waist;
+      if (ex) for (const k of BODY_KEYS) if (rec[k] == null && ex[k] != null) rec[k] = ex[k];
+      if (ex) { if (ex.kg === rec.kg && ex.fat === rec.fat && ex.src === rec.src) continue; Object.keys(ex).forEach(x => delete ex[x]); Object.assign(ex, rec); updated++; }
+      else { S.weights.push(rec); added++; }
+      apps.add(m.src);
+    }
+    if (added || updated) { S.weights.sort((a, b) => (a.date < b.date ? -1 : 1)); S.settings.scale.apps = [...apps].slice(0, 8); }
+    return { added, updated };
+  }
+  function healthSync(quiet) {
+    if (!hasHealth()) return;
+    const sc = S.settings.scale;
+    // Première fois : tout l'historique disponible ; ensuite, depuis la dernière synchro (avec 3 jours de marge).
+    const since = sc.last ? sc.last - 3 * 86400000 : Date.now() - 3 * 365 * 86400000;
+    ui.healthQuiet = !!quiet;
+    window.CalorysNative.healthRead(since);
+  }
+  window.__calorysHealth = (kind, json) => {
+    if (kind === 'perm') {
+      const st = healthStatus();
+      if (st.weight) { S.settings.scale.hc = true; save(); healthSync(false); } else toast('Autorisation refusée : active Calorys dans Health Connect.', { label: 'Ouvrir', fn: () => window.CalorysNative.healthSettings() });
+      for (const sh of sheets) if (sh.opts.scale) sh.refresh();
+      return;
+    }
+    if (kind !== 'data') return;
+    let d = {};
+    try { d = JSON.parse(json); } catch (e) { /* ignore */ }
+    if (d.error) { if (!ui.healthQuiet) toast('Health Connect : ' + d.error); return; }
+    const r = mergeScale((d.weights || []).map(w => ({ t: w.t, kg: w.kg, src: scaleAppName(w.src) })), d.fats || []);
+    S.settings.scale.last = Date.now(); save(); render();
+    for (const sh of sheets) if (sh.opts.scale) sh.refresh();
+    if (!ui.healthQuiet || r.added) toast(r.added || r.updated ? (r.added + ' pesée(s) ajoutée(s)' + (r.updated ? ', ' + r.updated + ' mise(s) à jour' : '')) : 'Aucune nouvelle pesée', null);
+  };
+  /* Synchro automatique au démarrage et au retour dans l'appli. */
+  function healthAuto() {
+    if (!hasHealth() || !S.settings.scale.hc || Date.now() - (ui.healthAt || 0) < 60000) return;
+    ui.healthAt = Date.now();
+    if (healthStatus().weight) healthSync(true);
+  }
+
+  /* Import CSV : exports de Fitdays, Renpho, Withings, Zepp, Garmin, Excel… Colonnes reconnues : date, poids, masse grasse. */
+  function parseScaleCsv(text) {
+    text = String(text).replace(/^\uFEFF/, '');
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return { error: 'fichier vide' };
+    const delim = [';', '\t', ','].map(c => [c, lines[0].split(c).length]).sort((a, b) => b[1] - a[1])[0][0];
+    const cells = l => { const out = []; let cur = '', q = false; for (let i = 0; i < l.length; i++) { const ch = l[i]; if (ch === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (ch === delim && !q) { out.push(cur.trim()); cur = ''; } else cur += ch; } out.push(cur.trim()); return out; };
+    const norm = x => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let hi = -1, cD = -1, cW = -1, cF = -1, lb = false;
+    for (let i = 0; i < Math.min(6, lines.length) && hi < 0; i++) {
+      const h = cells(lines[i]).map(norm);
+      const w = h.findIndex(x => /weight|poids|gewicht|peso|masse corporelle|\bkg\b/.test(x) && !/lean|muscle|bone|water|fat|maigre|muscul|osseu|eau|grais|grasse|target|objectif|goal|bmi|imc|protein/.test(x));
+      if (w >= 0) {
+        hi = i; cW = w; lb = /lb|livre|pound/.test(h[w]);
+        cD = h.findIndex(x => /date|time|heure|jour|horodatage|timestamp|datum|fecha/.test(x));
+        cF = h.findIndex(x => /(body ?fat|graisse|masse grasse|fat ?(rate|%|percent)|\bmg\b|bfr|fett)/.test(x) && !/kg|lb/.test(x));
+        if (cF < 0) cF = h.findIndex(x => /fat|grais|grasse/.test(x) && /%/.test(x));
+      }
+    }
+    if (hi < 0 || cD < 0) return { error: 'colonnes « date » et « poids » introuvables' };
+    const num2 = v => { v = String(v || '').replace(/[^0-9,.\-]/g, ''); if (v.includes(',') && !v.includes('.')) v = v.replace(',', '.'); else v = v.replace(/,/g, ''); return parseFloat(v); };
+    const parseDate = v => {
+      v = String(v || '').trim();
+      if (/^\d{10}(\d{3})?$/.test(v)) return new Date(v.length === 10 ? +v * 1000 : +v).getTime();
+      let m = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T,]+(\d{1,2})[:h](\d{2})(?::(\d{2}))?)?/);
+      if (m) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 8), +(m[5] || 0), +(m[6] || 0)).getTime();
+      m = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:[ T,]+(\d{1,2})[:h](\d{2})(?::(\d{2}))?\s*(am|pm)?)?/i);
+      if (m) {
+        let a = +m[1], b = +m[2], y = +m[3]; if (y < 100) y += 2000;
+        let day = a, mon = b; if (b > 12 && a <= 12) { day = b; mon = a; }
+        let h = +(m[4] || 8); if (m[7] && /pm/i.test(m[7]) && h < 12) h += 12; if (m[7] && /am/i.test(m[7]) && h === 12) h = 0;
+        return new Date(y, mon - 1, day, h, +(m[5] || 0), +(m[6] || 0)).getTime();
+      }
+      const t = Date.parse(v); return isNaN(t) ? 0 : t;
+    };
+    const out = [];
+    for (let i = hi + 1; i < lines.length; i++) {
+      const c = cells(lines[i]); let kg = num2(c[cW]); if (lb) kg *= 0.45359237;
+      const t = parseDate(c[cD]); if (!t || !(kg > 20 && kg < 400)) continue;
+      const fat = cF >= 0 ? num2(c[cF]) : NaN;
+      out.push(Object.assign({ t, kg }, fat > 2 && fat < 75 ? { fat } : {}));
+    }
+    return out.length ? { list: out } : { error: 'aucune pesée lisible' };
+  }
+  async function importScaleCsv(text, name) {
+    const r = parseScaleCsv(text);
+    if (r.error) { toast('Import impossible : ' + r.error + '.'); return; }
+    const src = /fitdays/i.test(name) ? 'Fitdays' : /renpho/i.test(name) ? 'Renpho' : /withings/i.test(name) ? 'Withings' : /zepp|mi ?fit/i.test(name) ? 'Zepp' : /garmin/i.test(name) ? 'Garmin' : 'Import CSV';
+    const res = mergeScale(r.list.map(m => Object.assign(m, { src })), []);
+    save(); render();
+    for (const sh of sheets) if (sh.opts.scale) sh.refresh();
+    toast(r.list.length + ' mesure(s) lue(s) : ' + res.added + ' pesée(s) ajoutée(s)' + (res.updated ? ', ' + res.updated + ' mise(s) à jour' : ''));
+  }
+  function openScale() {
+    openSheet(() => {
+      const sc = S.settings.scale, st = hasHealth() ? healthStatus() : null, n = S.weights.filter(w => w.src).length;
+      let hc;
+      if (!st) hc = `<p class="muted small">${P.kind === 'windows' ? 'Sur PC : importe un fichier CSV, ou synchronise avec ton téléphone (Profil > Synchroniser) pour récupérer ses pesées.' : 'Health Connect est disponible dans l\'appli Android.'}</p>`;
+      else if (!st.available) hc = `<p class="muted small">Health Connect est intégré à Android 14 et plus. Sur ce téléphone (Android ${st.sdk >= 33 ? '13' : 'plus ancien'}), utilise l'import CSV ci-dessous.</p>`;
+      else if (!st.weight || !sc.hc) hc = `<p class="small">Ton appli de balance (Fitdays, Renpho, Withings, Zepp Life, Huawei Santé, Fitbit, Samsung Health…) envoie tes pesées à <b>Health Connect</b>, et Calorys les récupère toutes seules.</p>
+          <ol class="small muted"><li>Dans l'appli de ta balance, active le partage avec « Health Connect » (parfois « Google Fit » ou « Santé Connect »).</li><li>Appuie sur le bouton ci-dessous et autorise Calorys à lire le poids et la masse grasse.</li></ol>
+          <button class="btn grow" data-act="healthConnect">${icon('scale')}Connecter Health Connect</button>`;
+      else hc = `<p class="small"><b>Connectée</b>${sc.apps.length ? ' · ' + sc.apps.map(esc).join(', ') : ''}<br><span class="muted">Dernière synchro : ${sc.last ? new Date(sc.last).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais'} · automatique à chaque ouverture</span></p>
+          <div class="row-btns"><button class="btn grow" data-act="healthSync">Synchroniser maintenant</button><button class="btn ghost" data-act="healthPerms">Autorisations</button></div>
+          <button class="btn ghost" data-act="healthOff">Déconnecter</button>`;
+      return sheetHead('Balance connectée', 'Poids et masse grasse de ta balance') + `<div class="form">
+        <div class="wset"><p><b>Health Connect</b> (Android)</p>${hc}</div>
+        <div class="wset"><p><b>Fichier CSV</b> (Android et PC)</p>
+          <p class="small muted">Exporte tes pesées depuis l'appli de ta balance (souvent Profil > Exporter les données, ou par e-mail), puis importe le fichier. Colonnes reconnues : date, poids (kg ou lb), masse grasse (%).</p>
+          <button class="btn ghost" data-act="scaleCsv">${icon('download')}Importer un fichier CSV</button></div>
+        <div class="wset"><p><b>Rapport de balance</b> (PDF ou capture d'écran)</p>
+          <p class="small muted">Ton appli ne partage pas ses données (Fit Profile par exemple) ? Partage son rapport en PDF ou fais une capture : Gemini recopie poids, masse grasse, muscle, eau, graisse viscérale et métabolisme (avec ta clé Gemini, tu vérifies avant d'enregistrer).</p>
+          <button class="btn ghost" data-act="scaleReport">${icon('sparkle')}Lire un rapport de balance</button></div>
+        <label class="field"><span>S'il y a plusieurs pesées le même jour</span><select id="scPick"><option value="first" ${sc.pick !== 'last' ? 'selected' : ''}>Garder la première (le matin à jeun)</option><option value="last" ${sc.pick === 'last' ? 'selected' : ''}>Garder la dernière</option></select></label>
+        <p class="muted small">${n} pesée(s) venant d'une balance. Une pesée saisie à la main n'est jamais remplacée. Rien ne quitte ton appareil.</p>
+      </div>`;
+    }, { scale: true, mount: sh => { const el = $('#scPick', sh.el); if (el) el.addEventListener('change', () => { S.settings.scale.pick = el.value; save(); }); } });
+  }
+
+  /* Carte « Composition corporelle » (Analyse) : dernières mesures, évolution, masse grasse et masse maigre. */
+  function bodyCard(since) {
+    const list = S.weights.filter(w => w.fat != null || w.muscle != null);
+    if (!list.length) return '';
+    const last = list[list.length - 1], first = list[0];
+    const fatKg = w => (w.fat != null ? w.kg * w.fat / 100 : null);
+    const diff = (a, b, u) => (a != null && b != null && list.length > 1 ? `<span class="muted small">${a - b > 0 ? '+' : ''}${fr(a - b)} ${u}</span>` : '');
+    const cell = (l, v, u, d) => (v != null ? `<div><span class="muted">${l}</span><b>${fr(v)} ${u}</b>${d || ''}</div>` : '');
+    const lean = last.fat != null ? last.kg - fatKg(last) : null, leanFirst = first.fat != null ? first.kg - fatKg(first) : null;
+    const pts = list.filter(w => w.fat != null && pkey(w.date).getTime() >= since);
+    return `<section class="card"><h3>Composition corporelle</h3><p class="muted">Dernière mesure le ${pkey(last.date).toLocaleDateString('fr-FR')}${last.src ? ' · ' + esc(last.src) : ''}${list.length > 1 ? ' · évolution depuis le ' + pkey(first.date).toLocaleDateString('fr-FR') : ''}</p>
+      <div class="stats-grid">${cell('Masse grasse', last.fat, '%', diff(last.fat, first.fat, 'pt'))}${cell('Graisse', fatKg(last) != null ? Math.round(fatKg(last) * 10) / 10 : null, 'kg', diff(fatKg(last), fatKg(first), 'kg'))}
+        ${cell('Masse maigre', lean != null ? Math.round(lean * 10) / 10 : null, 'kg', diff(lean, leanFirst, 'kg'))}${cell('Muscle squelettique', last.muscle, 'kg', diff(last.muscle, first.muscle, 'kg'))}
+        ${cell('Eau', last.water, '%')}${cell('Graisse viscérale', last.visc, '')}${cell('Métabolisme de base', last.bmr, 'kcal')}${cell('Âge métabolique', last.mage, 'ans')}</div>
+      ${pts.length >= 2 ? C.line(pts.map(w => ({ x: pkey(w.date).getTime(), y: w.fat, title: pkey(w.date).toLocaleDateString('fr-FR') + ' : ' + fr(w.fat) + ' %' })), null, { label: 'Masse grasse (%)' }) : ''}
+      <p class="muted small">En perte de poids, l'idéal est de voir baisser la graisse en kilos tout en gardant la masse maigre. Les balances impédancemètres varient avec l'hydratation : pèse-toi le matin à jeun et regarde la tendance.</p></section>`;
+  }
+
   function openWeight() {
     const lastW = currentWeight();
     openSheet(() => sheetHead('Nouvelle pesée') + `<div class="form">
       <label class="field"><span>Poids (kg)</span><input id="wKg" inputmode="decimal" value="${fr(lastW)}" autofocus></label>
       <label class="field"><span>Tour de taille (cm, facultatif)</span><input id="wWaist" inputmode="decimal" placeholder="${lastWaist() ? fr(lastWaist()) : 'au niveau du nombril'}"></label>
       <label class="field"><span>Date</span><input id="wDate" type="date" value="${ui.date > today() ? today() : ui.date}" max="${today()}"></label>
+      <details class="wset"><summary><b>Composition corporelle</b> <span class="muted small">(balance impédancemètre, facultatif)</span></summary>
+        <div class="grid2">${BODY_FIELDS.map(([k, l, u]) => `<label class="field"><span>${l} (${u})</span><input id="wc_${k}" inputmode="decimal"></label>`).join('')}</div>
+        <button class="btn ghost" data-act="scaleReport">${icon('sparkle')}Lire un rapport de balance (PDF ou capture)</button>
+      </details>
       <p class="muted small">Pèse-toi le matin, à jeun, après être passé aux toilettes. La courbe lissée gomme les variations d'eau.</p></div>
       <div class="sheet-actions"><button class="btn grow" data-act="saveWeight">${icon('check')}Enregistrer</button></div>`);
   }
@@ -981,7 +1240,8 @@
       ${ws.length >= 1 ? C.line(ws.map(w => ({ x: pkey(w.date).getTime(), y: w.kg, title: pkey(w.date).toLocaleDateString('fr-FR') + ' : ' + fr(w.kg) + ' kg' })), S.profile.targetWeight,
         { label: 'Évolution du poids', trend: ws.length >= 3 ? trendWin.map(x => ({ x: pkey(x.date).getTime(), y: x.kg })) : null }) : '<p class="empty">Ajoute des pesées pour voir ta courbe.</p>'}
       ${ws.length >= 3 ? '<p class="legend-line"><i class="lg-raw"></i>pesées <i class="lg-trend"></i>tendance lissée</p>' : ''}
-      ${S.weights.length ? `<details><summary>Toutes les pesées (${S.weights.length})</summary><ul class="entries">${S.weights.slice().reverse().map(w => `<li><div class="grow"><b>${fr(w.kg)} kg</b><span class="muted">${pkey(w.date).toLocaleDateString('fr-FR')}${w.waist ? ' · taille ' + fr(w.waist) + ' cm' : ''}</span></div><button class="icon-btn" data-act="delWeight" data-date="${w.date}" aria-label="Supprimer">${icon('trash')}</button></li>`).join('')}</ul></details>` : ''}</section>`;
+      ${S.weights.length ? `<details><summary>Toutes les pesées (${S.weights.length})</summary><ul class="entries">${S.weights.slice().reverse().map(w => `<li><div class="grow"><b>${fr(w.kg)} kg</b><span class="muted">${pkey(w.date).toLocaleDateString('fr-FR')}${w.waist ? ' · taille ' + fr(w.waist) + ' cm' : ''}${w.fat ? ' · ' + fr(w.fat) + ' % de masse grasse' : ''}${w.muscle ? ' · muscle ' + fr(w.muscle) + ' kg' : ''}${w.src ? ' · ' + esc(w.src) : ''}</span></div><button class="icon-btn" data-act="delWeight" data-date="${w.date}" aria-label="Supprimer">${icon('trash')}</button></li>`).join('')}</ul></details>` : ''}</section>`;
+    h += bodyCard(since);
     const aW = avg(x => x.water);
     const fasts = S.fasting.history.filter(x => x.end >= since);
     h += `<section class="card stats-grid">
@@ -1011,6 +1271,7 @@
         ${row('catalog', 'box', 'Catalogue produits hors ligne', { ready: 'installé', downloading: Math.round(CAT.status().progress * 100) + ' %', error: 'erreur', none: 'non installé' }[CAT.status().state])}
         ${row('gemini', 'sparkle', 'Analyse photo (Gemini)', S.settings.geminiKey ? 'activée' : 'à configurer')}
         ${row('programs', 'recipe', 'Programmes', S.program ? S.program.p.name : 'aucun')}
+        ${row('scale', 'scale', 'Balance connectée', scaleSummary())}
         ${row('reminders', 'bell', 'Rappels', S.program ? 'pilotés par le programme' : S.settings.reminders.on ? 'activés' : 'désactivés')}
         ${row('sync', 'share', 'Synchroniser mes appareils', lastSyncText())}
         ${row('progress', 'belt', 'Ma progression', S.settings.game ? 'ceinture ' + game().belt.label.toLowerCase() : 'désactivée')}
@@ -1349,11 +1610,11 @@ Règles:
     if (!foods.length) throw new Error('Pas de nourriture détectée. Recadre l\'assiette de trois quarts, avec un couvert visible pour l\'échelle.');
     return { foods, guess: payload.meal_guess || '' };
   }
-  function shrinkImage(file) {
+  function shrinkImage(file, maxSide) {
     return new Promise((res, rej) => {
       const url = URL.createObjectURL(file), img = new Image();
       img.onload = () => {
-        const max = 1280, k = Math.min(1, max / Math.max(img.width, img.height));
+        const max = maxSide || 1280, k = Math.min(1, max / Math.max(img.width, img.height));
         const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
         URL.revokeObjectURL(url);
@@ -1678,6 +1939,7 @@ Règles:
     programTick();
     // Retour des réglages Android : met à jour l'état des notifications.
     for (const sh of sheets) if (sh.opts.reminders) { readReminders(sh); sh.refresh(); }
+    healthAuto();
     // Les alarmes exactes ont pu être autorisées entre-temps : reprogramme.
     if (window.CalorysNative && S.settings.reminders.on) syncReminders();
   });
@@ -2132,6 +2394,9 @@ Règles:
       const waist = num($('#wWaist', s.el).value);
       const rec = { date, kg };
       if (waist > 30 && waist < 250) rec.waist = waist;
+      const body = {};
+      for (const k of BODY_KEYS) { const el = $('#wc_' + k, s.el); if (el) body[k] = el.value; }
+      Object.assign(rec, cleanBody(body));
       S.weights = S.weights.filter(w => w.date !== date).concat([rec]).sort((a, b) => a.date < b.date ? -1 : 1);
       save(); closeSheet(s); render();
       const diff = S.weights.length > 1 ? kg - S.weights[S.weights.length - 2].kg : 0;
@@ -2339,6 +2604,24 @@ Règles:
       toast(s.data.items.length + ' aliment(s) ajouté(s) au ' + mealLabel(s.data.meal).toLowerCase());
     },
     reminders: () => openReminders(),
+    scale: () => openScale(),
+    scaleReport: () => { if (!S.settings.geminiKey) { openGeminiKey(() => pickReportFile()); return; } pickReportFile(); },
+    saveReport: () => {
+      const s = topSheet(), g = id => $('#' + id, s.el).value, kg = num(g('rr_kg')), date = g('rr_date') || today();
+      if (!(kg > 20 && kg < 400)) { toast('Poids invalide.'); return; }
+      const body = {}; for (const k of BODY_KEYS) body[k] = g('rr_' + k);
+      const ex = S.weights.find(w => w.date === date);
+      const rec = Object.assign({ date, kg: Math.round(kg * 10) / 10 }, ex && ex.waist ? { waist: ex.waist } : {}, cleanBody(body), s.data.m.app ? { src: s.data.m.app } : {});
+      S.weights = S.weights.filter(w => w.date !== date).concat([rec]).sort((a, b) => a.date < b.date ? -1 : 1);
+      save(); closeSheet(s);
+      for (const sh of sheets.slice()) if ($('#wKg', sh.el)) closeSheet(sh);
+      render(); toast('Pesée et composition enregistrées');
+    },
+    healthConnect: () => window.CalorysNative.healthRequest(),
+    healthSync: () => { healthSync(false); toast('Synchronisation…'); },
+    healthPerms: () => window.CalorysNative.healthSettings(),
+    healthOff: () => { S.settings.scale.hc = false; save(); topSheet().refresh(); toast('Health Connect déconnecté (les pesées déjà importées restent).'); },
+    scaleCsv: () => { ui.fileMode = 'scale'; const i = $('#fileInput'); i.value = ''; i.accept = '.csv,.txt,text/csv,text/plain'; i.click(); },
     openLink: el => {
       const u = el.dataset.url;
       if (P.kind === 'windows') { try { Neutralino.os.open(u); } catch (e) { /* ignore */ } } else if (P.kind === 'android') location.href = u; else window.open(u, '_blank', 'noopener');
@@ -2422,7 +2705,12 @@ Règles:
     if (act === 'aiG') { const s = topSheet(), x = s.data.items[+el.dataset.i]; const g = num(el.value); if (g > 0) { x.k = g / x.grams; s.refresh(); } }
     if (act === 'ingG') { const s = topSheet(); s.data.r.items[+el.dataset.i].g = num(el.value) || 0; s.refresh(); }
   });
-  $('#fileInput').addEventListener('change', async e => { const f = e.target.files[0]; if (f) restoreFrom(await f.text()); });
+  $('#fileInput').addEventListener('change', async e => {
+    const f = e.target.files[0], mode = ui.fileMode;
+    ui.fileMode = null; e.target.accept = '.json,application/json';
+    if (!f) return;
+    if (mode === 'scale' || /\.(csv|txt)$/i.test(f.name)) importScaleCsv(await f.text(), f.name); else restoreFrom(await f.text());
+  });
   $('#aiPhotoInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) runPhoto(f, ui.photoMeal || defaultMeal()); });
   document.addEventListener('input', e => {
     if (e.target.id !== 'rcQ') return;
@@ -2479,10 +2767,12 @@ Règles:
     if (S.profile.onboarded && programTick(true)) save();
     render();
     syncReminders();
+    if (S.profile.onboarded) healthAuto();
+    if (window.CalorysNative && window.CalorysNative.takeShared) window.__calorysShared();
     const sp = $('#splash');
     sp.classList.add('hide'); setTimeout(() => sp.remove(), 400);
     if ('serviceWorker' in navigator && P.kind === 'web' && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  window.CalorysDebug = { get state() { return S; }, ui, render, remindersPlan, waterSlots, sayText };
+  window.CalorysDebug = { get state() { return S; }, ui, render, remindersPlan, waterSlots, sayText, parseScaleCsv, mergeScale };
   boot();
 })();
