@@ -20,6 +20,25 @@
     return sex === 'f' ? base - 161 : base + 5;
   }
   const tdee = (sex, w, h, age, factor) => bmr(sex, w, h, age) * factor;
+  /* Katch-McArdle : métabolisme à partir de la masse maigre (plus juste quand on connaît sa masse grasse,
+     surtout pour les personnes musclées ou en surpoids). */
+  const katch = lbm => 370 + 21.6 * lbm;
+  /* Protéines visées par kg de masse maigre : 2,2 g en perte ou en sèche (préserver le muscle), 1,8 g sinon. */
+  const proteinPerLbm = goal => (goal === 'lose' || goal === 'cut' ? 2.2 : 1.8);
+
+  /* Évolution de la masse maigre entre les premières et les dernières mesures de composition des 10 dernières
+     semaines (moyenne de 2 mesures à chaque bout, l'impédancemétrie étant bruitée). null si pas assez de recul. */
+  function leanTrend(weights, todayKey) {
+    const lim = new Date(todayKey); lim.setDate(lim.getDate() - 70);
+    const pts = weights.filter(w => w.fat != null && new Date(w.date) >= lim).map(w => ({ t: new Date(w.date).getTime(), kg: w.kg, lean: w.kg * (1 - w.fat / 100) }));
+    if (pts.length < 3) return null;
+    const days = (pts[pts.length - 1].t - pts[0].t) / 86400000;
+    if (days < 21) return null;
+    const n = pts.length >= 4 ? 2 : 1, avg = (a, k) => a.reduce((x, p) => x + p[k], 0) / a.length;
+    const a = pts.slice(0, n), b = pts.slice(-n);
+    const leanDrop = avg(a, 'lean') - avg(b, 'lean'), weightLoss = avg(a, 'kg') - avg(b, 'kg');
+    return { leanDrop, weightLoss, weeks: days / 7, share: weightLoss > 0 ? leanDrop / weightLoss : null };
+  }
   const floorKcal = (sex, b) => Math.max(sex === 'f' ? 1200 : 1500, b);
   const maxWeeklyLossKg = w => w * 0.01;
 
@@ -49,9 +68,12 @@
 
   /* Macros d'un preset (ou d'une répartition perso {p,c,f} en fractions).
      proteinFloorKg : plancher protéique en g/kg (1,8 en mode sèche). */
-  function macros(kcal, split, w, proteinFloorKg) {
+  /* lbm : masse maigre connue → plancher de protéines calculé sur elle (remplace celui au poids total). */
+  function macros(kcal, split, w, proteinFloorKg, lbm, goal) {
     let p = kcal * split.p / 4;
-    if (w && proteinFloorKg) p = Math.max(p, w * proteinFloorKg);
+    if (lbm) p = Math.max(p, lbm * proteinPerLbm(goal));
+    else if (w && proteinFloorKg) p = Math.max(p, w * proteinFloorKg);
+    p = Math.min(p, kcal * 0.45 / 4);
     const rest = Math.max(0, kcal - p * 4);
     const ratio = split.c + split.f || 1;
     return { kcal, p: Math.round(p), c: Math.round(rest * (split.c / ratio) / 4), f: Math.round(rest * (split.f / ratio) / 9) };
@@ -284,7 +306,7 @@
     return d.toISOString().slice(0, 10);
   }
 
-  window.Engine = { KCAL_PER_KG, PRESETS, bmr, tdee, floorKcal, maxWeeklyLossKg, dailyTarget, describe, macros,
+  window.Engine = { KCAL_PER_KG, PRESETS, bmr, tdee, katch, proteinPerLbm, leanTrend, floorKcal, maxWeeklyLossKg, dailyTarget, describe, macros,
     waterGoalMl, waterBaseMl, sweatFromMet, smooth, adaptive, cutPlan, SESSIONS, sessionKcal, sweatMl, BELTS, XP, XP_LABELS, BADGES, beltFor,
     game, quests, weekKey };
 })();

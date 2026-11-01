@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.6.1';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -176,10 +176,32 @@
     }, 0);
   }
   let goalsMemo = null;
+  /* Masse grasse récente (60 jours) d'une balance impédancemètre → masse maigre au poids actuel. */
+  function bodyComp(force) {
+    if (!force && S.profile.useComp === false) return null;
+    const lim = addDays(today(), -60);
+    for (let i = S.weights.length - 1; i >= 0; i--) {
+      const x = S.weights[i];
+      if (x.date < lim) break;
+      if (x.fat != null) { const w = currentWeight(); return { fat: x.fat, lbm: Math.round(w * (1 - x.fat / 100) * 10) / 10, date: x.date }; }
+    }
+    return null;
+  }
+  /* Alerte : la masse maigre baisse nettement (≥ 1 kg et plus de 40 % de la perte, ou sans perte de poids). */
+  const hasCompData = () => S.weights.some(w => w.fat != null && w.date >= addDays(today(), -60));
+  function leanAlert() {
+    const t = E.leanTrend(S.weights, today());
+    if (!t || t.leanDrop < 1 || (t.weightLoss > 0 && t.share < 0.4)) return null;
+    const prot = goals().p;
+    return Object.assign(t, { text: 'Ta masse maigre baisse : −' + fr(t.leanDrop) + ' kg en ' + Math.round(t.weeks) + ' semaines' +
+      (t.weightLoss <= 0 ? ' sans perte de poids' : t.share >= 0.95 ? ', presque toute ta perte de poids' : ', soit ' + Math.round(t.share * 100) + ' % de ta perte de poids') +
+      '. Pour garder ton muscle : atteins bien tes ' + prot + ' g de protéines par jour, garde la musculation 2 à 3 fois par semaine' +
+      (S.profile.goal !== 'maintain' && S.profile.pace > 0.5 ? ' et ralentis à 0,5 kg par semaine' : '') + '. (Les balances varient avec l\'hydratation : confirme sur plusieurs pesées le matin à jeun.)' });
+  }
   function goals() {
     if (goalsMemo) return goalsMemo;
-    const p = S.profile, w = currentWeight();
-    const b = E.bmr(p.sex, w, p.height, p.age), theo = E.tdee(p.sex, w, p.height, p.age, p.activity);
+    const p = S.profile, w = currentWeight(), comp = bodyComp();
+    const b = comp ? E.katch(comp.lbm) : E.bmr(p.sex, w, p.height, p.age), theo = b * p.activity;
     const since = addDays(today(), -28);
     const ad = E.adaptive(p, intakeWindow(28), S.weights.filter(x => x.date >= since), w, theo, b);
     const expenditure = p.adaptive && ad.reliable ? ad.measured : theo;
@@ -188,11 +210,11 @@
     const calc = cut ? cut.target : E.dailyTarget(expenditure, p.goal, rate, p.sex, b);
     const ov = S.program ? window.Program.override(S.program.p, pkey(ui.date)) : null;
     const k = ov && ov.kcal ? ov.kcal : p.kcalOverride || calc;
-    const m = E.macros(k, splitOf(p), w, p.goal === 'cut' ? 1.8 : 0);
+    const m = E.macros(k, splitOf(p), w, p.goal === 'cut' ? 1.8 : 0, comp && comp.lbm, p.goal);
     const sweat = daySweat(dayGet(ui.date));
     const water = p.waterAuto ? E.waterGoalMl(p.sex, w, sweat) : p.waterGoal;
     const info = E.describe(k, expenditure, b, cut ? Math.min(cut.required, cut.safe) : rate, w);
-    goalsMemo = { kcal: k, calc, bmr: Math.round(b), tdee: Math.round(theo), expenditure: Math.round(expenditure),
+    goalsMemo = { kcal: k, calc, comp, bmr: Math.round(b), tdee: Math.round(theo), expenditure: Math.round(expenditure),
       p: m.p, c: m.c, f: m.f, water, adaptive: ad, cut, info: p.kcalOverride || (ov && ov.kcal) ? Object.assign({}, info, { note: null }) : info };
     return goalsMemo;
   }
@@ -473,7 +495,8 @@
     const lastW = S.weights.length ? S.weights[S.weights.length - 1] : null;
     h += `<section class="card"><header class="meal-head"><span class="meal-ic weight">${icon('scale')}</span>
       <div class="grow"><h3>Poids</h3><p class="muted">${lastW ? fr(lastW.kg) + ' kg le ' + pkey(lastW.date).toLocaleDateString('fr-FR') : 'Aucune pesée'}${S.weights.length > 2 ? ' · tendance ' + fr(E.smooth(S.weights).pop().kg) + ' kg' : ''} · objectif ${fr(S.profile.targetWeight)} kg</p></div>
-      <button class="add-btn" data-act="addWeight" aria-label="Ajouter une pesée">${icon('plus')}</button></header></section>`;
+      <button class="add-btn" data-act="addWeight" aria-label="Ajouter une pesée">${icon('plus')}</button></header>
+      ${(() => { const a = leanAlert(); return a ? `<p class="target-note">${icon('info')}<span>${esc(a.text)}</span></p>` : ''; })()}</section>`;
     h += `<p class="foot muted">Nutriments : ${esc(N.source)}</p>`;
     return h;
   }
@@ -1141,6 +1164,8 @@
         ${cell('Masse maigre', lean != null ? Math.round(lean * 10) / 10 : null, 'kg', diff(lean, leanFirst, 'kg'))}${cell('Muscle squelettique', last.muscle, 'kg', diff(last.muscle, first.muscle, 'kg'))}
         ${cell('Eau', last.water, '%')}${cell('Graisse viscérale', last.visc, '')}${cell('Métabolisme de base', last.bmr, 'kcal')}${cell('Âge métabolique', last.mage, 'ans')}</div>
       ${pts.length >= 2 ? C.line(pts.map(w => ({ x: pkey(w.date).getTime(), y: w.fat, title: pkey(w.date).toLocaleDateString('fr-FR') + ' : ' + fr(w.fat) + ' %' })), null, { label: 'Masse grasse (%)' }) : ''}
+      ${(() => { const a = leanAlert(); return a ? `<p class="target-note">${icon('info')}<span>${esc(a.text)}</span></p>` : ''; })()}
+      ${goals().comp ? `<p class="muted small">Ton métabolisme (${kcal(goals().bmr)} kcal) et tes protéines (${goals().p} g) sont calculés sur ta masse maigre de ${fr(goals().comp.lbm)} kg.</p>` : ''}
       <p class="muted small">En perte de poids, l'idéal est de voir baisser la graisse en kilos tout en gardant la masse maigre. Les balances impédancemètres varient avec l'hydratation : pèse-toi le matin à jeun et regarde la tendance.</p></section>`;
   }
 
@@ -1329,18 +1354,20 @@
       const base = goals();
       const k = d.override ? d.kcal : base.calc;
       const split = d.preset === 'custom' ? { p: d.split.p / 100, c: d.split.c / 100, f: d.split.f / 100 } : E.PRESETS[d.preset];
-      const m = E.macros(k, split, w, p.goal === 'cut' ? 1.8 : 0);
+      const comp = d.useComp ? bodyComp(true) : null;
+      const m = E.macros(k, split, w, p.goal === 'cut' ? 1.8 : 0, comp && comp.lbm, p.goal);
       const sum = d.split.c + d.split.p + d.split.f;
       const sl = (key, label) => `<label class="slider"><span>${label}<b>${d.split[key]} % · ${m[key]} g</b></span><input type="range" min="5" max="75" step="5" value="${d.split[key]}" data-act="split" data-k="${key}"></label>`;
       const ok = d.preset !== 'custom' || sum === 100;
-      return sheetHead('Objectifs nutritionnels', 'Métabolisme ' + kcal(base.bmr) + ' kcal · dépense formule ' + kcal(base.tdee) + ' kcal' + (base.adaptive.reliable ? ' · mesurée ' + kcal(base.adaptive.measured) + ' kcal' : '')) + `<div class="form">
+      return sheetHead('Objectifs nutritionnels', 'Métabolisme ' + kcal(base.bmr) + ' kcal' + (base.comp ? ' (masse maigre)' : '') + ' · dépense formule ' + kcal(base.tdee) + ' kcal' + (base.adaptive.reliable ? ' · mesurée ' + kcal(base.adaptive.measured) + ' kcal' : '')) + `<div class="form">
         <label class="switch"><input type="checkbox" id="gAd" ${d.adaptive ? 'checked' : ''}><span>Ajuster l'objectif selon ma dépense réelle (journal + pesées, après 2 semaines)</span></label>
+        ${hasCompData() ? `<label class="switch"><input type="checkbox" id="gComp" ${d.useComp ? 'checked' : ''}><span>Utiliser ma masse grasse (balance) : métabolisme calculé sur ma masse maigre (Katch-McArdle) et protéines sur la masse maigre${base.comp ? ' · ' + fr(base.comp.lbm) + ' kg de masse maigre (' + fr(base.comp.fat) + ' % de graisse le ' + pkey(base.comp.date).toLocaleDateString('fr-FR') + ')' : ''}</span></label>` : ''}
         <label class="switch"><input type="checkbox" id="gOverride" ${d.override ? 'checked' : ''}><span>Définir mon objectif calorique moi-même</span></label>
         <label class="field"><span>Calories par jour</span><input id="gK" inputmode="numeric" value="${r0(k)}" ${d.override ? '' : 'disabled'}></label>
         <label class="field"><span>Répartition des macros</span><select id="gPreset">${Object.entries(E.PRESETS).map(([id, x]) => `<option value="${id}" ${d.preset === id ? 'selected' : ''}>${x.label} (P ${Math.round(x.p * 100)} / G ${Math.round(x.c * 100)} / L ${Math.round(x.f * 100)} %)</option>`).join('')}
           <option value="custom" ${d.preset === 'custom' ? 'selected' : ''}>Personnalisée</option></select></label>
         ${d.preset === 'custom' ? sl('c', 'Glucides') + sl('p', 'Protéines') + sl('f', 'Lipides') + `<p class="${sum === 100 ? 'muted' : 'warn-text'}">Total : ${sum} %${sum === 100 ? '' : ' (doit faire 100 %)'}</p>` : ''}
-        <p class="recipe-total">Par jour : <b>${kcal(k)} kcal</b> · G ${m.c} g · P ${m.p} g · L ${m.f} g${p.goal === 'cut' ? '<br><span class="muted small">Mode sèche : protéines au moins 1,8 g/kg.</span>' : ''}</p>
+        <p class="recipe-total">Par jour : <b>${kcal(k)} kcal</b> · G ${m.c} g · P ${m.p} g · L ${m.f} g${comp ? '<br><span class="muted small">Protéines au moins ' + fr(E.proteinPerLbm(p.goal)) + ' g par kg de masse maigre (' + fr(comp.lbm) + ' kg).</span>' : p.goal === 'cut' ? '<br><span class="muted small">Mode sèche : protéines au moins 1,8 g/kg.</span>' : ''}</p>
         <label class="field"><span>Calories des séances rendues à l'objectif</span><select id="gEx">${[[0, 'Aucune'], [50, '50 % (conseillé)'], [75, '75 %'], [100, '100 %']].map(([v, l]) => `<option value="${v}" ${+d.exPct === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <p class="muted small">Les estimations de dépense sont généreuses : « manger sa séance » est la première cause de plateau.</p>
         <label class="switch"><input type="checkbox" id="gWA" ${d.waterAuto ? 'checked' : ''}><span>Objectif d'eau automatique : ${fr(E.waterBaseMl(p.sex, w) / 1000, 2)} L les jours sans sport (repères EFSA, hors eau des aliments), plus la sueur estimée de tes séances</span></label>
@@ -1350,15 +1377,15 @@
       </div><div class="sheet-actions"><button class="btn grow" data-act="saveGoals" ${ok ? '' : 'disabled'}>${icon('check')}Enregistrer</button></div>`;
     }, {
       data: { override: !!p.kcalOverride, kcal: p.kcalOverride || goals().calc, preset: p.preset || 'balanced', split: Object.assign({}, p.split),
-        adaptive: p.adaptive !== false, exPct: p.exercisePct, waterAuto: p.waterAuto, water: p.waterGoal, glass: p.glass, steps: p.stepsGoal },
+        adaptive: p.adaptive !== false, useComp: p.useComp !== false, exPct: p.exercisePct, waterAuto: p.waterAuto, water: p.waterGoal, glass: p.glass, steps: p.stepsGoal },
       mount: s => {
         const keep = () => { const d = s.data; const g = id => $('#' + id, s.el);
           d.override = g('gOverride').checked; if (d.override) d.kcal = num(g('gK').value) || d.kcal;
-          d.adaptive = g('gAd').checked; d.preset = g('gPreset').value; d.exPct = +g('gEx').value; d.waterAuto = g('gWA').checked;
+          d.adaptive = g('gAd').checked; if (g('gComp')) d.useComp = g('gComp').checked; d.preset = g('gPreset').value; d.exPct = +g('gEx').value; d.waterAuto = g('gWA').checked;
           if (g('gW')) d.water = num(g('gW').value) || d.water;
           d.glass = num(g('gG').value) || d.glass; d.steps = num(g('gS').value) || d.steps; };
         s.data.keep = keep;
-        ['gOverride', 'gAd', 'gPreset', 'gWA', 'gEx'].forEach(id => $('#' + id, s.el).addEventListener('change', () => { keep(); s.refresh(); }));
+        ['gOverride', 'gAd', 'gComp', 'gPreset', 'gWA', 'gEx'].forEach(id => $('#' + id, s.el) && $('#' + id, s.el).addEventListener('change', () => { keep(); s.refresh(); }));
         s.el.querySelectorAll('input[type=range]').forEach(r => r.addEventListener('input', () => { keep(); s.data.split[r.dataset.k] = Number(r.value); s.refresh(); }));
       }
     });
@@ -2444,7 +2471,7 @@ Règles:
       const s = topSheet(); s.data.keep();
       const d = s.data, p = S.profile;
       p.kcalOverride = d.override ? Math.round(d.kcal) : null;
-      p.adaptive = d.adaptive; p.preset = d.preset; p.split = d.split; p.exercisePct = d.exPct; p.waterAuto = d.waterAuto;
+      p.adaptive = d.adaptive; p.useComp = d.useComp; p.preset = d.preset; p.split = d.split; p.exercisePct = d.exPct; p.waterAuto = d.waterAuto;
       p.waterGoal = Math.round(d.water); p.glass = Math.round(d.glass); p.stepsGoal = Math.round(d.steps);
       save(); closeSheet(s); render(); toast('Objectifs enregistrés');
     },
