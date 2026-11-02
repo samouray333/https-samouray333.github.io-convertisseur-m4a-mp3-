@@ -189,13 +189,13 @@ async function launch() {
     await w.click('.modal .btn.primary');
   });
   await step('taille de fenêtre mémorisée après redémarrage', async () => {
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setBounds({ x: 40, y: 30, width: 1111, height: 777 }));
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setBounds({ x: 40, y: 30, width: 937, height: 655 }));
     await w.waitForTimeout(400);
     await app.close();
     ({ app, w } = await launch());
     await w.waitForSelector('.hero', { timeout: 30000 });
     const b = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
-    assert(Math.abs(b.width - 1111) < 30 && Math.abs(b.height - 777) < 30, `taille ${b.width}x${b.height}`);
+    assert(Math.abs(b.width - 937) < 30 && Math.abs(b.height - 655) < 30, `taille ${b.width}x${b.height}`);
   });
   await step('journal d’erreurs écrit', async () => {
     const f = path.join(userData, 'logs', 'bimys.log');
