@@ -97,11 +97,13 @@ async function waitServer(url, ms = 20000) {
         await page.click('.tri button[data-v=ok] >> nth=0');
         await page.click('.tri button[data-v=nok] >> nth=1');
         await page.fill('[data-f=observations]', 'Analyse de combustion conforme. Siphon nettoyé.');
+        await page.evaluate(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
         const pad = await page.$('.sig-pad');
+        await pad.scrollIntoViewIfNeeded();
         const b = await pad.boundingBox();
         await page.mouse.move(b.x + 20, b.y + 80);
         await page.mouse.down();
-        for (let k = 0; k < 30; k++) await page.mouse.move(b.x + 20 + k * 10, b.y + 80 + Math.sin(k / 3) * 30);
+        for (let k = 0; k < 30; k++) await page.mouse.move(b.x + 20 + k * 12, b.y + 75 + Math.round(Math.sin(k / 3) * 30));
         await page.mouse.up();
         await page.screenshot({ path: `${OUT}/pc_14_intervention.png` });
         const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('[data-k=savepdf]')]);

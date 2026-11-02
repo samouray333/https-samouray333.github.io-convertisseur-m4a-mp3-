@@ -33,6 +33,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 svg { width: 20px; height: 20px; flex: none; vertical-align: middle; }
 .room-body table.data td { vertical-align: middle; }
 html, body { margin: 0; height: 100%; }
@@ -313,8 +314,8 @@ details.pset td:first-child { color: var(--muted); width: 48%; }
 .loader-box .lbl { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
 .bar { height: 10px; background: var(--border); border-radius: 6px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--petrol-2), var(--orange)); transition: width 0.2s; }
-.toasts { position: fixed; z-index: 300; left: 50%; transform: translateX(-50%); bottom: calc(20px + var(--nav-h)); display: flex; flex-direction: column; gap: 8px; width: min(520px, 92vw); }
-.toast { background: #17262b; color: #fff; padding: 11px 14px; border-radius: 10px; box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; font-size: 14px; }
+.toasts { pointer-events: none; position: fixed; z-index: 300; left: 50%; transform: translateX(-50%); bottom: calc(20px + var(--nav-h)); display: flex; flex-direction: column; gap: 8px; width: min(520px, 92vw); }
+.toast { pointer-events: auto; background: #17262b; color: #fff; padding: 11px 14px; border-radius: 10px; box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; font-size: 14px; }
 .toast.err { background: var(--err); }
 .toast .grow { flex: 1; word-break: break-word; }
 .toast button { background: rgba(255, 255, 255, 0.16); color: #fff; border: 0; border-radius: 7px; padding: 6px 10px; cursor: pointer; }

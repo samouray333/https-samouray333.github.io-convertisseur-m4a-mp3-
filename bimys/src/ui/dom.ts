@@ -46,6 +46,7 @@ export function toast(msg: string, opts: { error?: boolean; actions?: ToastActio
   x.onclick = () => t.remove();
   t.appendChild(x);
   toastHost.appendChild(t);
+  while (toastHost.childElementCount > 3) toastHost.firstElementChild!.remove();
   setTimeout(() => t.remove(), opts.ms ?? (opts.actions?.length ? 9000 : 4500));
 }
 

@@ -129,7 +129,7 @@ export class Report {
     this.ensure(h + 2);
     try {
       const fmt = dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-      this.doc.addImage(dataUrl, fmt, x, this.y, w, h);
+      this.doc.addImage(dataUrl, fmt, x, this.y, w, h, undefined, 'FAST');
     } catch {
       this.para('(image illisible)');
     }
