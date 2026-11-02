@@ -207,7 +207,15 @@ export class App implements Ctx {
       electron()?.log('info', `Maquette ouverte : ${name} (${n} objets, ${(size / 1e6).toFixed(1)} Mo)`);
     } catch (e: any) {
       console.error(e);
-      toast(`Impossible d'ouvrir ${name} : ${e?.message ?? e}`, { error: true, ms: 9000 });
+      const raw = String(e?.message ?? e);
+      const fr = /schema|version|IFC2X2|IFC4X3/i.test(raw)
+        ? 'version IFC non prise en charge (IFC2x3 et IFC4 acceptés)'
+        : /memory|alloc|out of bounds|abort/i.test(raw)
+          ? 'mémoire insuffisante pour ce fichier'
+          : /parse|token|syntax|unexpected|invalid/i.test(raw)
+            ? 'fichier IFC illisible ou corrompu'
+            : 'erreur de lecture du fichier';
+      toast(`Impossible d'ouvrir ${name} : ${fr} (détail technique : ${raw}).`, { error: true, ms: 10000 });
       electron()?.log('error', `Ouverture impossible ${name} : ${e?.stack ?? e}`);
       this.worker?.terminate();
       this.worker = null;

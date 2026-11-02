@@ -1,20 +1,21 @@
-# Bimys 1.2.0 (QMTech)
+# Bimys 1.2.1 (QMTech)
 
 Visionneuse BIM pédagogique spécialisée génie thermique pour les Bac Pro **ICCER** et **MEE** : ouverture de maquettes IFC, exploration des réseaux, métrés, déperditions, maintenance et défis élèves. Application 100 % hors ligne (aucun serveur, aucun compte, aucune clé API), interface entièrement en français.
 
-- Package Android : `com.qmtech.bimys`, versionCode 3, versionName 1.2.0
+- Package Android : `com.qmtech.bimys`, versionCode 4, versionName 1.2.1
 - Windows : installeur NSIS (installation par utilisateur, sans droits administrateur, raccourcis menu Démarrer et bureau, désinstallation depuis « Applications et fonctionnalités ») et version portable
 - Rendu WebGL standard (aucune dépendance CUDA ou carte Nvidia)
+- Interface 100 % en français, y compris les propriétés IFC normalisées (noms de Pset, propriétés, quantités et valeurs traduits, nom IFC d'origine affiché en petit) et les textes internes de Chromium sous Windows
 
 ## Télécharger
 
-Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.2.0`** du dépôt :
+Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.2.1`** du dépôt :
 
 | Fichier | Usage |
 | --- | --- |
-| `Bimys-1.2.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
-| `Bimys-Setup-1.2.0.exe` | Installeur Windows 10/11 (64 bits) |
-| `Bimys-Portable-1.2.0.exe` | Version portable Windows, sans installation |
+| `Bimys-1.2.1.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
+| `Bimys-Setup-1.2.1.exe` | Installeur Windows 10/11 (64 bits) |
+| `Bimys-Portable-1.2.1.exe` | Version portable Windows, sans installation |
 
 ## Bibliothèque de maquettes (7 bâtiments complets)
 

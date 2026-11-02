@@ -1,5 +1,7 @@
 import { LOTS, LOT_BY_ID } from '../../core/lots';
 import { ifcFr, predefFr } from '../../core/ifcTypesFr';
+import { propFr, psetFr } from '../../core/ifcPropsFr';
+import { valueFr } from '../../core/ifcPropsFr';
 import { fmt, slug, today } from '../../core/format';
 import { ductDesignation, pipeDesignation, segmentLength } from '../../core/metre';
 import type { El, LotId, PropValue, TreeNode } from '../../core/types';
@@ -19,7 +21,8 @@ function pv(v: PropValue): string {
     const a = Math.abs(v);
     return fmt(v, Number.isInteger(v) ? 0 : a < 0.1 ? 4 : a < 10 ? 3 : 2).replace(/(,\d*?)0+$/, '$1').replace(/,$/, '');
   }
-  return String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v.split('-').reverse().join('/');
+  return /^[A-Z_]+$/.test(v) ? valueFr(v) : String(v);
 }
 
 /** Point de vue enregistré : caméra, coupes, lots visibles, isolement, transparence. */
@@ -1002,14 +1005,14 @@ export class ViewerPage implements Page {
     }
     if (e.bbox) general.push(['Encombrement (x, y, z)', `${fmt(e.bbox[3] - e.bbox[0], 2)} × ${fmt(e.bbox[4] - e.bbox[1], 2)} × ${fmt(e.bbox[5] - e.bbox[2], 2)} m`]);
     this.rightBody.appendChild(this.psetBox('Informations générales', general.filter(([, v]) => v), true));
-    const psetNames = Object.keys(e.psets).sort((a, b) => (a === 'Bimys_Equipement' ? -1 : b === 'Bimys_Equipement' ? 1 : a.localeCompare(b)));
+    const psetNames = Object.keys(e.psets).sort((a, b) => (a === 'Bimys_Equipement' ? -1 : b === 'Bimys_Equipement' ? 1 : psetFr(a).localeCompare(psetFr(b), 'fr')));
     for (const name of psetNames) {
-      const rows = Object.entries(e.psets[name]).map(([k, v]) => [k, pv(v)] as [string, string]);
-      this.rightBody.appendChild(this.psetBox(name === 'Bimys_Equipement' ? 'Caractéristiques (Bimys_Equipement)' : name, rows, name === 'Bimys_Equipement' || psetNames.length <= 2));
+      const rows = Object.entries(e.psets[name]).map(([k, v]) => [propFr(k), pv(v), k] as [string, string, string]);
+      this.rightBody.appendChild(this.psetBox(psetFr(name), rows, name === 'Bimys_Equipement' || psetNames.length <= 2, name));
     }
     for (const [name, q] of Object.entries(e.qtos)) {
-      const rows = Object.entries(q).map(([k, v]) => [k, `${pv(v)} ${unitOf(k)}`.trim()] as [string, string]);
-      this.rightBody.appendChild(this.psetBox(`Quantités : ${name}`, rows, true));
+      const rows = Object.entries(q).map(([k, v]) => [propFr(k), `${pv(v)} ${unitOf(k)}`.trim(), k] as [string, string, string]);
+      this.rightBody.appendChild(this.psetBox(psetFr(name), rows, true, name));
     }
     if (e.cls === 'IfcSpace') {
       const inside = m.elements.filter((x) => x.spaceId === e.id);
@@ -1024,10 +1027,14 @@ export class ViewerPage implements Page {
     this.rightBody.appendChild(copy);
   }
 
-  private psetBox(title: string, rows: [string, string][], open: boolean): HTMLElement {
+  /** bloc repliable ; le nom IFC d'origine reste visible (sous-titre et info-bulle) pour apprendre le standard */
+  private psetBox(title: string, rows: ([string, string] | [string, string, string])[], open: boolean, ifcName = ''): HTMLElement {
     const d = el('details', { class: 'pset' });
     if (open) d.open = true;
-    d.innerHTML = `<summary>${esc(title)}</summary><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`;
+    const sub = ifcName && ifcName !== title ? `<small class="ifc-name">${esc(ifcName)}</small>` : '';
+    d.innerHTML = `<summary>${esc(title)}${sub}</summary><table>${rows
+      .map((r) => `<tr><td${r[2] && r[2] !== r[0] ? ` title="${esc(r[2])}"` : ''}>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`)
+      .join('')}</table>`;
     return d;
   }
 }

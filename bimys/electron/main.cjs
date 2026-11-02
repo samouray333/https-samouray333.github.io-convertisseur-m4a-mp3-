@@ -61,6 +61,9 @@ if (SOFTWARE) {
   app.commandLine.appendSwitch('ignore-gpu-blocklist');
 }
 
+// textes internes de Chromium (sélecteur de date, messages de formulaire) toujours en français
+app.commandLine.appendSwitch('lang', 'fr-FR');
+
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 
 function docsDir() {
