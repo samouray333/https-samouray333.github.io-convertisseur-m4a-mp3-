@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "_aide": "Fichier éditable : ajoutez des types, des points de contrôle ou des mesures. 'detection' : classes IFC, types prédéfinis et mots-clés (dans le nom ou le type de l'objet). Le premier type qui correspond est retenu, de haut en bas.",
+  "fluides": {
+    "R32": 675,
+    "R410A": 2088,
+    "R407C": 1774,
+    "R134a": 1430,
+    "R290": 3,
+    "R744": 1,
+    "R454B": 466,
+    "R454C": 148,
+    "R513A": 631,
+    "R1234yf": 1,
+    "R1234ze": 1,
+    "R404A": 3922,
+    "R22": 1810
+  },
+  "types": [
+    {
+      "id": "module_hydraulique",
+      "libelle": "Module hydraulique de PAC",
+      "detection": { "classes": ["IfcUnitaryEquipment"], "motsCles": ["module hydraulique", "module hydro"] },
+      "periodiciteMois": 12,
+      "reglementation": "Entretien recommandé avec celui de la PAC (décret n° 2020-912 : entretien des PAC de 4 à 70 kW tous les 2 ans).",
+      "checklist": [
+        { "id": "pression", "libelle": "Contrôler la pression du circuit chauffage (1 à 1,5 bar à froid)" },
+        { "id": "purge", "libelle": "Purger l'air du module et des émetteurs" },
+        { "id": "filtre", "libelle": "Nettoyer le filtre à tamis / pot à boues" },
+        { "id": "appoint", "libelle": "Vérifier le fonctionnement de l'appoint électrique" },
+        { "id": "serrage", "libelle": "Contrôler le serrage des connexions électriques" }
+      ],
+      "mesures": [
+        { "id": "p_circuit", "libelle": "Pression circuit", "unite": "bar" },
+        { "id": "t_depart", "libelle": "Température départ", "unite": "°C" },
+        { "id": "t_retour", "libelle": "Température retour", "unite": "°C" }
+      ]
+    },
+    {
+      "id": "chaudiere_gaz",
+      "libelle": "Chaudière gaz",
+      "detection": { "classes": ["IfcBoiler"], "motsCles": [] },
+      "periodiciteMois": 12,
+      "reglementation": "Entretien annuel obligatoire des chaudières de 4 à 400 kW (articles R224-41-4 et suivants du Code de l'environnement), avec remise d'une attestation d'entretien sous 15 jours.",
+      "checklist": [
+        { "id": "nettoyage", "libelle": "Nettoyer le corps de chauffe et le brûleur" },
+        { "id": "siphon", "libelle": "Nettoyer le siphon et vérifier l'évacuation des condensats" },
+        { "id": "combustion", "libelle": "Réaliser l'analyse de combustion (CO, CO2, O2, rendement)" },
+        { "id": "co_ambiant", "libelle": "Mesurer le CO ambiant dans le local" },
+        { "id": "fumees", "libelle": "Vérifier le conduit / la ventouse (étanchéité, fixation, terminal)" },
+        { "id": "securites", "libelle": "Contrôler les sécurités : ionisation, surchauffe, manque d'eau, pressostat" },
+        { "id": "pression", "libelle": "Contrôler la pression du circuit et la soupape" },
+        { "id": "vase", "libelle": "Contrôler la pression de gonflage du vase d'expansion" },
+        { "id": "etancheite_gaz", "libelle": "Contrôler l'étanchéité gaz (eau savonneuse ou détecteur)" },
+        { "id": "regulation", "libelle": "Vérifier la régulation et conseiller l'usager (réglages, économies)" },
+        { "id": "attestation", "libelle": "Remettre l'attestation d'entretien" }
+      ],
+      "mesures": [
+        { "id": "co_fumees", "libelle": "CO fumées (non dilué)", "unite": "ppm", "max": 400 },
+        { "id": "co_ambiant", "libelle": "CO ambiant", "unite": "ppm", "max": 10 },
+        { "id": "co2", "libelle": "CO2 fumées", "unite": "%" },
+        { "id": "o2", "libelle": "O2 fumées", "unite": "%" },
+        { "id": "t_fumees", "libelle": "Température des fumées", "unite": "°C" },
+        { "id": "rendement", "libelle": "Rendement de combustion", "unite": "%" },
+        { "id": "p_circuit", "libelle": "Pression circuit", "unite": "bar" }
+      ]
+    },
+    {
+      "id": "pac",
+      "libelle": "Pompe à chaleur",
+      "detection": { "classes": ["IfcUnitaryEquipment", "IfcChiller", "IfcCompressor"], "motsCles": ["pompe à chaleur", "pac", "heat pump"] },
+      "periodiciteMois": 24,
+      "etancheite": true,
+      "reglementation": "Entretien obligatoire des PAC de 4 à 70 kW tous les 2 ans (décret n° 2020-912). Contrôle d'étanchéité selon la charge en tonnes équivalent CO2 (règlement UE 2024/573) par un opérateur titulaire d'une attestation de capacité.",
+      "checklist": [
+        { "id": "etancheite", "libelle": "Contrôle d'étanchéité du circuit frigorifique (détecteur électronique)" },
+        { "id": "echangeur_ext", "libelle": "Nettoyer l'échangeur extérieur (ailettes, feuilles, poussières)" },
+        { "id": "echangeur_int", "libelle": "Contrôler l'échangeur à plaques / condenseur côté eau" },
+        { "id": "condensats", "libelle": "Vérifier l'évacuation des condensats et le dégivrage" },
+        { "id": "ventilateur", "libelle": "Contrôler le ventilateur (bruit, vibrations, fixation)" },
+        { "id": "electrique", "libelle": "Contrôler les connexions électriques et l'intensité absorbée" },
+        { "id": "hydraulique", "libelle": "Contrôler la pression d'eau, le débit et le filtre" },
+        { "id": "regulation", "libelle": "Vérifier la régulation (loi d'eau, sonde extérieure)" },
+        { "id": "registre", "libelle": "Mettre à jour le registre de l'équipement / fiche d'intervention fluide" }
+      ],
+      "mesures": [
+        { "id": "hp", "libelle": "Haute pression", "unite": "bar" },
+        { "id": "bp", "libelle": "Basse pression", "unite": "bar" },
+        { "id": "surchauffe", "libelle": "Surchauffe", "unite": "K" },
+        { "id": "sous_refroidissement", "libelle": "Sous-refroidissement", "unite": "K" },
+        { "id": "intensite", "libelle": "Intensité absorbée", "unite": "A" },
+        { "id": "t_depart", "libelle": "Température départ eau", "unite": "°C" },
+        { "id": "t_retour", "libelle": "Température retour eau", "unite": "°C" }
+      ]
+    },
+    {
+      "id": "vmc",
+      "libelle": "VMC (caisson)",
+      "detection": { "classes": ["IfcFan", "IfcAirToAirHeatRecovery"], "motsCles": [] },
+      "periodiciteMois": 12,
+      "reglementation": "Entretien recommandé chaque année : nettoyage des bouches tous les 3 à 6 mois par l'occupant, caisson et débits par un professionnel.",
+      "checklist": [
+        { "id": "bouches", "libelle": "Nettoyer les bouches d'extraction (cuisine, SdB, WC)" },
+        { "id": "entrees", "libelle": "Nettoyer les entrées d'air des menuiseries" },
+        { "id": "filtres", "libelle": "Nettoyer / remplacer les filtres" },
+        { "id": "caisson", "libelle": "Nettoyer le caisson et la roue du ventilateur" },
+        { "id": "gaines", "libelle": "Vérifier les gaines (écrasement, déconnexion, isolation)" },
+        { "id": "rejet", "libelle": "Vérifier la sortie de toiture" },
+        { "id": "debits", "libelle": "Mesurer les débits aux bouches et comparer aux valeurs réglementaires" }
+      ],
+      "mesures": [
+        { "id": "q_cuisine", "libelle": "Débit bouche cuisine", "unite": "m³/h" },
+        { "id": "q_sdb", "libelle": "Débit bouche salle de bains", "unite": "m³/h" },
+        { "id": "q_wc", "libelle": "Débit bouche WC", "unite": "m³/h" },
+        { "id": "depression", "libelle": "Dépression aux bouches", "unite": "Pa" },
+        { "id": "puissance", "libelle": "Puissance absorbée", "unite": "W" }
+      ]
+    },
+    {
+      "id": "circulateur",
+      "libelle": "Circulateur",
+      "detection": { "classes": ["IfcPump"], "motsCles": [] },
+      "periodiciteMois": 12,
+      "reglementation": "Contrôle lors de l'entretien annuel du générateur.",
+      "checklist": [
+        { "id": "bruit", "libelle": "Contrôler le bruit et les vibrations" },
+        { "id": "vitesse", "libelle": "Vérifier le réglage (vitesse, mode pression proportionnelle / constante)" },
+        { "id": "fuite", "libelle": "Vérifier l'absence de fuite aux raccords" },
+        { "id": "deblocage", "libelle": "Contrôler le déblocage de l'arbre après un arrêt prolongé" },
+        { "id": "electrique", "libelle": "Contrôler l'alimentation électrique" }
+      ],
+      "mesures": [
+        { "id": "puissance", "libelle": "Puissance absorbée", "unite": "W" },
+        { "id": "dp", "libelle": "Hauteur manométrique réglée", "unite": "m" }
+      ]
+    },
+    {
+      "id": "vase_expansion",
+      "libelle": "Vase d'expansion",
+      "detection": { "classes": ["IfcTank"], "predefinis": ["EXPANSION"], "motsCles": ["vase"] },
+      "periodiciteMois": 12,
+      "reglementation": "Pression de gonflage à contrôler circuit vidangé ou isolé : en général hauteur statique + 0,3 bar (1 bar pour une maison R+1).",
+      "checklist": [
+        { "id": "isolement", "libelle": "Isoler le vase et le mettre à l'atmosphère côté eau" },
+        { "id": "gonflage", "libelle": "Mesurer la pression de gonflage (azote / air) à la valve" },
+        { "id": "regonfler", "libelle": "Regonfler à la pression prescrite si nécessaire" },
+        { "id": "membrane", "libelle": "Vérifier la membrane (pas d'eau à la valve)" },
+        { "id": "remise", "libelle": "Remettre en service et contrôler la pression du circuit" }
+      ],
+      "mesures": [
+        { "id": "p_gonflage", "libelle": "Pression de gonflage mesurée", "unite": "bar" },
+        { "id": "p_circuit", "libelle": "Pression circuit à froid", "unite": "bar" }
+      ]
+    },
+    {
+      "id": "soupape",
+      "libelle": "Soupape de sécurité",
+      "detection": { "classes": ["IfcValve"], "predefinis": ["SAFETYCUTOFF"], "motsCles": ["soupape"] },
+      "periodiciteMois": 12,
+      "reglementation": "Manœuvre de contrôle annuelle, tarage adapté à la pression maximale de service (3 bar en chauffage individuel).",
+      "checklist": [
+        { "id": "manoeuvre", "libelle": "Manœuvrer la soupape et vérifier l'écoulement" },
+        { "id": "fermeture", "libelle": "Vérifier la refermeture (pas de goutte à goutte)" },
+        { "id": "evacuation", "libelle": "Vérifier le raccordement à l'évacuation (siphon, entonnoir)" },
+        { "id": "tarage", "libelle": "Vérifier la pression de tarage" }
+      ],
+      "mesures": [{ "id": "tarage", "libelle": "Pression de tarage", "unite": "bar" }]
+    },
+    {
+      "id": "ballon_ecs",
+      "libelle": "Ballon d'eau chaude sanitaire",
+      "detection": { "classes": ["IfcTank"], "predefinis": ["STORAGE"], "motsCles": ["ballon", "ecs", "chauffe-eau", "préparateur"] },
+      "periodiciteMois": 12,
+      "reglementation": "Groupe de sécurité à manœuvrer chaque mois par l'usager. Anode magnésium à contrôler tous les 1 à 2 ans selon la dureté de l'eau. Consigne ≥ 55 °C (prévention légionelles).",
+      "checklist": [
+        { "id": "groupe", "libelle": "Manœuvrer le groupe de sécurité et vérifier l'écoulement" },
+        { "id": "anode", "libelle": "Contrôler l'usure de l'anode (remplacer si consommée à plus de 50 %)" },
+        { "id": "detartrage", "libelle": "Détartrer / vidanger si nécessaire" },
+        { "id": "temperature", "libelle": "Contrôler la température de consigne (≥ 55 °C)" },
+        { "id": "joints", "libelle": "Vérifier l'étanchéité des raccords et de la trappe de visite" },
+        { "id": "isolation", "libelle": "Vérifier le calorifugeage des tuyauteries" }
+      ],
+      "mesures": [
+        { "id": "t_ecs", "libelle": "Température ECS au puisage", "unite": "°C" },
+        { "id": "anode_pct", "libelle": "Usure anode estimée", "unite": "%" }
+      ]
+    },
+    {
+      "id": "filtre",
+      "libelle": "Filtre / pot à boues",
+      "detection": { "classes": ["IfcFilter"], "motsCles": [] },
+      "periodiciteMois": 12,
+      "reglementation": "Nettoyage annuel recommandé, plus fréquent après un désembouage.",
+      "checklist": [
+        { "id": "isoler", "libelle": "Isoler le filtre" },
+        { "id": "vidanger", "libelle": "Vidanger et nettoyer le barreau magnétique" },
+        { "id": "remise", "libelle": "Remettre en service, purger et contrôler la pression" }
+      ],
+      "mesures": []
+    }
+  ]
+}

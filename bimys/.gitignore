@@ -1,0 +1,13 @@
+node_modules
+dist
+public/wasm
+release
+tools/out
+*.log
+test-results
+screenshots/tmp
+android/app/build
+android/.gradle
+android/build
+android/local.properties
+android/app/src/main/assets/public
