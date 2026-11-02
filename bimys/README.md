@@ -1,20 +1,20 @@
-# Bimys 1.0.0 (QMTech)
+# Bimys 1.1.0 (QMTech)
 
 Visionneuse BIM pédagogique spécialisée génie thermique pour les Bac Pro **ICCER** et **MEE** : ouverture de maquettes IFC, exploration des réseaux, métrés, déperditions, maintenance et défis élèves. Application 100 % hors ligne (aucun serveur, aucun compte, aucune clé API), interface entièrement en français.
 
-- Package Android : `com.qmtech.bimys`, versionCode 1, versionName 1.0.0
+- Package Android : `com.qmtech.bimys`, versionCode 2, versionName 1.1.0
 - Windows : installeur NSIS (installation par utilisateur, sans droits administrateur, raccourcis menu Démarrer et bureau, désinstallation depuis « Applications et fonctionnalités ») et version portable
 - Rendu WebGL standard (aucune dépendance CUDA ou carte Nvidia)
 
 ## Télécharger
 
-Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.0.0`** du dépôt :
+Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.1.0`** du dépôt :
 
 | Fichier | Usage |
 | --- | --- |
-| `Bimys-1.0.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
-| `Bimys-Setup-1.0.0.exe` | Installeur Windows 10/11 (64 bits) |
-| `Bimys-Portable-1.0.0.exe` | Version portable Windows, sans installation |
+| `Bimys-1.1.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
+| `Bimys-Setup-1.1.0.exe` | Installeur Windows 10/11 (64 bits) |
+| `Bimys-Portable-1.1.0.exe` | Version portable Windows, sans installation |
 
 ## Fonctions
 
@@ -29,13 +29,21 @@ Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bim
 | Énergie | consommations annuelles, ratio kWh/m².an, gains estimés (chaudière, PAC, isolation, fenêtres, régulation) avec hypothèses affichées, export PDF |
 | Défis | questions générées depuis la maquette, correction avec tolérance, score, PDF du résultat, mode prof protégé par code (1234 au départ, modifiable) pour les corrigés et l'historique |
 
-Raccourcis (Windows) : `Ctrl+O` ouvrir, `F` cadrer, `H` masquer, `I` isoler, `A` tout afficher, `Échap` désélectionner, `F11` plein écran.
+### Version Windows (1.1)
+
+- Barre de menus en français (Fichier, Affichage, Modules, Aide), fichiers récents dans le menu et la liste de raccourcis Windows, exemples, fermeture de maquette, ouverture du dossier des exports
+- Taille et position de fenêtre mémorisées, une seule instance (un double-clic sur un .ifc s'ouvre dans la fenêtre existante)
+- Démarrage garanti même si la carte graphique est refusée : modules sans 3D, puis bascule proposée en rendu 3D logiciel (Affichage > Rendu 3D logiciel)
+- Journal d'erreurs (Aide > Ouvrir le journal d'erreurs), fenêtre « À propos », contrat de licence dans l'installeur
+- Vue 3D : cube de navigation, vue orthographique, **plan 2D par niveau** (murs coupés en noir, nom et surface des pièces), clic droit contextuel, sélection multiple (Ctrl+clic), recherche (Ctrl+F), info-bulle au survol, mesure aimantée sur les sommets, points de vue enregistrés, capture PNG avec cartouche, isolement d'un réseau (IfcSystem), barre d'état
+
+Raccourcis (F1 dans l'appli pour la liste complète) : `Ctrl+O` ouvrir, `Ctrl+F` rechercher, `Ctrl+Maj+S` capture, `Ctrl+1` à `Ctrl+8` modules, `F` cadrer, `H` masquer, `I` isoler, `A` tout afficher, `T` transparence, `O` orthographique, `P` plan 2D, `Page préc./suiv.` niveau, `M` mesure, `1` à `4` vues, `Échap` désélectionner, `F11` plein écran.
 
 ## Où sont enregistrés les fichiers
 
 | Plateforme | Exports (PDF, CSV, sauvegardes) | Données de l'appli |
 | --- | --- | --- |
-| Windows | boîte « Enregistrer sous », `Documents\Bimys` par défaut, le dernier dossier utilisé est mémorisé | IndexedDB dans `%APPDATA%\Bimys` |
+| Windows | boîte « Enregistrer sous », `Documents\Bimys` par défaut, le dernier dossier utilisé est mémorisé | `%APPDATA%\Bimys` (données, `bimys-config.json`, journal `logs\bimys.log`) |
 | Android | `Documents/Bimys` (bouton **Partager** après chaque export) | stockage interne de l'application |
 | Navigateur (test) | dossier de téléchargement | IndexedDB du navigateur |
 
@@ -94,6 +102,14 @@ Maquettes exemple (Python 3 + `pip install ifcopenshell`) :
 ```bash
 npm run maquette
 ```
+
+Test automatique de l'application de bureau (18 étapes : menus, ouverture, 3D, clic droit, recherche, plan 2D, exports, fenêtre mémorisée, journal) :
+
+```bash
+npm run build && node tools/e2e-electron.cjs
+```
+
+Sur Linux sans écran : `xvfb-run -a node tools/e2e-electron.cjs`. La CI lance ce test sur l'exe Windows empaqueté (`release/win-unpacked/Bimys.exe`).
 
 Icônes et écrans de démarrage, captures d'écran de contrôle :
 

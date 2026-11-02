@@ -88,6 +88,11 @@ jobs:
       - run: npm ci
       - run: npm run dist:win
         env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+      - name: Test de l'application Windows installée (exe empaqueté)
+        run: node tools/e2e-electron.cjs release/win-unpacked/Bimys.exe test-results/e2e-windows
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: bimys-tests-windows, path: bimys/test-results }
       - uses: actions/upload-artifact@v4
         with:
           name: bimys-windows
@@ -101,7 +106,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { path: out, merge-multiple: true }
+        with: { name: bimys-android, path: out }
+      - uses: actions/download-artifact@v4
+        with: { name: bimys-windows, path: out }
       - name: Version
         id: ver
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"

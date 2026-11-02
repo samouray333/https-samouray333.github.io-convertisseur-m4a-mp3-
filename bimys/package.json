@@ -1,7 +1,7 @@
 {
   "name": "bimys",
   "productName": "Bimys",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Bimys : visionneuse BIM pédagogique génie thermique (Bac Pro ICCER / MEE)",
   "author": "QMTech",
   "license": "UNLICENSED",
@@ -35,6 +35,7 @@
     "idb": "^8.0.4",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.9",
+    "playwright-core": "^1.63.0",
     "three": "^0.187.0",
     "three-mesh-bvh": "^0.9.17",
     "typescript": "^7.0.2",
@@ -93,7 +94,8 @@
       ],
       "language": "1036",
       "deleteAppDataOnUninstall": false,
-      "runAfterFinish": true
+      "runAfterFinish": true,
+      "license": "build/licence.txt"
     },
     "portable": {
       "artifactName": "Bimys-Portable-${version}.exe"

@@ -341,4 +341,54 @@ details.pset td:first-child { color: var(--muted); width: 48%; }
   .hero { flex-direction: column; text-align: center; padding: 20px; }
   .vt { min-width: 46px; height: 48px; font-size: 9.5px; }
 }
+
+/* ---------------- outils professionnels de la vue 3D */
+.navcube-host { position: absolute; right: 14px; bottom: calc(84px + var(--nav-h)); z-index: 9; width: 96px; height: 96px; transition: right 0.2s ease; }
+.viewer-page.right-open .navcube-host { right: 372px; }
+.navcube { pointer-events: none; }
+.navcube-face { pointer-events: auto; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font: 600 11px 'Segoe UI', sans-serif; color: var(--petrol); background: rgba(255, 255, 255, 0.86); border: 1px solid #9fb3b9; cursor: pointer; user-select: none; backface-visibility: hidden; }
+.navcube-face:hover { background: #fde3c8; color: #8a4200; }
+:root[data-theme='sombre'] .navcube-face { background: rgba(27, 44, 51, 0.9); color: #9fd3df; border-color: #3d5a63; }
+.statusbar { position: absolute; left: 0; right: 0; bottom: var(--nav-h); z-index: 8; height: 24px; display: flex; gap: 14px; align-items: center; padding: 0 12px; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--surface) 88%, transparent); border-top: 1px solid var(--border); pointer-events: none; overflow: hidden; white-space: nowrap; }
+.statusbar span + span::before { content: '·'; margin-right: 14px; color: var(--border); }
+.viewer-page .vtoolbar { bottom: calc(32px + var(--nav-h)); }
+.viewer-page .panel { bottom: 34px; }
+.hover-tip { position: absolute; z-index: 15; pointer-events: none; background: rgba(15, 30, 36, 0.92); color: #fff; padding: 6px 9px; border-radius: 7px; font-size: 12.5px; max-width: 300px; box-shadow: var(--shadow); }
+.hover-tip b { display: block; font-size: 13px; }
+.hover-tip span { opacity: 0.8; }
+.ctxmenu { position: absolute; z-index: 30; min-width: 250px; max-width: 320px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25); padding: 5px; }
+.ctxmenu button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: transparent; padding: 7px 9px; border-radius: 7px; text-align: left; cursor: pointer; font-size: 13.5px; }
+.ctxmenu button:hover:not(:disabled) { background: rgba(242, 140, 40, 0.14); }
+.ctxmenu button svg { width: 17px; height: 17px; color: var(--muted); }
+.ctxmenu button span:first-of-type { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctxmenu .kbd { font-size: 11px; }
+.ctxhead { padding: 6px 9px 8px; font-weight: 700; border-bottom: 1px solid var(--border); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctxhead small { display: block; font-weight: 500; color: var(--muted); font-size: 12px; }
+.ctxsep { height: 1px; background: var(--border); margin: 4px 2px; }
+.searchbox { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; margin-bottom: 8px; background: var(--surface-2); }
+.searchbox svg { width: 16px; height: 16px; color: var(--muted); }
+.searchbox input { border: 0 !important; background: transparent !important; flex: 1; min-height: 34px; outline: none !important; padding: 0; }
+.search-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin: 2px 2px 6px; }
+.panel-sub { margin: 14px 4px 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.vp-item { display: flex; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--border); border-radius: 9px; margin-bottom: 7px; cursor: pointer; }
+.vp-item:hover { border-color: var(--orange); }
+.vp-item img { width: 72px; height: 46px; object-fit: cover; border-radius: 6px; background: var(--viewer-bg); flex: none; }
+.vp-nm { flex: 1; min-width: 0; }
+.vp-nm b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.vp-nm small { color: var(--muted); }
+.nowebgl { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.nowebgl .card { max-width: 560px; }
+.help-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; align-items: center; }
+@media (max-width: 820px) {
+  .navcube-host { bottom: calc(150px + var(--nav-h)); transform: scale(0.8); transform-origin: right bottom; }
+  .viewer-page.right-open .navcube-host { right: 14px; }
+  .statusbar { display: none; }
+  .viewer-page .vtoolbar { bottom: calc(10px + var(--nav-h)); }
+  .viewer-page .panel { bottom: calc(76px + var(--nav-h)); }
+}
+@media (pointer: coarse) { .hover-tip { display: none; } }
+.room-labels { position: absolute; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+.room-label { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer; text-align: center; background: rgba(255, 255, 255, 0.82); border: 1px solid #b9c7cc; border-radius: 6px; padding: 2px 7px; font-size: 12px; line-height: 1.25; color: #17262b; white-space: nowrap; }
+.room-label b { display: block; font-size: 12.5px; }
+.room-label span { color: #5f7177; }
 @media print { header.top, .vtoolbar { display: none; } }

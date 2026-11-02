@@ -676,7 +676,7 @@ export function extractGeometry(api: IfcAPI, m: number, data: ModelData, buildBu
   let n = 0;
   const skipClasses = new Set(['ifcopeningelement']);
 
-  api.StreamAllMeshes(m, (mesh: any) => {
+  const onMesh = (mesh: any) => {
     const e = byId.get(mesh.expressID);
     n++;
     if (n % 50 === 0) progress(50 + Math.round((45 * n) / total), 'Géométrie 3D');
@@ -738,7 +738,14 @@ export function extractGeometry(api: IfcAPI, m: number, data: ModelData, buildBu
       geo.delete?.();
     }
     if (bb[0] !== Infinity) e.bbox = bb;
-  });
+  };
+  api.StreamAllMeshes(m, onMesh);
+  // web-ifc ignore les IfcSpace par défaut : on les charge à part (volumes des pièces, étiquettes en plan)
+  try {
+    api.StreamAllMeshesWithTypes(m, [W.IFCSPACE], onMesh);
+  } catch {
+    /* version de web-ifc sans cette fonction */
+  }
 
   const out: GeoBucket[] = [];
   for (const b of buckets.values()) {

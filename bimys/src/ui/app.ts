@@ -5,7 +5,7 @@ import { addRecent, getMaintOverride, getSettings, saveSettings as dbSaveSetting
 import { canShare, electron, initialFile, isElectron, onExternalFile, pickIfc, saveFile, shareFile } from '../platform/platform';
 import { Viewer } from '../viewer/viewer';
 import type { Ctx, Page, PageId } from './ctx';
-import { el, esc, Loader, toast } from './dom';
+import { el, esc, Loader, modal, toast } from './dom';
 import { icon } from './icons';
 import { HomePage } from './pages/home';
 import { ViewerPage } from './pages/viewerPage';
@@ -102,6 +102,9 @@ export class App implements Ctx {
     this.installShortcuts();
     this.installDragDrop();
     onExternalFile((f) => this.loadBytes(f.name, f.data, f.path));
+    electron()?.onMenu((cmd) => this.menuCommand(cmd));
+    window.addEventListener('error', (ev) => electron()?.log('error', `${ev.message} (${ev.filename}:${ev.lineno})`));
+    window.addEventListener('unhandledrejection', (ev) => electron()?.log('error', `Promesse rejetée : ${String(ev.reason?.stack ?? ev.reason)}`));
     const init = await initialFile().catch(() => null);
     if (init) await this.loadBytes(init.name, init.data, init.path);
     (window as any).bimysApp = this;
@@ -199,9 +202,13 @@ export class App implements Ctx {
       }
       const n = res.data.elements.length;
       toast(`${name} : ${n} objets chargés (${res.data.schema}).`);
+      document.title = `${name} : Bimys`;
+      electron()?.setModelOpen(true);
+      electron()?.log('info', `Maquette ouverte : ${name} (${n} objets, ${(size / 1e6).toFixed(1)} Mo)`);
     } catch (e: any) {
       console.error(e);
       toast(`Impossible d'ouvrir ${name} : ${e?.message ?? e}`, { error: true, ms: 9000 });
+      electron()?.log('error', `Ouverture impossible ${name} : ${e?.stack ?? e}`);
       this.worker?.terminate();
       this.worker = null;
     } finally {
@@ -253,27 +260,136 @@ export class App implements Ctx {
     window.addEventListener('keydown', (e) => {
       const t = e.target as HTMLElement;
       const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+      const vp = this.pages.get('viewer') as ViewerPage;
+      const k = e.key.toLowerCase();
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && !e.shiftKey && k === 'o') {
         e.preventDefault();
         void this.openFile();
         return;
       }
-      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
-      const vp = this.pages.get('viewer') as ViewerPage;
+      if (ctrl && e.shiftKey && k === 's' && this.model) {
+        e.preventDefault();
+        this.go('viewer');
+        void vp.screenshot();
+        return;
+      }
+      if (ctrl && k === 'f' && this.model) {
+        e.preventDefault();
+        this.go('viewer');
+        vp.focusSearch();
+        return;
+      }
+      if (e.key === 'F1') {
+        e.preventDefault();
+        this.showShortcuts();
+        return;
+      }
+      if (ctrl && /^[1-8]$/.test(e.key) && this.model) {
+        e.preventDefault();
+        this.go(TABS[Number(e.key) - 1].id);
+        return;
+      }
+      if (typing || ctrl || e.altKey) return;
       if (e.key === 'Escape') {
         document.querySelector('.modal-bg')?.remove();
         if (this.current === 'viewer') vp.escape();
         return;
       }
       if (this.current !== 'viewer' || !this.model) return;
-      const k = e.key.toLowerCase();
       if (k === 'f') vp.fit();
       else if (k === 'h') vp.hideSelection();
       else if (k === 'i') vp.isolateSelection();
       else if (k === 'a') vp.showAll();
+      else if (k === 'o') vp.toggleProjection();
+      else if (k === 'p') vp.togglePlan();
+      else if (k === 'm') vp.toggleMeasure();
+      else if (k === 't') vp.setGhost(!document.querySelector('[data-tool=ghost]')?.classList.contains('on'));
+      else if (e.key === 'PageUp') vp.stepLevel(1);
+      else if (e.key === 'PageDown') vp.stepLevel(-1);
+      else if (k === '1') vp.setView('iso');
+      else if (k === '2') vp.setView('dessus');
+      else if (k === '3') vp.setView('face');
+      else if (k === '4') vp.setView('droite');
       else return;
       e.preventDefault();
     });
+  }
+
+  showShortcuts() {
+    const rows: [string, string][] = [
+      ['Ctrl+O', 'Ouvrir une maquette IFC'],
+      ['Ctrl+F', 'Rechercher un objet'],
+      ['Ctrl+Maj+S', 'Capture d’écran PNG de la vue 3D'],
+      ['Ctrl+1 à Ctrl+8', 'Changer de module (Vue 3D, Métré, Équipements…)'],
+      ['F', 'Cadrer la sélection (ou toute la maquette)'],
+      ['H', 'Masquer la sélection'],
+      ['I', 'Isoler la sélection'],
+      ['A', 'Tout afficher'],
+      ['T', 'Architecture en transparence'],
+      ['O', 'Vue orthographique / perspective'],
+      ['P', 'Plan 2D du niveau'],
+      ['Page préc. / Page suiv.', 'Niveau supérieur / inférieur (plan ou coupe)'],
+      ['M', 'Mesure (aimantée sur les sommets)'],
+      ['1, 2, 3, 4', 'Vues iso, dessus, face (sud), droite (est)'],
+      ['Ctrl+clic', 'Ajouter ou retirer un objet de la sélection'],
+      ['Clic droit', 'Menu contextuel'],
+      ['Double-clic (arborescence)', 'Cadrer une pièce ou un niveau'],
+      ['Molette / clic droit glissé', 'Zoom / déplacement'],
+      ['Échap', 'Désélectionner, quitter la mesure'],
+      ['F11', 'Plein écran (Windows)'],
+    ];
+    const box = el('div', { class: 'help-grid' });
+    box.innerHTML = rows.map(([k, v]) => `<span class="kbd">${esc(k)}</span><span>${esc(v)}</span>`).join('');
+    void modal('Raccourcis clavier', box, [{ label: 'Fermer', cls: 'primary' }]);
+  }
+
+  closeModel() {
+    if (!this.model) return;
+    this.model = null;
+    this.viewer?.clear();
+    document.title = 'Bimys';
+    electron()?.setModelOpen(false);
+    this.updateTabs();
+    for (const p of this.pages.values()) p.modelChanged?.();
+    this.go('home');
+  }
+
+  /** commandes envoyées par la barre de menus Windows */
+  menuCommand(cmd: string) {
+    const vp = this.pages.get('viewer') as ViewerPage;
+    const [c, arg] = cmd.split(':');
+    switch (c) {
+      case 'open':
+        return void this.openFile();
+      case 'sample':
+        return void this.openSample(arg);
+      case 'close':
+        return this.closeModel();
+      case 'page':
+        return this.go(arg as PageId);
+      case 'view':
+        if (!this.model) return;
+        this.go('viewer');
+        if (arg === 'ortho') return vp.toggleProjection();
+        if (arg === 'plan') return vp.togglePlan();
+        if (arg === 'fit') return vp.fit();
+        if (arg === 'all') return vp.showAll();
+        if (arg === 'ghost') return vp.setGhost(!document.querySelector('[data-tool=ghost]')?.classList.contains('on'));
+        return vp.setView(arg as any);
+      case 'search':
+        if (!this.model) return;
+        this.go('viewer');
+        return vp.focusSearch();
+      case 'screenshot':
+        if (!this.model) return;
+        this.go('viewer');
+        return void vp.screenshot();
+      case 'shortcuts':
+        return this.showShortcuts();
+      case 'theme':
+        return void this.saveSettings({ ...this.settings, theme: arg as any });
+    }
   }
 
   private installDragDrop() {

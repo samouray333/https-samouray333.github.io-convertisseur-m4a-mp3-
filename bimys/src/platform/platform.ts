@@ -13,6 +13,11 @@ export interface NativeBridge {
   getInitialFile(): Promise<{ path: string; name: string; data: ArrayBuffer } | null>;
   documentsDir(): Promise<string>;
   showItem(path: string): void;
+  setSoftwareRendering(on: boolean): void;
+  onMenu(cb: (cmd: string) => void): void;
+  setModelOpen(open: boolean): void;
+  info(): Promise<{ version: string; electron: string; chrome: string; software: boolean; logFile: string }>;
+  log(level: string, msg: string): void;
   version: string;
 }
 

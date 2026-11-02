@@ -31,7 +31,7 @@ export class HomePage implements Page {
         <div class="card"><h2>${icon('info')} Prise en main</h2>
           <p class="lead" style="margin-bottom:8px">Ouvrez un exemple puis l'onglet <b>Métré</b> : deux clics suffisent.</p>
           <div class="drop-hint">${isAndroid ? 'Astuce : depuis le gestionnaire de fichiers, « Ouvrir avec » Bimys sur un fichier .ifc.' : 'Glissez-déposez un fichier .ifc n\'importe où dans la fenêtre.'}</div>
-          ${isAndroid ? '' : `<p class="lead" style="margin-top:10px">Raccourcis : <span class="kbd">Ctrl+O</span> ouvrir, <span class="kbd">F</span> cadrer, <span class="kbd">H</span> masquer, <span class="kbd">I</span> isoler, <span class="kbd">A</span> tout afficher, <span class="kbd">Échap</span> désélectionner.</p>`}
+          ${isAndroid ? '' : `<p class="lead" style="margin-top:10px">Raccourcis : <span class="kbd">Ctrl+O</span> ouvrir, <span class="kbd">F</span> cadrer, <span class="kbd">H</span> masquer, <span class="kbd">I</span> isoler, <span class="kbd">A</span> tout afficher, <span class="kbd">Échap</span> désélectionner, <span class="kbd">F1</span> tous les raccourcis.</p>`}
         </div>
       </div>`;
     this.el.appendChild(inner);

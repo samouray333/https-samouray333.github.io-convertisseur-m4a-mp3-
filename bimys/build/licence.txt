@@ -1,0 +1,25 @@
+﻿CONTRAT DE LICENCE D'UTILISATION DE BIMYS
+QMTech, 2026
+
+1. Objet
+Bimys est une visionneuse de maquettes numériques (IFC) à vocation pédagogique, destinée à l'enseignement du génie thermique (Bac Pro ICCER et MEE). Le présent contrat définit les conditions d'utilisation du logiciel.
+
+2. Licence accordée
+QMTech accorde à l'utilisateur une licence non exclusive et non transférable d'installation et d'utilisation de Bimys sur ses postes, dans un cadre pédagogique ou professionnel.
+
+3. Restrictions
+L'utilisateur s'interdit de vendre, louer ou redistribuer Bimys modifié, et de supprimer les mentions de propriété. Les composants libres intégrés restent régis par leurs propres licences (voir ci-dessous).
+
+4. Données
+Bimys fonctionne entièrement hors ligne. Aucune donnée n'est transmise à QMTech ni à un tiers. Les maquettes, interventions, saisies et réglages restent sur l'ordinateur de l'utilisateur (dossier de l'application et Documents\Bimys pour les exports). L'utilisateur est responsable de ses sauvegardes (fonction Sauvegarde dans Paramètres).
+
+5. Limitation de responsabilité
+Bimys est un outil pédagogique. Les calculs (métrés, déperditions selon une méthode simplifiée, bilans énergétiques, périodicités de maintenance) sont fournis à titre indicatif et ne remplacent ni une étude thermique réglementaire (NF EN 12831, RE 2020), ni l'avis d'un professionnel qualifié, ni les textes réglementaires en vigueur. QMTech ne saurait être tenue responsable d'un dommage résultant de leur utilisation.
+
+6. Composants tiers
+three.js et three-mesh-bvh (licence MIT), web-ifc (licence MPL-2.0, code source disponible sur github.com/ThatOpen/engine_web-ifc), jsPDF et jspdf-autotable (MIT), idb (ISC), Electron (MIT ; Chromium : BSD et licences tierces, voir LICENSES.chromium.html dans le dossier d'installation), police DejaVu Sans (licence Bitstream Vera).
+
+7. Droit applicable
+Le présent contrat est soumis au droit français.
+
+En cliquant sur « J'accepte », vous acceptez les termes de ce contrat.
