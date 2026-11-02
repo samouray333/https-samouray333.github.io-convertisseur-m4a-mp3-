@@ -162,7 +162,7 @@ export class ViewerPage implements Page {
     q('hv').textContent = `${fmt(this.levelH, 1)} m`;
     q('axis').value = this.free?.axis ?? '';
     q('t').value = String(this.free?.t ?? 0.5);
-    const apply = () => {
+    const apply = (k = '') => {
       this.levelIdx = Number(q('level').value);
       this.levelH = Number(q('h').value);
       q('hv').textContent = `${fmt(this.levelH, 1)} m`;
@@ -170,13 +170,19 @@ export class ViewerPage implements Page {
         const s = storeys[this.levelIdx];
         const y = s.elevation + m.yOffset;
         this.viewer.setLevelCut({ bottom: y - 0.25, top: y + this.levelH });
+        if (k === 'level') {
+          const b = this.viewer.bounds;
+          b.min.y = Math.max(b.min.y, y - 0.25);
+          b.max.y = Math.min(b.max.y, y + this.levelH);
+          this.viewer.fitBox(b);
+        }
       } else this.viewer.setLevelCut(null);
       const ax = q('axis').value as '' | 'x' | 'y' | 'z';
       this.free = ax ? { axis: ax, t: Number(q('t').value), flip: this.free?.flip ?? false } : null;
       this.viewer.setFreeCut(this.free);
       this.tb.cut.classList.toggle('on', this.levelIdx >= 0 || !!this.free);
     };
-    ['level', 'h', 'axis', 't'].forEach((k) => q(k).addEventListener('input', apply));
+    ['level', 'h', 'axis', 't'].forEach((k) => q(k).addEventListener('input', () => apply(k)));
     q('flip').onclick = () => {
       if (this.free) this.free.flip = !this.free.flip;
       apply();
