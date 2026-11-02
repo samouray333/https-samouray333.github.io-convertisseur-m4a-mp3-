@@ -1,7 +1,7 @@
 {
   "name": "bimys",
   "productName": "Bimys",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Bimys : visionneuse BIM pédagogique génie thermique (Bac Pro ICCER / MEE)",
   "author": "QMTech",
   "license": "UNLICENSED",
@@ -19,7 +19,8 @@
     "android:sync": "npm run build && npx cap sync android",
     "android:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
     "electron": "npm run build && electron .",
-    "dist:win": "npm run build && electron-builder --win nsis portable --x64"
+    "dist:win": "npm run build && electron-builder --win nsis portable --x64",
+    "batiments": "python3 tools/batiments.py"
   },
   "devDependencies": {
     "@capacitor/android": "^8.6.0",

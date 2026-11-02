@@ -10,6 +10,7 @@ export type LotId =
   | 'ecs'
   | 'ef'
   | 'ventilation'
+  | 'froid'
   | 'equipements'
   | 'electrique'
   | 'autres';

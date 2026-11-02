@@ -19,6 +19,7 @@ const VERDICT_COLOR: Record<string, [number, number, number]> = {
   sur: [230, 120, 0],
   aucun: [198, 40, 40],
   non_chauffe: [120, 120, 120],
+  negligeable: [120, 120, 120],
 };
 
 function src(m: Model): string {

@@ -7,7 +7,7 @@ import { Model } from '../src/core/types';
 let api: W.IfcAPI | null = null;
 const cache = new Map<string, Model>();
 
-export async function loadSample(name: 'maison_chaudiere_gaz.ifc' | 'maison_pac_air_eau.ifc'): Promise<Model> {
+export async function loadSample(name: string): Promise<Model> {
   if (cache.has(name)) return cache.get(name)!;
   if (!api) {
     api = new W.IfcAPI();

@@ -294,9 +294,20 @@ export class ViewerPage implements Page {
     this.labels.innerHTML = '';
     if (!m || !this.planMode || this.levelIdx < 0) return;
     const st = m.data.storeys[this.levelIdx];
-    for (const sp of m.spaces().filter((x) => x.storeyId === st.id && x.bbox)) {
-      const a = Object.values(sp.qtos).find((q) => typeof q.NetFloorArea === 'number')?.NetFloorArea;
-      const d = el('div', { class: 'room-label', 'data-id': sp.id }, `<b>${esc(sp.name)}</b>${a ? `<span>${fmt(a, 2)} m²</span>` : ''}`);
+    const spaces = m.spaces().filter((x) => x.storeyId === st.id && x.bbox);
+    // préfixe commun (ex. « Logement 02 ») affiché en petit pour alléger l'étiquette
+    const pref = new Map<string, number>();
+    for (const sp of spaces) {
+      const w = sp.name.split(/\s+/);
+      if (w.length >= 3) pref.set(w.slice(0, 2).join(' '), (pref.get(w.slice(0, 2).join(' ')) ?? 0) + 1);
+    }
+    for (const sp of spaces.sort((a, b) => this.areaOf(b) - this.areaOf(a))) {
+      const a = this.areaOf(sp);
+      const w = sp.name.split(/\s+/);
+      const p2 = w.slice(0, 2).join(' ');
+      const short = w.length >= 3 && (pref.get(p2) ?? 0) >= 3;
+      const title = short ? w.slice(2).join(' ') : sp.name;
+      const d = el('div', { class: 'room-label', 'data-id': sp.id, title: sp.name }, `<b>${esc(title)}</b><span>${short ? esc(p2) + ' · ' : ''}${a ? `${fmt(a, 2)} m²` : ''}</span>`);
       d.onclick = () => this.selectElement(sp.id, false);
       this.labels.appendChild(d);
     }
@@ -305,18 +316,34 @@ export class ViewerPage implements Page {
     requestAnimationFrame(() => this.positionLabels());
   }
 
+  private areaOf(sp: El): number {
+    return Object.values(sp.qtos).find((q) => typeof q.NetFloorArea === 'number')?.NetFloorArea ?? 0;
+  }
+
+  /** place les étiquettes et masque celles qui se chevauchent (les grandes pièces d'abord) */
   private positionLabels() {
     const m = this.app.model;
     if (!m || !this.viewer || this.labels.hidden) return;
+    const placed: DOMRect[] = [];
     for (const d of Array.from(this.labels.children) as HTMLElement[]) {
       const b = m.byId.get(Number(d.dataset.id))?.bbox;
       if (!b) continue;
       const p = this.viewer.projectIfc((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, b[2]);
-      d.hidden = !p;
-      if (p) {
-        d.style.left = `${p.x}px`;
-        d.style.top = `${p.y}px`;
+      if (!p) {
+        d.hidden = true;
+        continue;
       }
+      d.hidden = false;
+      d.style.left = `${p.x}px`;
+      d.style.top = `${p.y}px`;
+      const r = d.getBoundingClientRect();
+      // une étiquette plus large que la pièce à l'écran ou qui en chevauche une autre est masquée
+      const q1 = this.viewer.projectIfc(b[0], b[1], b[2]);
+      const q2 = this.viewer.projectIfc(b[3], b[4], b[2]);
+      const roomW = q1 && q2 ? Math.abs(q2.x - q1.x) : Infinity;
+      const overlap = placed.some((o) => !(r.right < o.left + 2 || r.left > o.right - 2 || r.bottom < o.top + 2 || r.top > o.bottom - 2));
+      if (overlap || r.width > roomW * 1.15) d.hidden = true;
+      else placed.push(r);
     }
   }
 

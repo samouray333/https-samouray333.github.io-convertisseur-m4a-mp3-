@@ -19,27 +19,39 @@ export interface NomRow {
 
 export const NOM_CATEGORIES = [
   'Générateurs',
+  'Production de froid',
   'Émetteurs',
   'Circulateurs',
   "Vases d'expansion",
   'Ballons / stockage',
   'Soupapes et sécurités',
-  'Ventilation : caissons',
+  'Ventilation : CTA et caissons',
   'Ventilation : bouches et entrées d’air',
   'Régulation',
+  'Comptage',
   'Appareils sanitaires',
 ];
 
 export function nomCategory(e: El): string | null {
   const c = e.cls.toLowerCase();
-  if (['ifcboiler', 'ifcchiller', 'ifcunitaryequipment', 'ifcheatexchanger', 'ifcburner', 'ifcsolardevice', 'ifcairtoairheatrecovery', 'ifccompressor'].includes(c)) return 'Générateurs';
+  const hay = `${e.name} ${e.objectType} ${e.typeName}`.toLowerCase();
+  if (c === 'ifcunitaryequipment') {
+    if (/ventilo|cassette|unité intérieure|unite interieure|split mural/.test(hay)) return 'Émetteurs';
+    if (/cta|centrale de traitement|double flux|rooftop/.test(hay)) return 'Ventilation : CTA et caissons';
+    if (/drv|vrv|groupe froid/.test(hay)) return 'Production de froid';
+    return 'Générateurs';
+  }
+  if (c === 'ifcchiller' || c === 'ifccondenser' || c === 'ifccoolingtower') return 'Production de froid';
+  if (['ifcboiler', 'ifcheatexchanger', 'ifcburner', 'ifcsolardevice', 'ifccompressor'].includes(c)) return 'Générateurs';
+  if (c === 'ifcairtoairheatrecovery') return 'Ventilation : CTA et caissons';
   if (c === 'ifcspaceheater' || c === 'ifccoil') return 'Émetteurs';
   if (c === 'ifcpump') return 'Circulateurs';
   if (c === 'ifctank') return /EXPANSION/i.test(e.predefined) || /vase/i.test(e.name) ? "Vases d'expansion" : 'Ballons / stockage';
   if (c === 'ifcvalve' && (/SAFETYCUTOFF|PRESSURERELIEF/i.test(e.predefined) || /soupape|groupe de s[ée]curit/i.test(e.name))) return 'Soupapes et sécurités';
-  if (c === 'ifcfan') return 'Ventilation : caissons';
+  if (c === 'ifcfan') return 'Ventilation : CTA et caissons';
   if (c === 'ifcairterminal') return 'Ventilation : bouches et entrées d’air';
   if (['ifcunitarycontrolelement', 'ifccontroller', 'ifcsensor', 'ifcactuator'].includes(c)) return 'Régulation';
+  if (c === 'ifcflowmeter') return 'Comptage';
   if (c === 'ifcsanitaryterminal') return 'Appareils sanitaires';
   return null;
 }

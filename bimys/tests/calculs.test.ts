@@ -235,3 +235,35 @@ describe('formats', () => {
     expect(parseNum('12,5')).toBe(12.5);
   });
 });
+
+describe('bibliothèque de bâtiments', () => {
+  const cas: { f: string; erreurs: string[]; lots: string[]; maint: string[] }[] = [
+    { f: 'maison_plain_pied_pcbt.ifc', erreurs: ['Chambre 3'], lots: ['chauffage', 'ventilation', 'ecs', 'ef'], maint: ['pac', 'vmc', 'ballon_ecs'] },
+    { f: 'immeuble_collectif_r3.ifc', erreurs: ['Logement 07 Chambre 2', 'Logement 12 Séjour'], lots: ['chauffage', 'ventilation', 'ecs', 'ef'], maint: ['chaudiere_gaz', 'compteur_energie'] },
+    { f: 'clinique_r2.ifc', erreurs: ['Chambre R1S04', 'Chambre R2N07'], lots: ['chauffage', 'froid', 'ventilation', 'ecs', 'ef'], maint: ['groupe_froid', 'cta', 'ventilo'] },
+    { f: 'cinema_3_salles.ifc', erreurs: ['Salle 3'], lots: ['ventilation', 'ecs', 'ef'], maint: ['rooftop'] },
+    { f: 'bureaux_r2_drv.ifc', erreurs: ['Bureau R1-9', 'Salle de réunion R+2'], lots: ['froid', 'ventilation'], maint: ['drv', 'ventilo', 'cta'] },
+  ];
+  for (const c of cas) {
+    it(`${c.f} : ouverture, déperditions, erreurs volontaires, maintenance`, async () => {
+      const m = await loadSample(c.f);
+      expect(m.data.boundaries.length).toBeGreaterThan(30);
+      for (const l of c.lots) expect(m.elements.some((e) => e.lot === l)).toBe(true);
+      const b = computeBilan(m, DEFAULT_PARAMS);
+      const sous = b.rooms.filter((r) => r.verdict === 'sous').map((r) => r.input.name).sort();
+      expect(sous).toEqual([...c.erreurs].sort());
+      // hors erreurs volontaires, aucun émetteur manquant dans une pièce déperditive
+      expect(b.rooms.filter((r) => r.verdict === 'aucun').map((r) => r.input.name)).toEqual([]);
+      const ids = new Set(maintainable(m).map((x) => x.type.id));
+      for (const t of c.maint) expect(ids.has(t)).toBe(true);
+      expect(generateQuestions(m, 3, 10)).toHaveLength(10);
+    });
+  }
+  it('fluides : groupe froid R32 38 kg et DRV R410A 18,5 kg', async () => {
+    const gf = (await loadSample('clinique_r2.ifc')).elements.find((e) => e.cls === 'IfcChiller')!;
+    expect(fluidInfo(gf)!.teqCO2).toBeCloseTo(25.65, 2); // 38 × 675 / 1000
+    expect(fluidInfo(gf)!.periodiciteMois).toBe(12);
+    const drv = (await loadSample('bureaux_r2_drv.ifc')).elements.find((e) => /unité extérieure drv 1/i.test(e.name))!;
+    expect(fluidInfo(drv)!.teqCO2).toBeCloseTo(38.63, 2); // 18,5 × 2088 / 1000
+  });
+});

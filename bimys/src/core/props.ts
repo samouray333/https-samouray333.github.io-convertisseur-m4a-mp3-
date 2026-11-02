@@ -33,6 +33,8 @@ export function text(x: PropValue): string {
 export function powerW(e: El): number | null {
   const oc = num(prop(e, 'OutputCapacity'));
   if (oc !== null && oc > 0) return oc;
+  const cal = propMatch(e, /puissance (calorifique|émise|emise).*\((k?w)\)/i);
+  if (cal && num(cal.value) !== null) return /\(kw\)/i.test(cal.key) ? num(cal.value)! * 1000 : num(cal.value)!;
   const w = propMatch(e, /puissance.*\(w\)/i);
   if (w && num(w.value) !== null) return num(w.value)!;
   const kw = propMatch(e, /puissance.*\(kw\)/i);

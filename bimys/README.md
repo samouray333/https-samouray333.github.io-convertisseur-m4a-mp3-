@@ -1,20 +1,36 @@
-# Bimys 1.1.0 (QMTech)
+# Bimys 1.2.0 (QMTech)
 
 Visionneuse BIM pédagogique spécialisée génie thermique pour les Bac Pro **ICCER** et **MEE** : ouverture de maquettes IFC, exploration des réseaux, métrés, déperditions, maintenance et défis élèves. Application 100 % hors ligne (aucun serveur, aucun compte, aucune clé API), interface entièrement en français.
 
-- Package Android : `com.qmtech.bimys`, versionCode 2, versionName 1.1.0
+- Package Android : `com.qmtech.bimys`, versionCode 3, versionName 1.2.0
 - Windows : installeur NSIS (installation par utilisateur, sans droits administrateur, raccourcis menu Démarrer et bureau, désinstallation depuis « Applications et fonctionnalités ») et version portable
 - Rendu WebGL standard (aucune dépendance CUDA ou carte Nvidia)
 
 ## Télécharger
 
-Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.1.0`** du dépôt :
+Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.2.0`** du dépôt :
 
 | Fichier | Usage |
 | --- | --- |
-| `Bimys-1.1.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
-| `Bimys-Setup-1.1.0.exe` | Installeur Windows 10/11 (64 bits) |
-| `Bimys-Portable-1.1.0.exe` | Version portable Windows, sans installation |
+| `Bimys-1.2.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
+| `Bimys-Setup-1.2.0.exe` | Installeur Windows 10/11 (64 bits) |
+| `Bimys-Portable-1.2.0.exe` | Version portable Windows, sans installation |
+
+## Bibliothèque de maquettes (7 bâtiments complets)
+
+Toutes en IFC4 avec architecture, pièces (surface, hauteur, volume), parois avec U, limites d'espaces, réseaux et équipements renseignés (marque, modèle, puissance, date de mise en service, n° de série fictif, fluide et charge pour les machines frigorifiques). Les émetteurs sont dimensionnés sur les déperditions calculées par Bimys ; quelques erreurs volontaires servent aux exercices.
+
+| Fichier | Bâtiment | Techniques | Erreurs volontaires |
+| --- | --- | --- | --- |
+| `maison_chaudiere_gaz.ifc` | Maison R+1, 109 m² | Chaudière gaz condensation, radiateurs bitube cuivre / multicouche, ballon 150 L, VMC hygro B | Chambre 2 sous-dimensionnée, entrée surdimensionnée, séjour 2 sans robinet thermostatique, purgeur sans système |
+| `maison_pac_air_eau.ifc` | Même maison | PAC air/eau monobloc R410A 2,4 kg (5,01 t éq. CO2), module hydraulique | Idem |
+| `maison_plain_pied_pcbt.ifc` | Maison plain-pied RE 2020, 106 m² | PAC R32, plancher chauffant (boucles par pièce, collecteur, thermostats), VMC double flux, ballon thermodynamique | Chambre 3 sous-dimensionnée |
+| `immeuble_collectif_r3.ifc` | Immeuble R+3, 14 logements T3 | Chaufferie collective (2 chaudières en cascade), colonnes montantes acier, compteurs d'énergie et d'eau par logement, ECS collective bouclée, VMC collective hygro B | Logement 07 chambre 2 et logement 12 séjour sous-dimensionnés, logement 03 : radiateur sans robinet thermostatique |
+| `bureaux_r2_drv.ifc` | Bureaux R+2 | DRV / VRV R410A (2 unités extérieures, cassettes, liaisons frigorifiques, Refnet), CTA d'air neuf double flux, chauffe-eau électriques | Bureau R1-9 et salle de réunion R+2 sous-dimensionnés |
+| `clinique_r2.ifc` | Clinique R+2, 64 chambres et consultations | Chaudières + groupe froid R32 38 kg, ventilo-convecteurs 4 tubes, eau glacée, CTA double flux à roue, CTA de bloc opératoire, ECS bouclée 1 500 L | Chambres R1S04 et R2N07 sous-dimensionnées, panneaux des blocs sans robinet thermostatique |
+| `cinema_3_salles.ifc` | Cinéma 3 salles (120 à 220 places) | Rooftops réversibles par salle (propriété « Pièce desservie »), gaines rectangulaires, extraction sanitaires, chauffe-eau électrique | Salle 3 : rooftop sous-dimensionné |
+
+Régénération : `npm run maquette` (maisons R+1) et `npm run batiments` (les 5 autres), Python 3 avec `pip install ifcopenshell`. Le moteur générique (`tools/batiments.py`) déduit cloisons, portes, fenêtres et limites d'espaces du plan des pièces : on peut y ajouter d'autres bâtiments en décrivant seulement les pièces et les réseaux.
 
 ## Fonctions
 

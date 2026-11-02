@@ -1,7 +1,7 @@
 import { elementsInSpace, emittersOf, defaultHeated } from './deperditions';
 import { ifcFr } from './ifcTypesFr';
 import { MEP_CLASSES } from './lots';
-import { bboxDistance, isExtractTerminal, isThermostaticValve } from './props';
+import { bboxDistance, isExtractTerminal, isThermostaticValve, prop } from './props';
 import type { El, Model } from './types';
 
 export type Severity = 'erreur' | 'alerte' | 'info';
@@ -57,6 +57,10 @@ export function checkCoherence(m: Model): Finding[] {
   // 1. émetteurs sans robinet thermostatique
   const assign = trvAssignments(m);
   for (const r of m.ofClass('IfcSpaceHeater')) {
+    const kind = `${r.name} ${r.objectType} ${r.predefined}`;
+    // plancher chauffant, convecteur électrique, panneau rayonnant : pas de robinet thermostatique attendu
+    if (/plancher|électrique|electrique|CONVECTOR|rayonnant/i.test(kind) && !/RADIATOR/.test(r.predefined)) continue;
+    if (/plancher|électrique|electrique/i.test(kind)) continue;
     if (!hasThermostaticValve(m, r, assign)) {
       const sp = r.spaceId !== null ? m.byId.get(r.spaceId)?.name : '';
       out.push({
@@ -74,7 +78,9 @@ export function checkCoherence(m: Model): Finding[] {
     if (!b.length) out.push({ regle: RULES.humide, severite: 'erreur', message: `${sp.name} : pièce humide sans bouche d'extraction (arrêté du 24 mars 1982).`, elementIds: [sp.id] });
   }
   // 3. éléments sans système
-  const orphans = m.elements.filter((e) => MEP_CLASSES.has(e.cls.toLowerCase()) && e.systemIds.length === 0);
+  // les émetteurs électriques n'appartiennent à aucun réseau hydraulique ou aéraulique
+  const electric = (e: El) => /électrique|electrique/i.test(`${e.name} ${e.objectType}`) || String(prop(e, 'EnergySource') ?? '').toUpperCase() === 'ELECTRICITY';
+  const orphans = m.elements.filter((e) => MEP_CLASSES.has(e.cls.toLowerCase()) && e.systemIds.length === 0 && !electric(e));
   const byClass = new Map<string, El[]>();
   for (const e of orphans) {
     const k = ifcFr(e.cls);
@@ -92,6 +98,8 @@ export function checkCoherence(m: Model): Finding[] {
   // 4. pièces chauffées sans émetteur (information)
   for (const sp of m.spaces()) {
     if (!defaultHeated(sp.name)) continue;
+    const pieceExt = m.data.boundaries.some((b) => b.spaceId === sp.id && b.external);
+    if (!pieceExt) continue; // pièce intérieure sans paroi déperditive
     if (!emittersOf(m, sp).length) out.push({ regle: RULES.chauffee, severite: 'info', message: `${sp.name} : aucun émetteur (chauffage par transfert d'air ou oubli ?).`, elementIds: [sp.id] });
   }
   return out;

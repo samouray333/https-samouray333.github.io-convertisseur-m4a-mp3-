@@ -157,6 +157,7 @@ table.data tfoot td { font-weight: 700; border-top: 2px solid var(--petrol); }
 .hero p { margin: 6px 0 14px; opacity: 0.9; }
 .hero .btn.accent { font-size: 16px; padding: 11px 18px; }
 .samples { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 16px 0; }
+.samples-cat { grid-column: 1 / -1; margin: 6px 2px -4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
 .sample { display: flex; gap: 14px; align-items: center; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; text-align: left; box-shadow: var(--shadow); }
 .sample:hover { border-color: var(--orange); }
 .sample .ico { width: 54px; height: 54px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(242, 140, 40, 0.14); color: var(--orange-dark); flex: none; }

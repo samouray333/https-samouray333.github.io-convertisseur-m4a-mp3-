@@ -14,6 +14,7 @@ export const LOTS: LotDef[] = [
   { id: 'ecs', label: 'ECS', color: '#C2185B', visible: true },
   { id: 'ef', label: 'Eau froide', color: '#1E88E5', visible: true },
   { id: 'ventilation', label: 'Ventilation', color: '#2E9E5B', visible: true },
+  { id: 'froid', label: 'Froid / eau glacée', color: '#00A3C4', visible: true },
   { id: 'equipements', label: 'Équipements', color: '#7E57C2', visible: true },
   { id: 'electrique', label: 'Électrique', color: '#F2B705', visible: true },
   { id: 'autres', label: 'Autres', color: '#8D99A6', visible: true },
@@ -62,10 +63,12 @@ export function lotFromSystem(predefined: string, name: string): LotId | null {
   if (p === 'HEATING') return 'chauffage';
   if (p === 'DOMESTICHOTWATER') return 'ecs';
   if (p === 'DOMESTICCOLDWATER' || p === 'WATERSUPPLY') return 'ef';
+  if (['CHILLEDWATER', 'REFRIGERATION', 'CONDENSERWATER'].includes(p)) return 'froid';
   if (['VENTILATION', 'EXHAUST', 'AIRCONDITIONING', 'VENT'].includes(p)) return 'ventilation';
   if (['ELECTRICAL', 'LIGHTING', 'POWERGENERATION', 'EARTHING', 'LIGHTNINGPROTECTION'].includes(p)) return 'electrique';
   const n = (name || '').toLowerCase();
   if (/chauff|heating|radiat|plancher chauffant/.test(n)) return 'chauffage';
+  if (/glac[ée]e|frigo|chilled|refrig|drv|vrv/.test(n)) return 'froid';
   if (/eau chaude|ecs|hot water|\bec\b/.test(n)) return 'ecs';
   if (/eau froide|cold water|\bef\b|alimentation eau/.test(n)) return 'ef';
   if (/ventil|vmc|extraction|soufflage|air neuf|cta/.test(n)) return 'ventilation';

@@ -18,7 +18,7 @@ import type { Ctx, Page } from '../ctx';
 import { confirmBox, debounce, el, esc, toast } from '../dom';
 import { icon } from '../icons';
 
-const VCLS: Record<string, string> = { sous: 'err', correct: 'ok', sur: 'warn', aucun: 'err', non_chauffe: 'mute' };
+const VCLS: Record<string, string> = { sous: 'err', correct: 'ok', sur: 'warn', aucun: 'err', non_chauffe: 'mute', negligeable: 'mute' };
 
 export class DeperditionsPage implements Page {
   el = el('section');
@@ -176,7 +176,7 @@ export class DeperditionsPage implements Page {
     const card = el('div', { class: 'room', 'data-gid': gid });
     const head = el('div', { class: 'room-head' });
     const ratio = r.phiTotal > 0 ? Math.min(1.6, r.pEmis / r.phiTotal) : 0;
-    const gcol = r.verdict === 'correct' ? 'var(--ok)' : r.verdict === 'sur' ? 'var(--warn)' : r.verdict === 'non_chauffe' ? 'var(--muted)' : 'var(--err)';
+    const gcol = r.verdict === 'correct' ? 'var(--ok)' : r.verdict === 'sur' ? 'var(--warn)' : r.verdict === 'non_chauffe' || r.verdict === 'negligeable' ? 'var(--muted)' : 'var(--err)';
     head.innerHTML = `
       <span class="car" style="display:inline-flex;transform:rotate(${this.open.has(gid) ? 90 : 0}deg);transition:.15s">${icon('chevronR')}</span>
       <div class="nm">${esc(r.input.name)}<small>${esc(r.input.storey)}${this.modified.has(gid) ? ' · modifiée' : ''}${r.manquants ? ` · <span style="color:var(--err)">${r.manquants} valeur(s) à saisir</span>` : ''}</small></div>

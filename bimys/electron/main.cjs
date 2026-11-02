@@ -121,6 +121,13 @@ function buildMenu() {
           submenu: [
             { label: 'Maison R+1 : chaudière gaz', click: () => send('sample:maison_chaudiere_gaz.ifc') },
             { label: 'Maison R+1 : PAC air/eau', click: () => send('sample:maison_pac_air_eau.ifc') },
+            { label: 'Maison plain-pied : plancher chauffant, double flux', click: () => send('sample:maison_plain_pied_pcbt.ifc') },
+            { type: 'separator' },
+            { label: 'Immeuble R+3 : chaufferie collective', click: () => send('sample:immeuble_collectif_r3.ifc') },
+            { label: 'Bureaux R+2 : DRV / VRV', click: () => send('sample:bureaux_r2_drv.ifc') },
+            { type: 'separator' },
+            { label: 'Clinique R+2 : ventilo-convecteurs, groupe froid, CTA', click: () => send('sample:clinique_r2.ifc') },
+            { label: 'Cinéma 3 salles : rooftops', click: () => send('sample:cinema_3_salles.ifc') },
           ],
         },
         { label: 'Fermer la maquette', enabled: !m, click: () => send('close') },

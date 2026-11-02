@@ -60,7 +60,10 @@ export const DEFAULT_PARAMS: DepParams = {
   seuilSur: 30,
 };
 
-export type Verdict = 'sous' | 'correct' | 'sur' | 'aucun' | 'non_chauffe';
+export type Verdict = 'sous' | 'correct' | 'sur' | 'aucun' | 'non_chauffe' | 'negligeable';
+
+/** en dessous de ce besoin (W), une pièce sans émetteur n'est pas signalée (pièce intérieure) */
+export const BESOIN_NEGLIGEABLE = 60;
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
   sous: 'Sous-dimensionné',
@@ -68,6 +71,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   sur: 'Surdimensionné',
   aucun: 'Aucun émetteur',
   non_chauffe: 'Non chauffée',
+  negligeable: 'Besoin négligeable',
 };
 
 export interface EmitterInfo {
@@ -102,7 +106,7 @@ export function defaultTi(name: string): number {
 }
 
 export function defaultHeated(name: string): boolean {
-  return !/cellier|garage|chaufferie|cave|local technique|combles|buanderie non|abri/i.test(name);
+  return !/cellier|garage|chaufferie|cave|local technique|combles|buanderie non|abri|local (vélos|poubelles|déchets|ménage)|gaine|parking|terrasse|couloir|circulation|escalier|palier|\bsas\b|hall d.entrée/i.test(name);
 }
 
 export function paroiType(e: El | undefined, normalZ: number): ParoiType {
@@ -167,8 +171,22 @@ export function elementsInSpace(m: Model, space: El, filter: (e: El) => boolean)
   });
 }
 
+/** Émetteur de chaleur d'une pièce : radiateur, plancher chauffant, convecteur, ventilo-convecteur, cassette. */
+export function isEmitter(e: El): boolean {
+  const c = e.cls.toLowerCase();
+  if (c === 'ifcspaceheater') return true;
+  if (c === 'ifcunitaryequipment' || c === 'ifccoil') return /ventilo|cassette|unité intérieure|unite interieure|split mural|console/i.test(`${e.name} ${e.objectType} ${e.typeName}`);
+  return false;
+}
+
 export function emittersOf(m: Model, space: El): El[] {
-  return elementsInSpace(m, space, (e) => /^ifcspaceheater$/i.test(e.cls));
+  const inRoom = elementsInSpace(m, space, isEmitter);
+  // équipement qui dessert explicitement la pièce (rooftop, CTA dédiée) : propriété « Pièce desservie »
+  const served = m.elements.filter((e) => {
+    const v = prop(e, 'Pièce desservie');
+    return typeof v === 'string' && v.trim().toLowerCase() === space.name.trim().toLowerCase() && !inRoom.includes(e);
+  });
+  return [...inRoom, ...served];
 }
 
 /** Pré-remplit la saisie d'une pièce à partir de la maquette. */
@@ -241,6 +259,7 @@ export function computeRoom(input: RoomInput, p: DepParams, emitters: { id: numb
   let verdict: Verdict;
   let ecartPct: number | null = null;
   if (!input.heated) verdict = 'non_chauffe';
+  else if (!em.length && phiTotal < BESOIN_NEGLIGEABLE) verdict = 'negligeable';
   else if (!em.length) {
     verdict = 'aucun';
     ecartPct = phiTotal > 0 ? -100 : null;

@@ -465,11 +465,14 @@ export class Viewer {
       const mesh = new THREE.Mesh(g, mat);
       mesh.renderOrder = 4;
       this.markers.add(mesh);
+      // halo discret seulement pour les petits équipements, difficiles à repérer de loin
       const bs = g.boundingSphere!;
-      const halo = new THREE.Mesh(new THREE.SphereGeometry(Math.max(bs.radius * 1.3, 0.18), 16, 12), new THREE.MeshBasicMaterial({ color: it.color, transparent: true, opacity: 0.22, depthWrite: false }));
-      halo.position.copy(bs.center);
-      halo.renderOrder = 6;
-      this.markers.add(halo);
+      if (bs.radius < 0.45) {
+        const halo = new THREE.Mesh(new THREE.SphereGeometry(Math.min(0.5, Math.max(bs.radius * 1.8, 0.2)), 16, 12), new THREE.MeshBasicMaterial({ color: it.color, transparent: true, opacity: 0.2, depthWrite: false }));
+        halo.position.copy(bs.center);
+        halo.renderOrder = 6;
+        this.markers.add(halo);
+      }
     }
     this.requestRender();
   }
