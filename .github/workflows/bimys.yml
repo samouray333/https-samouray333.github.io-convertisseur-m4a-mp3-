@@ -1,0 +1,103 @@
+# Build de Bimys : tests, APK Android signée (apksigner verify), installeur NSIS et version portable Windows.
+# Les fichiers sont publiés dans la Release GitHub « bimys-v<version> ».
+name: Bimys
+
+on:
+  push:
+    branches: [claude/zen-gauss-hli4nl, main]
+    paths: ['bimys/**', '.github/workflows/bimys.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: bimys
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: bimys/package-lock.json }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  android:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: bimys/package-lock.json }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - name: Clé de signature
+        id: ks
+        env:
+          KS_B64: ${{ secrets.BIMYS_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.BIMYS_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            mkdir -p keystore && echo "$KS_B64" | base64 -d > keystore/bimys-release.jks
+            printf "storeFile=bimys-release.jks\nstorePassword=%s\nkeyAlias=bimys\nkeyPassword=%s\n" "$KS_PASS" "$KS_PASS" > keystore/keystore.properties
+          fi
+          if [ -f keystore/keystore.properties ] && [ -f keystore/bimys-release.jks ]; then echo "signed=true" >> "$GITHUB_OUTPUT"; else echo "signed=false" >> "$GITHUB_OUTPUT"; echo "::warning::Clé de signature absente : APK de test (debug) seulement. Voir bimys/README.md."; fi
+      - run: npm ci
+      - run: npm run build && npx cap sync android
+      - name: APK release signée
+        if: steps.ks.outputs.signed == 'true'
+        working-directory: bimys/android
+        run: ./gradlew --no-daemon assembleRelease
+      - name: APK debug (sans clé officielle)
+        if: steps.ks.outputs.signed != 'true'
+        working-directory: bimys/android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Vérification de la signature
+        run: |
+          V=$(node -p "require('./package.json').version")
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          if [ "${{ steps.ks.outputs.signed }}" = "true" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "Bimys-$V.apk"
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk "Bimys-$V-debug-NON-SIGNEE-OFFICIELLEMENT.apk"
+          fi
+          for f in Bimys-*.apk; do "$BT/apksigner" verify --verbose --print-certs "$f"; "$BT/aapt2" dump badging "$f" | head -3; done
+      - uses: actions/upload-artifact@v4
+        with: { name: bimys-android, path: 'bimys/Bimys-*.apk' }
+
+  windows:
+    needs: tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: bimys/package-lock.json }
+      - run: npm ci
+      - run: npm run dist:win
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bimys-windows
+          path: |
+            bimys/release/Bimys-Setup-*.exe
+            bimys/release/Bimys-Portable-*.exe
+
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Publication dans une Release GitHub
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          V=$(node -p "require('./package.json').version")
+          TAG="bimys-v$V"
+          ls -la ../out
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Bimys $V" --notes "Bimys $V (QMTech) : APK Android, installeur Windows (NSIS, sans droits administrateur) et version portable. Voir bimys/README.md."
+          gh release upload "$TAG" ../out/* --clobber

@@ -13,29 +13,103 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "maquette": "python3 tools/generate_maquette.py"
+    "maquette": "python3 tools/generate_maquette.py",
+    "icons": "node tools/icons.cjs",
+    "screens": "node tools/screens.cjs screenshots",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
+    "electron": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win nsis portable --x64"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
     "@capacitor/core": "^8.6.0",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/share": "^8.0.3",
     "@capacitor/splash-screen": "^8.0.2",
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "idb": "^8.0.4",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.9",
     "three": "^0.187.0",
     "three-mesh-bvh": "^0.9.17",
-    "web-ifc": "^0.0.78"
-  },
-  "devDependencies": {
-    "@capacitor/android": "^8.6.0",
-    "@capacitor/cli": "^8.6.0",
-    "@types/node": "^26.6.6",
-    "@types/three": "^0.187.0",
-    "electron": "^45.2.1",
-    "electron-builder": "^26.18.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "web-ifc": "^0.0.78"
+  },
+  "homepage": "https://qmtech.fr",
+  "build": {
+    "appId": "com.qmtech.bimys",
+    "productName": "Bimys",
+    "copyright": "© 2026 QMTech",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Bimys",
+      "uninstallDisplayName": "Bimys",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "Bimys-Setup-${version}.exe",
+      "installerLanguages": [
+        "fr_FR"
+      ],
+      "language": "1036",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "portable": {
+      "artifactName": "Bimys-Portable-${version}.exe"
+    },
+    "fileAssociations": [
+      {
+        "ext": "ifc",
+        "name": "Maquette IFC",
+        "description": "Maquette BIM IFC",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      }
+    ],
+    "electronLanguages": [
+      "fr",
+      "en-US"
+    ]
   }
 }
