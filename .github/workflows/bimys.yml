@@ -56,6 +56,15 @@ jobs:
         if: steps.ks.outputs.signed != 'true'
         working-directory: bimys/android
         run: ./gradlew --no-daemon assembleDebug
+      - name: Contrôle de la chaîne de signature release (clé jetable, APK non publiée)
+        if: steps.ks.outputs.signed != 'true'
+        working-directory: bimys/android
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/test.jks" -storetype JKS -alias test -keyalg RSA -keysize 2048 -validity 2 -storepass testtest -keypass testtest -dname "CN=Test CI" -noprompt
+          BIMYS_KEYSTORE="$RUNNER_TEMP/test.jks" BIMYS_STORE_PASSWORD=testtest BIMYS_KEY_ALIAS=test BIMYS_KEY_PASSWORD=testtest ./gradlew --no-daemon assembleRelease
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | head -3
+          rm -f app/build/outputs/apk/release/app-release.apk
       - name: Vérification de la signature
         run: |
           V=$(node -p "require('./package.json').version")
