@@ -68,6 +68,7 @@ public class OcrActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (!Features.require(this, Tr.t("La lecture des photos"))) { finish(); return; }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         pal = Ui.palette(this);
         Ui.systemBars(this, pal);
@@ -80,23 +81,23 @@ public class OcrActivity extends Activity {
 
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = Ui.roundButton(this, "←", "Retour", pal.surface, pal.text, 48);
+        TextView back = Ui.roundButton(this, "←", Tr.t("Retour"), pal.surface, pal.text, 48);
         back.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { finish(); } });
         head.addView(back);
-        TextView title = Ui.label(this, "Lire une photo", 24, pal.text, true);
+        TextView title = Ui.label(this, Tr.t("Lire une photo"), 24, pal.text, true);
         title.setPadding(Ui.dp(this, 8), 0, 0, 0);
         head.addView(title);
         root.addView(head);
 
         preview = new ImageView(this);
         preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        preview.setContentDescription("Aperçu de la photo");
+        preview.setContentDescription(Tr.t("Aperçu de la photo"));
         LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
         plp.setMargins(0, pad, 0, pad);
         root.addView(preview, plp);
 
-        status = Ui.label(this, "Prends en photo un courrier, une notice, une étiquette… "
-                + "bien à plat, avec de la lumière, en remplissant l'écran.", 20, pal.text, true);
+        status = Ui.label(this, Tr.t("Prends en photo un courrier, une notice, une étiquette… ")
+                + Tr.t("bien à plat, avec de la lumière, en remplissant l'écran."), 20, pal.text, true);
         status.setGravity(Gravity.CENTER);
         root.addView(status);
         bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
@@ -108,12 +109,12 @@ public class OcrActivity extends Activity {
 
         actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
-        Button photo = Ui.bigButton(this, "📷   Prendre une photo", pal.button, pal.buttonText);
+        Button photo = Ui.bigButton(this, Tr.t("📷   Prendre une photo"), pal.button, pal.buttonText);
         photo.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { takePhoto(); } });
         actions.addView(photo, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         View sp = new View(this);
         actions.addView(sp, new LinearLayout.LayoutParams(1, Ui.dp(this, 10)));
-        Button gallery = Ui.bigButton(this, "🖼   Choisir une image", pal.surface, pal.text);
+        Button gallery = Ui.bigButton(this, Tr.t("🖼   Choisir une image"), pal.surface, pal.text);
         gallery.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { pickImage(); } });
         actions.addView(gallery, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(actions);
@@ -158,7 +159,7 @@ public class OcrActivity extends Activity {
         try {
             startActivityForResult(i, REQ_CAMERA);
         } catch (Exception e) {
-            Toast.makeText(this, "Aucune appli Appareil photo trouvée.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, Tr.t("Aucune appli Appareil photo trouvée."), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -168,16 +169,16 @@ public class OcrActivity extends Activity {
         i.setType("image/*");
         i.addCategory(Intent.CATEGORY_OPENABLE);
         try {
-            startActivityForResult(Intent.createChooser(i, "Choisir une image"), REQ_GALLERY);
+            startActivityForResult(Intent.createChooser(i, Tr.t("Choisir une image")), REQ_GALLERY);
         } catch (Exception e) {
-            Toast.makeText(this, "Aucune galerie trouvée.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, Tr.t("Aucune galerie trouvée."), Toast.LENGTH_LONG).show();
         }
     }
 
     @Override
     public void onRequestPermissionsResult(int req, String[] p, int[] res) {
         if (req == REQ_CAMERA && res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) takePhoto();
-        else if (req == REQ_CAMERA) setWorking(false, "Lisys a besoin de l'appareil photo pour lire le papier. Tu peux aussi choisir une image.");
+        else if (req == REQ_CAMERA) setWorking(false, Tr.t("Lisys a besoin de l'appareil photo pour lire le papier. Tu peux aussi choisir une image."));
     }
 
     @Override
@@ -187,7 +188,7 @@ public class OcrActivity extends Activity {
         if (req == REQ_CAMERA) {
             if (PhotoProvider.photoFile(this).length() > 0) processImage(PhotoProvider.photoUri());
             else if (data != null && data.getData() != null) processImage(data.getData());
-            else Toast.makeText(this, "La photo n'a pas été enregistrée, réessaie.", Toast.LENGTH_LONG).show();
+            else Toast.makeText(this, Tr.t("La photo n'a pas été enregistrée, réessaie."), Toast.LENGTH_LONG).show();
         } else if (req == REQ_GALLERY && data != null && data.getData() != null) {
             processImage(data.getData());
         }
@@ -204,7 +205,7 @@ public class OcrActivity extends Activity {
     }
 
     private void processImage(final Uri uri) {
-        setWorking(true, "Préparation de l'image…");
+        setWorking(true, Tr.t("Préparation de l'image…"));
         new Thread(new Runnable() {
             @Override public void run() {
                 try {
@@ -219,7 +220,7 @@ public class OcrActivity extends Activity {
                     } });
                 } catch (final Exception e) {
                     main.post(new Runnable() { @Override public void run() {
-                        setWorking(false, e instanceof Extractor.UserError ? e.getMessage() : "Impossible d'ouvrir cette image.");
+                        setWorking(false, e instanceof Extractor.UserError ? e.getMessage() : Tr.t("Impossible d'ouvrir cette image."));
                     } });
                 }
             }
@@ -227,17 +228,17 @@ public class OcrActivity extends Activity {
     }
 
     private void recognizeImage(File f) {
-        status.setText("Lecture du texte de la photo…");
+        status.setText(Tr.t("Lecture du texte de la photo…"));
         engine.recognize(f, new OcrEngine.Callback() {
             @Override public void onProgress(int p) {
                 bar.setProgress(p);
-                status.setText("Lecture du texte de la photo… " + p + " %");
+                status.setText(Tr.t("Lecture du texte de la photo… ") + p + " %");
             }
             @Override public void onDone(String text) {
                 List<String> paras = Extractor.ocrParagraphs(text);
                 if (Extractor.countChars(paras) < 3) {
-                    setWorking(false, "Je n'ai pas trouvé de texte. Reprends la photo plus près, bien à plat, "
-                            + "avec de la lumière et sans reflet.");
+                    setWorking(false, Tr.t("Je n'ai pas trouvé de texte. Reprends la photo plus près, bien à plat, ")
+                            + Tr.t("avec de la lumière et sans reflet."));
                     return;
                 }
                 String first = paras.get(0);
@@ -265,7 +266,7 @@ public class OcrActivity extends Activity {
     // ------------------------------------------------------------------ PDF scanné
 
     private void processPdf(final Uri uri) {
-        setWorking(true, "Ouverture du PDF…");
+        setWorking(true, Tr.t("Ouverture du PDF…"));
         pdfTitle = Extractor.stripExtension(Extractor.displayName(this, uri));
         new Thread(new Runnable() {
             @Override public void run() {
@@ -280,7 +281,7 @@ public class OcrActivity extends Activity {
                     main.post(new Runnable() { @Override public void run() { pdfPage(0); } });
                 } catch (Exception e) {
                     main.post(new Runnable() { @Override public void run() {
-                        setWorking(false, "Impossible d'ouvrir ce PDF (il est peut-être protégé par un mot de passe).");
+                        setWorking(false, Tr.t("Impossible d'ouvrir ce PDF (il est peut-être protégé par un mot de passe)."));
                     } });
                 }
             }
@@ -293,13 +294,13 @@ public class OcrActivity extends Activity {
         if (index >= count) {
             closePdf();
             if (Extractor.countChars(pdfParas) < 3) {
-                setWorking(false, "Je n'ai pas trouvé de texte dans ce PDF.");
+                setWorking(false, Tr.t("Je n'ai pas trouvé de texte dans ce PDF."));
                 return;
             }
             openReader(pdfTitle, pdfParas, "pdf-ocr:" + pdfTitle + ":" + count);
             return;
         }
-        status.setText("Page " + (index + 1) + " / " + count + " : préparation…");
+        status.setText(Tr.t("Page ") + (index + 1) + " / " + count + Tr.t(" : préparation…"));
         new Thread(new Runnable() {
             @Override public void run() {
                 File out = new File(getCacheDir(), "ocr/page.jpg");
@@ -330,7 +331,7 @@ public class OcrActivity extends Activity {
                         @Override public void onProgress(int p) {
                             int total = (index * 100 + p) / count;
                             bar.setProgress(total);
-                            status.setText("Lecture de la page " + (index + 1) + " / " + count + " … " + p + " %");
+                            status.setText(Tr.t("Lecture de la page ") + (index + 1) + " / " + count + " … " + p + " %");
                         }
                         @Override public void onDone(String text) {
                             pdfParas.addAll(Extractor.ocrParagraphs(text));
@@ -354,6 +355,6 @@ public class OcrActivity extends Activity {
     }
 
     static String defaultTitle(Activity a) {
-        return "Photo du " + DateFormat.getDateFormat(a).format(new Date());
+        return Tr.t("Photo du ") + DateFormat.getDateFormat(a).format(new Date());
     }
 }

@@ -100,16 +100,16 @@ public class MainActivity extends Activity {
         titles.setOrientation(LinearLayout.VERTICAL);
         TextView t = Ui.label(this, "Lisys", 32, pal.text, true);
         titles.addView(t);
-        titles.addView(Ui.label(this, "Tes documents et pages web lus à voix haute", 15, pal.muted, false));
+        titles.addView(Ui.label(this, Tr.t("Tes documents et pages web lus à voix haute"), 15, pal.muted, false));
         head.addView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView gear = Ui.roundButton(this, "⚙", "Réglages", pal.surface, pal.text, 52);
+        TextView gear = Ui.roundButton(this, "⚙", Tr.t("Réglages"), pal.surface, pal.text, 52);
         gear.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { openSettings(); }
         });
-        TextView mic = Ui.roundButton(this, "🎤", "Commande vocale", pal.surface, pal.text, 52);
+        TextView mic = Ui.roundButton(this, "🎤", Tr.t("Commande vocale"), pal.surface, pal.text, 52);
         mic.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                VoiceCommands.listen(MainActivity.this, REQ_VOICE, "Dis : photo, loupe, document, page web, texte copié ou reprendre");
+                VoiceCommands.listen(MainActivity.this, REQ_VOICE, Tr.t("Dis : photo, loupe, document, page web, texte copié ou reprendre"));
             }
         });
         head.addView(mic);
@@ -117,15 +117,15 @@ public class MainActivity extends Activity {
         root.addView(head);
 
         root.addView(space(14));
-        Button open = Ui.bigButton(this, "📄   Ouvrir un document", pal.button, pal.buttonText);
-        open.setContentDescription("Ouvrir un document : PDF, Word, livre EPUB, texte");
+        Button open = Ui.bigButton(this, Tr.t("📄   Ouvrir un document"), pal.button, pal.buttonText);
+        open.setContentDescription(Tr.t("Ouvrir un document : PDF, Word, livre EPUB, texte"));
         open.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { pickDocument(); }
         });
         root.addView(open, fullWidth());
         root.addView(space(10));
 
-        Button photo = Ui.bigButton(this, "📷   Lire une photo (courrier, notice…)", pal.button, pal.buttonText);
+        Button photo = Ui.bigButton(this, Tr.t("📷   Lire une photo (courrier, notice…)"), pal.button, pal.buttonText);
         photo.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { openOcr(OcrActivity.MODE_CAMERA, null); }
         });
@@ -135,21 +135,21 @@ public class MainActivity extends Activity {
         root.addView(photo, fullWidth());
         root.addView(space(10));
 
-        Button loupe = Ui.bigButton(this, "🔍   Loupe (agrandir avec l'appareil photo)", pal.button, pal.buttonText);
+        Button loupe = Ui.bigButton(this, Tr.t("🔍   Loupe (agrandir avec l'appareil photo)"), pal.button, pal.buttonText);
         loupe.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { startActivity(new Intent(MainActivity.this, MagnifierActivity.class)); }
         });
         root.addView(loupe, fullWidth());
         root.addView(space(10));
 
-        Button web = Ui.bigButton(this, "🌐   Lire une page web", pal.button, pal.buttonText);
+        Button web = Ui.bigButton(this, Tr.t("🌐   Lire une page web"), pal.button, pal.buttonText);
         web.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { askUrl(); }
         });
         root.addView(web, fullWidth());
         root.addView(space(10));
 
-        Button clip = Ui.bigButton(this, "📋   Lire le texte copié", pal.surface, pal.text);
+        Button clip = Ui.bigButton(this, Tr.t("📋   Lire le texte copié"), pal.surface, pal.text);
         clip.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { readClipboard(); }
         });
@@ -163,12 +163,12 @@ public class MainActivity extends Activity {
         root.addView(bubbleBtn, fullWidth());
 
         root.addView(space(20));
-        root.addView(Ui.label(this, "Reprendre la lecture", 18, pal.text, true));
+        root.addView(Ui.label(this, Tr.t("Reprendre la lecture"), 18, pal.text, true));
         root.addView(space(6));
 
-        empty = Ui.label(this, "Aucun document pour l'instant.\n\nAstuce : dans n'importe quelle appli, "
-                + "sélectionne du texte puis choisis « Lire avec Lisys ». Tu peux aussi partager une page "
-                + "depuis Chrome ou un fichier depuis Mes fichiers vers Lisys.", 16, pal.muted, false);
+        empty = Ui.label(this, Tr.t("Aucun document pour l'instant.\n\nAstuce : dans n'importe quelle appli, ")
+                + Tr.t("sélectionne du texte puis choisis « Lire avec Lisys ». Tu peux aussi partager une page ")
+                + Tr.t("depuis Chrome ou un fichier depuis Mes fichiers vers Lisys."), 16, pal.muted, false);
         root.addView(empty);
 
         list = new ListView(this);
@@ -209,12 +209,13 @@ public class MainActivity extends Activity {
         adapter.notifyDataSetChanged();
         empty.setVisibility(adapter.items.isEmpty() ? View.VISIBLE : View.GONE);
         bubbleBtn.setText(ScreenReaderService.isEnabled(this)
-                ? "✅   Bouton flottant activé" : "🔊   Lire les autres applis et sites");
+                ? Tr.t("✅   Bouton flottant activé") : Tr.t("🔊   Lire les autres applis et sites"));
     }
 
     // ------------------------------------------------------------------ bouton flottant
 
     private void showBubbleHelp() {
+        if (!Features.require(this, Tr.t("Le bouton flottant"))) return;
         if (ScreenReaderService.isEnabled(this)) {
             openSettings();
             return;
@@ -224,21 +225,21 @@ public class MainActivity extends Activity {
             return;
         }
         String restricted = Build.VERSION.SDK_INT >= 33
-                ? "\n\nSi Android affiche « Paramètre restreint » (appli installée depuis un fichier APK) : "
-                + "appuie sur « Infos appli », puis sur ⋮ en haut à droite, puis « Autoriser les paramètres restreints », "
-                + "et recommence." : "";
+                ? Tr.t("\n\nSi Android affiche « Paramètre restreint » (appli installée depuis un fichier APK) : ")
+                + Tr.t("appuie sur « Infos appli », puis sur ⋮ en haut à droite, puis « Autoriser les paramètres restreints », ")
+                + Tr.t("et recommence.") : "";
         Ui.dialog(this)
-                .setTitle("Lire les autres applis et les sites")
-                .setMessage("Lisys peut afficher un bouton flottant 🔊 par-dessus toutes les applis : "
-                        + "un appui, et Lisys lit à voix haute ce qui est à l'écran.\n\n"
-                        + "Pour l'activer :\n1. Appuie sur « Activer »\n2. Choisis « Lisys : bouton de lecture » "
-                        + "(parfois dans « Applis installées » ou « Services téléchargés »)\n3. Active-le et accepte.\n\n"
-                        + "Lisys ne lit l'écran que quand tu appuies sur le bouton, et rien n'est envoyé sur internet."
+                .setTitle(Tr.t("Lire les autres applis et les sites"))
+                .setMessage(Tr.t("Lisys peut afficher un bouton flottant 🔊 par-dessus toutes les applis : ")
+                        + Tr.t("un appui, et Lisys lit à voix haute ce qui est à l'écran.\n\n")
+                        + Tr.t("Pour l'activer :\n1. Appuie sur « Activer »\n2. Choisis « Lisys : bouton de lecture » ")
+                        + Tr.t("(parfois dans « Applis installées » ou « Services téléchargés »)\n3. Active-le et accepte.\n\n")
+                        + Tr.t("Lisys ne lit l'écran que quand tu appuies sur le bouton, et rien n'est envoyé sur internet.")
                         + restricted)
-                .setPositiveButton("Activer", new DialogInterface.OnClickListener() {
+                .setPositiveButton(Tr.t("Activer"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) { openAccessibilitySettings(MainActivity.this); }
                 })
-                .setNeutralButton(Build.VERSION.SDK_INT >= 33 ? "Infos appli" : null, new DialogInterface.OnClickListener() {
+                .setNeutralButton(Build.VERSION.SDK_INT >= 33 ? Tr.t("Infos appli") : null, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         try {
                             startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -246,7 +247,7 @@ public class MainActivity extends Activity {
                         } catch (Exception ignored) {}
                     }
                 })
-                .setNegativeButton("Plus tard", null)
+                .setNegativeButton(Tr.t("Plus tard"), null)
                 .show();
     }
 
@@ -259,34 +260,34 @@ public class MainActivity extends Activity {
         int p = Ui.dp(a, 22);
         t.setPadding(p, Ui.dp(a, 12), p, 0);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        t.setText("Lisys utilise le service d'accessibilité d'Android (AccessibilityService). Il est conçu pour aider "
-                + "les personnes malvoyantes ou ayant des difficultés de lecture.\n\n"
-                + "Ce que Lisys fait avec ce service :\n"
-                + "• lire à voix haute le texte affiché à l'écran, seulement quand tu appuies sur le bouton flottant, "
-                + "le bouton d'accessibilité ou les boutons de volume (si tu actives cette option) ;\n"
-                + "• lire le texte sur lequel tu passes le doigt (lecture au doigt) et l'entourer en jaune ;\n"
-                + "• faire défiler la page quand tu le demandes avec deux doigts ;\n"
-                + "• si tu actives l'option, annoncer à voix haute les messages reçus (expéditeur et texte).\n\n"
-                + "Données consultées : le texte et la position des éléments affichés à l'écran et, avec l'option "
-                + "d'annonce, le contenu des notifications de messages.\n\n"
-                + "Ces données sont traitées uniquement sur ton téléphone, au moment où tu le demandes. Elles ne sont "
-                + "ni envoyées sur internet, ni partagées, ni vendues. Seul le dernier texte lu est gardé sur le "
-                + "téléphone pour pouvoir le relire dans Lisys.\n\n"
-                + "Tu peux désactiver ce service à tout moment dans Paramètres > Accessibilité.");
+        t.setText(Tr.t("Lisys utilise le service d'accessibilité d'Android (AccessibilityService). Il est conçu pour aider ")
+                + Tr.t("les personnes malvoyantes ou ayant des difficultés de lecture.\n\n")
+                + Tr.t("Ce que Lisys fait avec ce service :\n")
+                + Tr.t("• lire à voix haute le texte affiché à l'écran, seulement quand tu appuies sur le bouton flottant, ")
+                + Tr.t("le bouton d'accessibilité ou les boutons de volume (si tu actives cette option) ;\n")
+                + Tr.t("• lire le texte sur lequel tu passes le doigt (lecture au doigt) et l'entourer en jaune ;\n")
+                + Tr.t("• faire défiler la page quand tu le demandes avec deux doigts ;\n")
+                + Tr.t("• si tu actives l'option, annoncer à voix haute les messages reçus (expéditeur et texte).\n\n")
+                + Tr.t("Données consultées : le texte et la position des éléments affichés à l'écran et, avec l'option ")
+                + Tr.t("d'annonce, le contenu des notifications de messages.\n\n")
+                + Tr.t("Ces données sont traitées uniquement sur ton téléphone, au moment où tu le demandes. Elles ne sont ")
+                + Tr.t("ni envoyées sur internet, ni partagées, ni vendues. Seul le dernier texte lu est gardé sur le ")
+                + Tr.t("téléphone pour pouvoir le relire dans Lisys.\n\n")
+                + Tr.t("Tu peux désactiver ce service à tout moment dans Paramètres > Accessibilité."));
         ScrollView sv = new ScrollView(a);
         sv.addView(t);
         Ui.dialog(a)
-                .setTitle("Autorisation d'accessibilité")
+                .setTitle(Tr.t("Autorisation d'accessibilité"))
                 .setView(sv)
                 .setCancelable(false)
-                .setPositiveButton("J'accepte", new DialogInterface.OnClickListener() {
+                .setPositiveButton(Tr.t("J'accepte"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         Prefs.setA11yConsent(a, true);
                         if (onAccept != null) onAccept.run();
                     }
                 })
-                .setNegativeButton("Refuser", null)
-                .setNeutralButton("Confidentialité", new DialogInterface.OnClickListener() {
+                .setNegativeButton(Tr.t("Refuser"), null)
+                .setNeutralButton(Tr.t("Confidentialité"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         try {
                             a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));
@@ -299,33 +300,33 @@ public class MainActivity extends Activity {
 
     static void showReport(final Activity a) {
         final String r = a.getSharedPreferences("reglages", Context.MODE_PRIVATE).getString("rapport",
-                "Pas encore de lecture avec la bulle. Ouvre l'appli ou le mail à lire, appuie sur la bulle, puis reviens ici.");
+                Tr.t("Pas encore de lecture avec la bulle. Ouvre l'appli ou le mail à lire, appuie sur la bulle, puis reviens ici."));
         Ui.dialog(a)
-                .setTitle("Dernière lecture de l'écran")
+                .setTitle(Tr.t("Dernière lecture de l'écran"))
                 .setMessage(r)
-                .setPositiveButton("Copier", new DialogInterface.OnClickListener() {
+                .setPositiveButton(Tr.t("Copier"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         ClipboardManager cm = (ClipboardManager) a.getSystemService(Context.CLIPBOARD_SERVICE);
-                        cm.setPrimaryClip(ClipData.newPlainText("Rapport Lisys", r));
-                        Toast.makeText(a, "Rapport copié", Toast.LENGTH_SHORT).show();
+                        cm.setPrimaryClip(ClipData.newPlainText(Tr.t("Rapport Lisys"), r));
+                        Toast.makeText(a, Tr.t("Rapport copié"), Toast.LENGTH_SHORT).show();
                     }
                 })
-                .setNegativeButton("Fermer", null)
+                .setNegativeButton(Tr.t("Fermer"), null)
                 .show();
     }
 
     static void bubbleHowTo(final Activity a) {
         Ui.dialog(a)
-                .setTitle("Comment ça marche ?")
-                .setMessage("La bulle 🔊 reste par-dessus toutes les applis.\n\n"
-                        + "• Un appui : Lisys lit tout le texte affiché (page web, appli, message…). "
-                        + "Un deuxième appui arrête.\n\n"
-                        + "• Appui long (la bulle devient ✋) : lecture au doigt. Glisse le doigt sur le texte : "
-                        + "Lisys lit seulement la phrase qui est sous le doigt et l'entoure en jaune. Déplace le doigt pour "
-                        + "lire une autre phrase (option dans les réglages pour continuer jusqu'en bas). Deux doigts vers le haut ou le bas : faire défiler la page. "
-                        + "Touche la bulle pour quitter ce mode.\n\n"
-                        + "• Glisse la bulle pour la déplacer : elle se range contre le bord.\n\n"
-                        + "Avec TalkBack, les deux actions sont dans le menu des actions de la bulle.")
+                .setTitle(Tr.t("Comment ça marche ?"))
+                .setMessage(Tr.t("La bulle 🔊 reste par-dessus toutes les applis.\n\n")
+                        + Tr.t("• Un appui : Lisys lit tout le texte affiché (page web, appli, message…). ")
+                        + Tr.t("Un deuxième appui arrête.\n\n")
+                        + Tr.t("• Appui long (la bulle devient ✋) : lecture au doigt. Glisse le doigt sur le texte : ")
+                        + Tr.t("Lisys lit seulement la phrase qui est sous le doigt et l'entoure en jaune. Déplace le doigt pour ")
+                        + Tr.t("lire une autre phrase (option dans les réglages pour continuer jusqu'en bas). Deux doigts vers le haut ou le bas : faire défiler la page. ")
+                        + Tr.t("Touche la bulle pour quitter ce mode.\n\n")
+                        + Tr.t("• Glisse la bulle pour la déplacer : elle se range contre le bord.\n\n")
+                        + Tr.t("Avec TalkBack, les deux actions sont dans le menu des actions de la bulle."))
                 .setPositiveButton("OK", null)
                 .show();
     }
@@ -334,7 +335,7 @@ public class MainActivity extends Activity {
         try {
             a.startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
         } catch (Exception e) {
-            Toast.makeText(a, "Ouvre Paramètres > Accessibilité.", Toast.LENGTH_LONG).show();
+            Toast.makeText(a, Tr.t("Ouvre Paramètres > Accessibilité."), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -369,8 +370,8 @@ public class MainActivity extends Activity {
             title.setText(e.title);
             String when = DateUtils.getRelativeTimeSpanString(e.opened, System.currentTimeMillis(),
                     DateUtils.MINUTE_IN_MILLIS).toString();
-            meta.setText(e.kind + "  ·  lu à " + e.percent() + " %  ·  " + when);
-            row.setContentDescription(e.title + ", " + e.kind + ", lu à " + e.percent() + " pour cent");
+            meta.setText(e.kind + Tr.t("  ·  lu à ") + e.percent() + " %  ·  " + when);
+            row.setContentDescription(e.title + ", " + e.kind + Tr.t(", lu à ") + e.percent() + Tr.t(" pour cent"));
             return row;
         }
     }
@@ -378,7 +379,7 @@ public class MainActivity extends Activity {
     private void confirmRemove(final Library.Entry e) {
         Ui.dialog(this)
                 .setTitle(e.title)
-                .setItems(new String[]{"Lire depuis le début", "Retirer de la liste"}, new DialogInterface.OnClickListener() {
+                .setItems(new String[]{Tr.t("Lire depuis le début"), Tr.t("Retirer de la liste")}, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int which) {
                         if (which == 0) {
                             Library.savePosition(MainActivity.this, e.id, 0, 0);
@@ -402,13 +403,13 @@ public class MainActivity extends Activity {
                 "application/pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/vnd.oasis.opendocument.text",
-                "application/epub+zip",
+                "application/epub+zip", "application/zip",
                 "application/rtf", "text/rtf",
                 "text/*", "image/*", "application/xhtml+xml", "application/octet-stream"});
         try {
             startActivityForResult(i, REQ_OPEN);
         } catch (Exception e) {
-            Toast.makeText(this, "Aucun gestionnaire de fichiers disponible.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, Tr.t("Aucun gestionnaire de fichiers disponible."), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -438,17 +439,17 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         box.addView(field);
         TextView help = new TextView(this);
-        help.setText("« Lire » récupère le texte de l'article directement. Si la page demande une connexion "
-                + "ou ne s'affiche pas bien, choisis « Navigateur ».");
+        help.setText(Tr.t("« Lire » récupère le texte de l'article directement. Si la page demande une connexion ")
+                + Tr.t("ou ne s'affiche pas bien, choisis « Navigateur »."));
         help.setPadding(0, Ui.dp(this, 8), 0, 0);
         box.addView(help);
         final AlertDialog d = Ui.dialog(this)
-                .setTitle("Lire une page web")
+                .setTitle(Tr.t("Lire une page web"))
                 .setView(box)
-                .setPositiveButton("Lire", new DialogInterface.OnClickListener() {
+                .setPositiveButton(Tr.t("Lire"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface di, int w) { importUrl(field.getText().toString()); }
                 })
-                .setNeutralButton("Navigateur", new DialogInterface.OnClickListener() {
+                .setNeutralButton(Tr.t("Navigateur"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface di, int w) {
                         String u = field.getText().toString().trim();
                         Intent i = new Intent(MainActivity.this, WebActivity.class);
@@ -456,7 +457,7 @@ public class MainActivity extends Activity {
                         startActivity(i);
                     }
                 })
-                .setNegativeButton("Annuler", null)
+                .setNegativeButton(Tr.t("Annuler"), null)
                 .create();
         field.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override public boolean onEditorAction(TextView v, int action, android.view.KeyEvent ev) {
@@ -476,12 +477,12 @@ public class MainActivity extends Activity {
         }
         String url = findUrl(text);
         if (url != null && text.trim().length() < url.length() + 40) importUrl(url);
-        else importText("Texte copié", text);
+        else importText(Tr.t("Texte copié"), text);
     }
 
     private void askText() {
         final EditText field = new EditText(this);
-        field.setHint("Colle ou écris ton texte ici");
+        field.setHint(Tr.t("Colle ou écris ton texte ici"));
         field.setMinLines(5);
         field.setGravity(Gravity.TOP);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -490,15 +491,15 @@ public class MainActivity extends Activity {
         box.setPadding(p, Ui.dp(this, 8), p, 0);
         box.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         Ui.dialog(this)
-                .setTitle("Le presse-papiers est vide")
+                .setTitle(Tr.t("Le presse-papiers est vide"))
                 .setView(box)
-                .setPositiveButton("Lire", new DialogInterface.OnClickListener() {
+                .setPositiveButton(Tr.t("Lire"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface di, int w) {
                         String s = field.getText().toString();
-                        if (s.trim().length() > 0) importText("Texte saisi", s);
+                        if (s.trim().length() > 0) importText(Tr.t("Texte saisi"), s);
                     }
                 })
-                .setNegativeButton("Annuler", null)
+                .setNegativeButton(Tr.t("Annuler"), null)
                 .show();
     }
 
@@ -537,10 +538,10 @@ public class MainActivity extends Activity {
         else if (VoiceCommands.has(c, "copie", "presse", "colle", "coller")) readClipboard();
         else if (VoiceCommands.has(c, "reprendre", "reprends", "continue", "dernier", "lis", "lire")) {
             List<Library.Entry> l = Library.list(this);
-            if (l.isEmpty()) Speaker.say(this, "Aucun document à reprendre.");
+            if (l.isEmpty()) Speaker.say(this, Tr.t("Aucun document à reprendre."));
             else openReader(l.get(0).id, true);
         } else if (VoiceCommands.has(c, "reglage", "reglages", "parametre", "parametres")) openSettings();
-        else Speaker.say(this, "Je n'ai pas compris : " + raw + ". Dis par exemple : photo, loupe, document, ou reprendre.");
+        else Speaker.say(this, Tr.t("Je n'ai pas compris : ") + raw + Tr.t(". Dis par exemple : photo, loupe, document, ou reprendre."));
     }
 
     @Override
@@ -571,11 +572,11 @@ public class MainActivity extends Activity {
                 String url = findUrl(text);
                 // Partage depuis Chrome : juste un lien (parfois précédé du titre).
                 if (url != null && text.length() < url.length() + 200) importUrl(url);
-                else importText(subject != null && subject.length() > 0 ? subject : "Texte partagé", text);
+                else importText(subject != null && subject.length() > 0 ? subject : Tr.t("Texte partagé"), text);
             }
         } else if (Intent.ACTION_PROCESS_TEXT.equals(a)) {
             CharSequence text = i.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
-            if (text != null && text.toString().trim().length() > 0) importText("Texte sélectionné", text.toString());
+            if (text != null && text.toString().trim().length() > 0) importText(Tr.t("Texte sélectionné"), text.toString());
         }
         // L'intention a été traitée : on évite de la rejouer en revenant sur l'appli.
         setIntent(new Intent(this, MainActivity.class));
@@ -595,7 +596,7 @@ public class MainActivity extends Activity {
             openOcr(OcrActivity.MODE_IMAGE, uri);
             return;
         }
-        runJob("Ouverture du document…", uri.toString(), new Job() {
+        runJob(Tr.t("Ouverture du document…"), uri.toString(), new Job() {
             @Override public Extractor.Result run(Extractor.Progress p) throws Exception {
                 return Extractor.fromUri(MainActivity.this, uri, p);
             }
@@ -606,7 +607,7 @@ public class MainActivity extends Activity {
         final String url = raw.trim();
         if (url.length() == 0) return;
         Prefs.setLastUrl(this, url);
-        runJob("Chargement de la page…", WebExtractor.normalizeUrl(url), new Job() {
+        runJob(Tr.t("Chargement de la page…"), WebExtractor.normalizeUrl(url), new Job() {
             @Override public Extractor.Result run(Extractor.Progress p) throws Exception {
                 return WebExtractor.fromUrl(MainActivity.this, url, p);
             }
@@ -614,7 +615,7 @@ public class MainActivity extends Activity {
     }
 
     private void importText(final String title, final String text) {
-        runJob("Préparation…", "texte:" + text.hashCode(), new Job() {
+        runJob(Tr.t("Préparation…"), "texte:" + text.hashCode(), new Job() {
             @Override public Extractor.Result run(Extractor.Progress p) {
                 String t = title;
                 // Titre plus parlant : le début du texte.
@@ -652,16 +653,16 @@ public class MainActivity extends Activity {
                             main.post(new Runnable() { @Override public void run() { if (busyText != null) busyText.setText(m); } });
                         }
                     });
-                    if (r == null || r.paragraphs.isEmpty()) error = "Aucun texte lisible n'a été trouvé.";
+                    if (r == null || r.paragraphs.isEmpty()) error = Tr.t("Aucun texte lisible n'a été trouvé.");
                 } catch (Extractor.NeedsOcr e) {
                     error = e.getMessage();
                     scanned = true;
                 } catch (Extractor.UserError e) {
                     error = e.getMessage();
                 } catch (OutOfMemoryError e) {
-                    error = "Document trop lourd pour la mémoire du téléphone.";
+                    error = Tr.t("Document trop lourd pour la mémoire du téléphone.");
                 } catch (Throwable e) {
-                    error = "Impossible de lire ce document (" + e.getClass().getSimpleName()
+                    error = Tr.t("Impossible de lire ce document (") + e.getClass().getSimpleName()
                             + (e.getMessage() != null ? " : " + e.getMessage() : "") + ").";
                 }
                 final Library.Entry entry = error == null ? Library.add(MainActivity.this, r, source) : null;
@@ -672,15 +673,15 @@ public class MainActivity extends Activity {
                         hideBusy();
                         if (isFinishing()) return;
                         if (ocr) {
-                            Ui.dialog(MainActivity.this).setTitle("Document scanné")
-                                    .setMessage(err + "\n\nLisys peut reconnaître le texte des pages, comme pour une photo. "
-                                            + "Compte quelques secondes par page.")
-                                    .setPositiveButton("Reconnaître le texte", new DialogInterface.OnClickListener() {
+                            Ui.dialog(MainActivity.this).setTitle(Tr.t("Document scanné"))
+                                    .setMessage(err + Tr.t("\n\nLisys peut reconnaître le texte des pages, comme pour une photo. ")
+                                            + Tr.t("Compte quelques secondes par page."))
+                                    .setPositiveButton(Tr.t("Reconnaître le texte"), new DialogInterface.OnClickListener() {
                                         @Override public void onClick(DialogInterface d, int w) { openOcr(OcrActivity.MODE_PDF, ocrUri); }
                                     })
-                                    .setNegativeButton("Annuler", null).show();
+                                    .setNegativeButton(Tr.t("Annuler"), null).show();
                         } else if (err != null) {
-                            Ui.dialog(MainActivity.this).setTitle("Oups").setMessage(err)
+                            Ui.dialog(MainActivity.this).setTitle(Tr.t("Oups")).setMessage(err)
                                     .setPositiveButton("OK", null).show();
                         } else {
                             refresh();
@@ -733,7 +734,7 @@ public class MainActivity extends Activity {
         String[] names = new String[4];
         for (int i = 0; i < 4; i++) names[i] = Ui.themeName(i);
         Ui.dialog(a)
-                .setTitle("Thème d'affichage")
+                .setTitle(Tr.t("Thème d'affichage"))
                 .setSingleChoiceItems(names, Prefs.theme(a), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int which) {
                         Prefs.setTheme(a, which);
@@ -748,7 +749,7 @@ public class MainActivity extends Activity {
         try {
             a.startActivity(new Intent("com.android.settings.TTS_SETTINGS"));
         } catch (Exception e) {
-            Toast.makeText(a, "Ouvre Paramètres > Accessibilité > Synthèse vocale.", Toast.LENGTH_LONG).show();
+            Toast.makeText(a, Tr.t("Ouvre Paramètres > Accessibilité > Synthèse vocale."), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -762,11 +763,11 @@ public class MainActivity extends Activity {
 
     static void confirmClear(final Activity a) {
         Ui.dialog(a)
-                .setMessage("Retirer tous les documents de la liste ? (Tes fichiers d'origine ne sont pas supprimés.)")
-                .setPositiveButton("Vider", new DialogInterface.OnClickListener() {
+                .setMessage(Tr.t("Retirer tous les documents de la liste ? (Tes fichiers d'origine ne sont pas supprimés.)"))
+                .setPositiveButton(Tr.t("Vider"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) { Library.clear(a); }
                 })
-                .setNegativeButton("Annuler", null)
+                .setNegativeButton(Tr.t("Annuler"), null)
                 .show();
     }
 
@@ -778,15 +779,15 @@ public class MainActivity extends Activity {
         t.setPadding(p, p, p, 0);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         t.setText("Lisys " + v + " · QMTech\n\n"
-                + "Lecture à voix haute de l'écran des autres applis (bouton flottant), de photos, de PDF, Word (.docx), "
-                + "OpenOffice (.odt), livres EPUB, RTF, HTML, fichiers texte et pages web.\n\n"
-                + "Tout est traité sur le téléphone, avec la synthèse vocale d'Android. Aucune donnée n'est envoyée "
-                + "ailleurs (sauf le téléchargement des pages web que tu demandes).\n\n"
-                + "Bibliothèques : PdfBox-Android (Apache 2.0), jsoup (MIT), Tesseract OCR et son modèle français "
+                + Tr.t("Lecture à voix haute de l'écran des autres applis (bouton flottant), de photos, de PDF, Word (.docx), ")
+                + Tr.t("OpenOffice (.odt), livres EPUB, RTF, HTML, fichiers texte et pages web.\n\n")
+                + Tr.t("Tout est traité sur le téléphone, avec la synthèse vocale d'Android. Aucune donnée n'est envoyée ")
+                + Tr.t("ailleurs (sauf le téléchargement des pages web que tu demandes).\n\n")
+                + Tr.t("Bibliothèques : PdfBox-Android (Apache 2.0), jsoup (MIT), Tesseract OCR et son modèle français ")
                 + "(Apache 2.0), tesseract-wasm (Apache 2.0).");
         t.setTypeface(Typeface.DEFAULT);
-        Ui.dialog(a).setTitle("À propos").setView(t).setPositiveButton("OK", null)
-                .setNeutralButton("Confidentialité", new DialogInterface.OnClickListener() {
+        Ui.dialog(a).setTitle(Tr.t("À propos")).setView(t).setPositiveButton("OK", null)
+                .setNeutralButton(Tr.t("Confidentialité"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         try {
                             a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));

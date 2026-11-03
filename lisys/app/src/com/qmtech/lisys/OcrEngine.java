@@ -153,14 +153,14 @@ public final class OcrEngine {
             main.post(new Runnable() { @Override public void run() {
                 if (t == 0) {
                     // Le moteur n'a pas pu démarrer : toutes les demandes échouent.
-                    fatal = "Le moteur de reconnaissance de texte n'a pas pu démarrer (" + message + ").";
+                    fatal = Tr.t("Le moteur de reconnaissance de texte n'a pas pu démarrer (") + message + ").";
                     for (Object[] job : queue) ((Callback) job[1]).onError(fatal);
                     queue.clear();
                     return;
                 }
                 Callback cb = pending.remove(t);
                 busy = false;
-                if (cb != null) cb.onError("Reconnaissance impossible : " + message);
+                if (cb != null) cb.onError(Tr.t("Reconnaissance impossible : ") + message);
                 next();
             } });
         }
@@ -178,9 +178,9 @@ public final class OcrEngine {
         BitmapFactory.Options o = new BitmapFactory.Options();
         o.inJustDecodeBounds = true;
         InputStream in = a.getContentResolver().openInputStream(uri);
-        if (in == null) throw new Extractor.UserError("Impossible d'ouvrir l'image.");
+        if (in == null) throw new Extractor.UserError(Tr.t("Impossible d'ouvrir l'image."));
         try { BitmapFactory.decodeStream(in, null, o); } finally { in.close(); }
-        if (o.outWidth <= 0) throw new Extractor.UserError("Ce fichier n'est pas une image lisible.");
+        if (o.outWidth <= 0) throw new Extractor.UserError(Tr.t("Ce fichier n'est pas une image lisible."));
         int sample = 1;
         while (Math.max(o.outWidth, o.outHeight) / (sample * 2) >= MAX_SIDE) sample *= 2;
         BitmapFactory.Options o2 = new BitmapFactory.Options();
@@ -188,7 +188,7 @@ public final class OcrEngine {
         in = a.getContentResolver().openInputStream(uri);
         Bitmap bmp;
         try { bmp = BitmapFactory.decodeStream(in, null, o2); } finally { in.close(); }
-        if (bmp == null) throw new Extractor.UserError("Ce fichier n'est pas une image lisible.");
+        if (bmp == null) throw new Extractor.UserError(Tr.t("Ce fichier n'est pas une image lisible."));
 
         int rotation = 0;
         try {

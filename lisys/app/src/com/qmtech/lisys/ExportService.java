@@ -74,14 +74,14 @@ public class ExportService extends Service {
         final String id = intent == null ? null : intent.getStringExtra(EXTRA_ID);
         if (id == null) { stopSelf(); return START_NOT_STICKY; }
         if (running) {
-            Toast.makeText(this, "Un export audio est déjà en cours.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, Tr.t("Un export audio est déjà en cours."), Toast.LENGTH_SHORT).show();
             return START_NOT_STICKY;
         }
         running = true;
         cancelled = false;
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Export audio", NotificationManager.IMPORTANCE_LOW));
-        Notification n = progressNotification("Préparation…", 0, 0);
+        nm.createNotificationChannel(new NotificationChannel(CHANNEL, Tr.t("Export audio"), NotificationManager.IMPORTANCE_LOW));
+        Notification n = progressNotification(Tr.t("Préparation…"), 0, 0);
         // Type « dataSync » : traitement local de fichiers (création du fichier audio).
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         else startForeground(NOTIF_ID, n);
@@ -97,11 +97,11 @@ public class ExportService extends Service {
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification.Builder b = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notif)
-                .setContentTitle("Création du fichier audio")
+                .setContentTitle(Tr.t("Création du fichier audio"))
                 .setContentText(text)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .addAction(new Notification.Action.Builder(null, "Annuler", cancel).build());
+                .addAction(new Notification.Action.Builder(null, Tr.t("Annuler"), cancel).build());
         if (total > 0) b.setProgress(total, done, false);
         else b.setProgress(0, 0, true);
         return b.build();
@@ -122,7 +122,7 @@ public class ExportService extends Service {
         String title = entry != null ? entry.title : "Lisys";
         try {
             List<String> paras = Library.loadParagraphs(this, id);
-            if (paras.isEmpty()) throw new Exception("Document vide.");
+            if (paras.isEmpty()) throw new Exception(Tr.t("Document vide."));
 
             final CountDownLatch init = new CountDownLatch(1);
             final int[] status = {TextToSpeech.ERROR};
@@ -130,7 +130,7 @@ public class ExportService extends Service {
                 @Override public void onInit(int s) { status[0] = s; init.countDown(); }
             });
             if (!init.await(30, TimeUnit.SECONDS) || status[0] != TextToSpeech.SUCCESS) {
-                throw new Exception("Moteur de synthèse vocale indisponible.");
+                throw new Exception(Tr.t("Moteur de synthèse vocale indisponible."));
             }
             ReaderService.applyVoice(this, tts);
             tts.setSpeechRate(Prefs.rate(this));
@@ -152,16 +152,16 @@ public class ExportService extends Service {
             File wav = new File(getCacheDir(), "export_part.wav");
             for (int i = 0; i < chunks.size(); i++) {
                 if (cancelled) throw new InterruptedException();
-                progress("Partie " + (i + 1) + " / " + chunks.size(), i, chunks.size());
+                progress(Tr.t("Partie ") + (i + 1) + " / " + chunks.size(), i, chunks.size());
                 String uid = "part" + i;
                 synchronized (lock) { doneId[0] = null; }
                 int r = tts.synthesizeToFile(chunks.get(i), new Bundle(), wav, uid);
-                if (r != TextToSpeech.SUCCESS) throw new Exception("La synthèse vocale a échoué.");
+                if (r != TextToSpeech.SUCCESS) throw new Exception(Tr.t("La synthèse vocale a échoué."));
                 long deadline = System.currentTimeMillis() + 180000;
                 synchronized (lock) {
                     while (doneId[0] == null && !cancelled) {
                         long left = deadline - System.currentTimeMillis();
-                        if (left <= 0) throw new Exception("La synthèse vocale ne répond plus.");
+                        if (left <= 0) throw new Exception(Tr.t("La synthèse vocale ne répond plus."));
                         lock.wait(Math.min(left, 1000));
                     }
                     if (cancelled) throw new InterruptedException();
@@ -171,15 +171,15 @@ public class ExportService extends Service {
                 if (enc != null) enc.silence(400);
                 wav.delete();
             }
-            if (enc == null) throw new Exception("Aucun son n'a été produit.");
-            progress("Finalisation…", chunks.size(), chunks.size());
+            if (enc == null) throw new Exception(Tr.t("Aucun son n'a été produit."));
+            progress(Tr.t("Finalisation…"), chunks.size(), chunks.size());
             enc.finish();
             enc = null;
             saved = publish(out, safeName(title) + ".m4a");
         } catch (InterruptedException e) {
-            error = "Export annulé.";
+            error = Tr.t("Export annulé.");
         } catch (Exception e) {
-            error = e.getMessage() != null ? e.getMessage() : "Erreur pendant l'export.";
+            error = e.getMessage() != null ? e.getMessage() : Tr.t("Erreur pendant l'export.");
         } finally {
             if (enc != null) enc.release();
             if (tts != null) tts.shutdown();
@@ -229,7 +229,7 @@ public class ExportService extends Service {
                     rate = (f[4] & 0xFF) | (f[5] & 0xFF) << 8 | (f[6] & 0xFF) << 16 | (f[7] & 0xFF) << 24;
                     bits = (f[14] & 0xFF) | (f[15] & 0xFF) << 8;
                 } else if (cid.equals("data")) {
-                    if (rate <= 0 || bits != 16) throw new Exception("Format audio du moteur vocal non pris en charge.");
+                    if (rate <= 0 || bits != 16) throw new Exception(Tr.t("Format audio du moteur vocal non pris en charge."));
                     if (enc == null) enc = new AacEncoder(out, rate);
                     streamPcm(in, size, channels, rate, enc);
                     return enc;
@@ -321,7 +321,7 @@ public class ExportService extends Service {
             v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Lisys");
             v.put(MediaStore.MediaColumns.IS_PENDING, 1);
             Uri uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
-            if (uri == null) throw new Exception("Impossible d'enregistrer le fichier.");
+            if (uri == null) throw new Exception(Tr.t("Impossible d'enregistrer le fichier."));
             OutputStream os = cr.openOutputStream(uri);
             InputStream in = new FileInputStream(src);
             try {
@@ -364,20 +364,20 @@ public class ExportService extends Service {
                 .setSmallIcon(R.drawable.ic_notif)
                 .setAutoCancel(true);
         if (error != null) {
-            b.setContentTitle("Export audio interrompu").setContentText(error);
+            b.setContentTitle(Tr.t("Export audio interrompu")).setContentText(error);
         } else {
-            b.setContentTitle("Fichier audio prêt")
-                    .setContentText("Téléchargements/Lisys : " + safeName(title) + ".m4a");
+            b.setContentTitle(Tr.t("Fichier audio prêt"))
+                    .setContentText(Tr.t("Téléchargements/Lisys : ") + safeName(title) + ".m4a");
             if (saved != null) {
                 Intent play = new Intent(Intent.ACTION_VIEW).setDataAndType(saved, "audio/mp4")
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                b.setContentIntent(PendingIntent.getActivity(this, 20, Intent.createChooser(play, "Écouter avec"),
+                b.setContentIntent(PendingIntent.getActivity(this, 20, Intent.createChooser(play, Tr.t("Écouter avec")),
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
                 Intent share = new Intent(Intent.ACTION_SEND).setType("audio/mp4")
                         .putExtra(Intent.EXTRA_STREAM, saved)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                b.addAction(new Notification.Action.Builder(null, "Partager",
-                        PendingIntent.getActivity(this, 21, Intent.createChooser(share, "Partager le fichier audio"),
+                b.addAction(new Notification.Action.Builder(null, Tr.t("Partager"),
+                        PendingIntent.getActivity(this, 21, Intent.createChooser(share, Tr.t("Partager le fichier audio")),
                                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
             }
         }
@@ -385,7 +385,7 @@ public class ExportService extends Service {
         main.post(new Runnable() {
             @Override public void run() {
                 Toast.makeText(ExportService.this, error != null ? error
-                        : "Fichier audio enregistré dans Téléchargements/Lisys", Toast.LENGTH_LONG).show();
+                        : Tr.t("Fichier audio enregistré dans Téléchargements/Lisys"), Toast.LENGTH_LONG).show();
             }
         });
     }

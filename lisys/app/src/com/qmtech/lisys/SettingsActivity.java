@@ -52,10 +52,10 @@ public class SettingsActivity extends Activity {
         int p = Ui.dp(this, 12);
         head.setPadding(p, p, p, p);
         head.setBackgroundColor(pal.bar);
-        TextView back = Ui.roundButton(this, "←", "Retour", pal.surface, pal.text, 52);
+        TextView back = Ui.roundButton(this, "←", Tr.t("Retour"), pal.surface, pal.text, 52);
         back.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { finish(); } });
         head.addView(back);
-        TextView title = Ui.label(this, "Réglages", 26, pal.barText, true);
+        TextView title = Ui.label(this, Tr.t("Réglages"), 26, pal.barText, true);
         title.setPadding(Ui.dp(this, 12), 0, 0, 0);
         head.addView(title);
         root.addView(head);
@@ -68,34 +68,34 @@ public class SettingsActivity extends Activity {
         root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
         // ---------------------------------------------------------------- affichage
-        section("Affichage");
+        section(Tr.t("Affichage"));
         final String[] themes = {Ui.themeName(0), Ui.themeName(1), Ui.themeName(2), Ui.themeName(3)};
-        choice("Thème", themes, new Choice() {
+        choice(Tr.t("Thème"), themes, new Choice() {
             public int get() { return Prefs.theme(a); }
             public void set(int i) { Prefs.setTheme(a, i); build(); }
         });
         final int[] sizes = {18, 22, 26, 30, 36, 44, 52, 60};
         String[] sizeNames = new String[sizes.length];
         for (int i = 0; i < sizes.length; i++) sizeNames[i] = String.valueOf(sizes[i]);
-        choice("Taille du texte de lecture", sizeNames, new Choice() {
+        choice(Tr.t("Taille du texte de lecture"), sizeNames, new Choice() {
             public int get() { return nearest(sizes, Math.round(Prefs.textSize(a))); }
             public void set(int i) { Prefs.setTextSize(a, sizes[i]); }
         });
-        toggle("Boutons de lecture géants", new Toggle() {
+        toggle(Tr.t("Boutons de lecture géants"), new Toggle() {
             public boolean get() { return Prefs.bigControls(a); }
             public void set(boolean v) { Prefs.setBigControls(a, v); }
         });
-        toggle("Surligner le mot prononcé", new Toggle() {
+        toggle(Tr.t("Surligner le mot prononcé"), new Toggle() {
             public boolean get() { return Prefs.followWord(a); }
             public void set(boolean v) { Prefs.setFollowWord(a, v); }
         });
 
         // ---------------------------------------------------------------- voix
-        section("Voix");
+        section(Tr.t("Voix"));
         final float[] rates = {0.6f, 0.8f, 1.0f, 1.2f, 1.4f, 1.6f, 2.0f, 2.5f, 3.0f};
         String[] rateNames = new String[rates.length];
         for (int i = 0; i < rates.length; i++) rateNames[i] = String.format(Locale.FRANCE, "%.1f×", rates[i]);
-        choice("Vitesse de lecture", rateNames, new Choice() {
+        choice(Tr.t("Vitesse de lecture"), rateNames, new Choice() {
             public int get() {
                 int best = 2;
                 for (int i = 0; i < rates.length; i++) if (Math.abs(rates[i] - Prefs.rate(a)) < Math.abs(rates[best] - Prefs.rate(a))) best = i;
@@ -103,29 +103,29 @@ public class SettingsActivity extends Activity {
             }
             public void set(int i) { Prefs.setRate(a, rates[i]); }
         });
-        action("Réglages de la synthèse vocale d'Android", new Runnable() { public void run() { MainActivity.openTtsSettings(a); } });
-        action("Installer d'autres voix", new Runnable() { public void run() { MainActivity.installVoices(a); } });
+        action(Tr.t("Réglages de la synthèse vocale d'Android"), new Runnable() { public void run() { MainActivity.openTtsSettings(a); } });
+        action(Tr.t("Installer d'autres voix"), new Runnable() { public void run() { MainActivity.installVoices(a); } });
 
         // ---------------------------------------------------------------- aide à l'utilisation
-        section("Aide à l'utilisation");
-        toggle("Annonces vocales (« Pause », réglages…)", new Toggle() {
+        section(Tr.t("Aide à l'utilisation"));
+        toggle(Tr.t("Annonces vocales (« Pause », réglages…)"), new Toggle() {
             public boolean get() { return Prefs.voiceFeedback(a); }
             public void set(boolean v) { Prefs.setVoiceFeedback(a, v); }
         });
-        toggle("Vibrations", new Toggle() {
+        toggle(Tr.t("Vibrations"), new Toggle() {
             public boolean get() { return Prefs.vibrate(a); }
             public void set(boolean v) { Prefs.setVibrate(a, v); }
         });
-        toggle("Assistant : répondre à voix haute (oui, non, répète)", new Toggle() {
+        toggle(Tr.t("Assistant : répondre à voix haute (oui, non, répète)"), new Toggle() {
             public boolean get() { return Prefs.voiceAnswers(a); }
             public void set(boolean v) { Prefs.setVoiceAnswers(a, v); }
         });
-        action("Assistant de démarrage", new Runnable() { public void run() { startActivity(new Intent(a, SetupActivity.class)); } });
+        action(Tr.t("Assistant de démarrage"), new Runnable() { public void run() { startActivity(new Intent(a, SetupActivity.class)); } });
 
         // ---------------------------------------------------------------- bouton flottant
-        section("Bouton flottant (lire les autres applis)");
+        section(Tr.t("Bouton flottant (lire les autres applis)"));
         final boolean enabled = ScreenReaderService.isEnabled(this);
-        action(enabled ? "Bouton flottant : ✅ activé (désactiver)" : "Bouton flottant : désactivé (activer)", new Runnable() {
+        action(enabled ? Tr.t("Bouton flottant : ✅ activé (désactiver)") : Tr.t("Bouton flottant : désactivé (activer)"), new Runnable() {
             public void run() {
                 if (enabled || Prefs.a11yConsent(a)) MainActivity.openAccessibilitySettings(a);
                 else MainActivity.showAccessibilityDisclosure(a, new Runnable() {
@@ -133,66 +133,70 @@ public class SettingsActivity extends Activity {
                 });
             }
         });
-        toggle("Afficher la bulle", new Toggle() {
+        toggle(Tr.t("Afficher la bulle"), new Toggle() {
             public boolean get() { return Prefs.bubble(a); }
             public void set(boolean v) { Prefs.setBubble(a, v); }
         });
-        choice("Taille de la bulle", Ui.BUBBLE_SIZE_NAMES, new Choice() {
+        choice(Tr.t("Taille de la bulle"), Ui.BUBBLE_SIZE_NAMES, new Choice() {
             public int get() { return nearest(Ui.BUBBLE_SIZES, Prefs.bubbleSize(a)); }
             public void set(int i) { Prefs.setBubbleSize(a, Ui.BUBBLE_SIZES[i]); }
         });
-        choice("Couleur de la bulle", Ui.BUBBLE_COLOR_NAMES, new Choice() {
+        choice(Tr.t("Couleur de la bulle"), Ui.BUBBLE_COLOR_NAMES, new Choice() {
             public int get() { return Prefs.bubbleColor(a); }
             public void set(int i) { Prefs.setBubbleColor(a, i); }
         });
-        toggle("Lecture au doigt : continuer après la phrase touchée", new Toggle() {
+        toggle(Tr.t("Lecture au doigt : continuer après la phrase touchée"), new Toggle() {
             public boolean get() { return Prefs.fingerContinue(a); }
             public void set(boolean v) { Prefs.setFingerContinue(a, v); }
         });
-        toggle("Annonces vocales de la bulle", new Toggle() {
+        toggle(Tr.t("Annonces vocales de la bulle"), new Toggle() {
             public boolean get() { return Prefs.bubbleVoice(a); }
             public void set(boolean v) { Prefs.setBubbleVoice(a, v); }
         });
-        toggle("Bandeau en très gros texte", new Toggle() {
+        toggle(Tr.t("Bandeau en très gros texte"), new Toggle() {
             public boolean get() { return Prefs.caption(a); }
             public void set(boolean v) { Prefs.setCaption(a, v); }
         });
-        choice("Taille du bandeau", Ui.BUBBLE_SIZE_NAMES, new Choice() {
+        choice(Tr.t("Taille du bandeau"), Ui.BUBBLE_SIZE_NAMES, new Choice() {
             public int get() { return nearest(Ui.CAPTION_SIZES, Prefs.captionSize(a)); }
             public void set(int i) { Prefs.setCaptionSize(a, Ui.CAPTION_SIZES[i]); }
         });
-        choice("Couleurs du bandeau", Ui.CAPTION_COLOR_NAMES, new Choice() {
+        choice(Tr.t("Couleurs du bandeau"), Ui.CAPTION_COLOR_NAMES, new Choice() {
             public int get() { return Prefs.captionColors(a); }
             public void set(int i) { Prefs.setCaptionColors(a, i); }
         });
-        choice("Position du bandeau", new String[]{"En bas de l'écran", "En haut de l'écran"}, new Choice() {
+        choice(Tr.t("Position du bandeau"), new String[]{Tr.t("En bas de l'écran"), Tr.t("En haut de l'écran")}, new Choice() {
             public int get() { return Prefs.captionTop(a) ? 1 : 0; }
             public void set(int i) { Prefs.setCaptionTop(a, i == 1); }
         });
-        toggle("Boutons de volume (2 appuis sur volume bas : lire l'écran)", new Toggle() {
+        toggle(Tr.t("Boutons de volume (2 appuis sur volume bas : lire l'écran)"), new Toggle() {
             public boolean get() { return Prefs.volumeKeys(a); }
             public void set(boolean v) { Prefs.setVolumeKeys(a, v); }
         });
-        toggle("Annoncer les messages reçus", new Toggle() {
+        toggle(Tr.t("Annoncer les messages reçus"), new Toggle() {
             public boolean get() { return Prefs.announce(a); }
             public void set(boolean v) { Prefs.setAnnounce(a, v); }
         });
-        toggle("Lire aussi le texte des messages", new Toggle() {
+        toggle(Tr.t("Lire aussi le texte des messages"), new Toggle() {
             public boolean get() { return Prefs.announceContent(a); }
             public void set(boolean v) { Prefs.setAnnounceContent(a, v); }
         });
-        action("Comment marche le bouton flottant ?", new Runnable() { public void run() { MainActivity.bubbleHowTo(a); } });
-        action("Rapport de la dernière lecture (dépannage)", new Runnable() { public void run() { MainActivity.showReport(a); } });
+        action(Tr.t("Comment marche le bouton flottant ?"), new Runnable() { public void run() { MainActivity.bubbleHowTo(a); } });
+        action(Tr.t("Rapport de la dernière lecture (dépannage)"), new Runnable() { public void run() { MainActivity.showReport(a); } });
 
         // ---------------------------------------------------------------- divers
-        section("Divers");
-        action("Vider la liste des documents", new Runnable() { public void run() { MainActivity.confirmClear(a); } });
-        action("Politique de confidentialité", new Runnable() {
+        section("Lisys Pro");
+        action(Features.keyInstalled(this) ? Tr.t("Lisys Pro : ✅ activé") : Tr.t("Lisys Pro (essai : ") + Features.trialDaysLeft(this) + Tr.t(" jours restants)"),
+                new Runnable() { public void run() { startActivity(new Intent(a, ProActivity.class)); } });
+
+        section(Tr.t("Divers"));
+        action(Tr.t("Vider la liste des documents"), new Runnable() { public void run() { MainActivity.confirmClear(a); } });
+        action(Tr.t("Politique de confidentialité"), new Runnable() {
             public void run() {
                 try { startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(Ui.PRIVACY_URL))); } catch (Exception ignored) {}
             }
         });
-        action("À propos de Lisys", new Runnable() { public void run() { MainActivity.about(a); } });
+        action(Tr.t("À propos de Lisys"), new Runnable() { public void run() { MainActivity.about(a); } });
 
         Ui.setContent(this, root);
     }
@@ -248,7 +252,7 @@ public class SettingsActivity extends Activity {
         sw.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         r.addView(sw);
         final Runnable describe = new Runnable() {
-            public void run() { r.setContentDescription(Ui.spoken(label) + (sw.isChecked() ? ", activé" : ", désactivé")); }
+            public void run() { r.setContentDescription(Ui.spoken(label) + (sw.isChecked() ? Tr.t(", activé") : Tr.t(", désactivé"))); }
         };
         describe.run();
         r.setOnClickListener(new View.OnClickListener() {
@@ -258,22 +262,22 @@ public class SettingsActivity extends Activity {
                 t.set(nv);
                 describe.run();
                 Ui.tick(v);
-                Speaker.say(SettingsActivity.this, Ui.spoken(label) + (nv ? " : activé" : " : désactivé"));
+                Speaker.say(SettingsActivity.this, Ui.spoken(label) + (nv ? Tr.t(" : activé") : Tr.t(" : désactivé")));
             }
         });
     }
 
     private void choice(final String label, final String[] names, final Choice c) {
-        final LinearLayout r = row(label, names[Math.max(0, Math.min(c.get(), names.length - 1))] + "   (appuie pour changer)");
+        final LinearLayout r = row(label, names[Math.max(0, Math.min(c.get(), names.length - 1))] + Tr.t("   (appuie pour changer)"));
         final TextView value = (TextView) r.findViewWithTag("value");
-        r.setContentDescription(label + ", " + names[Math.max(0, Math.min(c.get(), names.length - 1))] + ". Appuie pour changer.");
+        r.setContentDescription(label + ", " + names[Math.max(0, Math.min(c.get(), names.length - 1))] + Tr.t(". Appuie pour changer."));
         r.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 int next = (Math.max(0, c.get()) + 1) % names.length;
                 c.set(next);
                 if (isFinishing()) return;
-                value.setText(names[next] + "   (appuie pour changer)");
-                r.setContentDescription(label + ", " + names[next] + ". Appuie pour changer.");
+                value.setText(names[next] + Tr.t("   (appuie pour changer)"));
+                r.setContentDescription(label + ", " + names[next] + Tr.t(". Appuie pour changer."));
                 Ui.tick(v);
                 Speaker.say(SettingsActivity.this, label + " : " + Ui.spoken(names[next]));
             }

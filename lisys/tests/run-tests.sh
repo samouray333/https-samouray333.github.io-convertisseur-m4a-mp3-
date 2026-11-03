@@ -5,6 +5,6 @@ cd "$(dirname "$0")"
 B=../build
 ANDROID_JAR=${ANDROID_JAR:-$HOME/deps/android-all.jar}
 mkdir -p out
-CP="$B/classes:../libs/jsoup-1.13.1.jar:$B/pdfbox/classes.jar:$ANDROID_JAR"
+CP="$B/classes:../libs/jsoup-1.13.1.jar:$B/pdfbox/classes.jar:../libs/zxing-core-3.5.3.jar:$ANDROID_JAR"
 javac -nowarn -encoding UTF-8 -d out -cp "$CP" $(find stubs -name "*.java") src/*.java
 java -Dstdout.encoding=UTF-8 $JAVA_OPTS -cp "out:$B/pdfbox/assets:$CP" TestExtract "$@"

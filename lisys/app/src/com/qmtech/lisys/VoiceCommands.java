@@ -16,7 +16,7 @@ final class VoiceCommands {
     static void listen(Activity a, int requestCode, String prompt) {
         Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "fr-FR")
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Tr.locale().toLanguageTag())
                 .putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
                 .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3);
         try {
@@ -37,7 +37,38 @@ final class VoiceCommands {
 
     static String norm(String s) {
         String n = Normalizer.normalize(s.toLowerCase(Locale.FRENCH), Normalizer.Form.NFD);
-        return n.replaceAll("\\p{M}", "").replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+        n = n.replaceAll("\\p{M}", "").replaceAll("[^a-z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+        if ("fr".equals(Tr.lang())) return n;
+        // Anglais et espagnol : on ramène les mots aux mots-clés français reconnus par l'appli.
+        StringBuilder sb = new StringBuilder();
+        for (String w : n.split(" ")) {
+            String fr = SYNONYMS.get(w);
+            sb.append(fr != null ? fr : w).append(' ');
+        }
+        return sb.toString().trim();
+    }
+
+    private static final java.util.Map<String, String> SYNONYMS = new java.util.HashMap<String, String>();
+    static {
+        String[] p = {
+                // anglais
+                "read", "lis", "play", "lis", "resume", "reprendre", "pause", "pause", "stop", "stop", "next", "suivant",
+                "previous", "precedent", "back", "retour", "repeat", "repete", "again", "encore", "faster", "vite",
+                "slower", "lent", "slowly", "lentement", "bigger", "gros", "larger", "gros", "smaller", "petit",
+                "beginning", "debut", "start", "commencer", "bookmark", "signet", "bookmarks", "signets", "search", "cherche",
+                "find", "cherche", "magnifier", "loupe", "home", "accueil", "yes", "oui", "no", "non", "continue", "continuer",
+                "skip", "passer", "later", "tard", "photo", "photo", "picture", "photo", "letter", "courrier", "document", "document",
+                "file", "fichier", "website", "site", "page", "page", "copied", "copie", "clipboard", "presse", "contrast", "contraste",
+                "buttons", "boutons", "big", "gros", "allow", "autoriser", "enable", "activer", "settings", "reglages", "paragraph", "paragraphe",
+                // espagnol
+                "lee", "lis", "leer", "lis", "reanudar", "reprendre", "sigue", "continue", "pausa", "pause", "para", "stop", "detente", "stop",
+                "siguiente", "suivant", "anterior", "precedent", "repite", "repete", "otra", "encore", "rapido", "vite", "lento", "lent",
+                "despacio", "lentement", "grande", "gros", "grandes", "gros", "pequeno", "petit", "inicio", "debut", "empezar", "commencer",
+                "marcador", "signet", "marcadores", "signets", "busca", "cherche", "buscar", "cherche", "lupa", "loupe", "volver", "retour",
+                "si", "oui", "vale", "oui", "continuar", "continuer", "saltar", "passer", "luego", "tard", "foto", "photo", "carta", "courrier",
+                "documento", "document", "archivo", "fichier", "web", "site", "pagina", "page", "copiado", "copie", "portapapeles", "presse",
+                "botones", "boutons", "permitir", "autoriser", "activar", "activer", "ajustes", "reglages", "parrafo", "paragraphe"};
+        for (int i = 0; i + 1 < p.length; i += 2) SYNONYMS.put(p[i], p[i + 1]);
     }
 
     /** Vrai si la phrase contient l'un des mots-clés (sans accents). */

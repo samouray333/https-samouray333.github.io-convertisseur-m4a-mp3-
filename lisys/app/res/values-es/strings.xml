@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lisys</string>
+    <string name="read_with">Leer con Lisys</string>
+    <string name="read_selection">Leer con Lisys</string>
+    <string name="a11y_label">Lisys: botón de lectura</string>
+    <string name="a11y_description">Muestra un botón flotante de Lisys encima de todas las apps. Un toque lee en voz alta el texto de la pantalla (web, app, mensaje). Una pulsación larga activa la lectura con el dedo: Lisys lee el texto bajo tu dedo. Lisys solo lee la pantalla cuando pulsas el botón, y no se envía nada a internet.</string>
+    <string name="widget_desc">Botones grandes: leer una foto, el texto copiado, lupa</string>
+    <string name="tile_label">Lisys: leer la pantalla</string>
+</resources>

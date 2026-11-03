@@ -113,7 +113,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         super.onCreate();
         audio = (AudioManager) getSystemService(AUDIO_SERVICE);
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        NotificationChannel ch = new NotificationChannel(CHANNEL, "Lecture à voix haute", NotificationManager.IMPORTANCE_LOW);
+        NotificationChannel ch = new NotificationChannel(CHANNEL, Tr.t("Lecture à voix haute"), NotificationManager.IMPORTANCE_LOW);
         ch.setShowBadge(false);
         nm.createNotificationChannel(ch);
 
@@ -140,8 +140,8 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
     @Override
     public void onInit(int status) {
         if (status != TextToSpeech.SUCCESS) {
-            ttsError = "Aucun moteur de synthèse vocale n'est disponible. Installe « Services de reconnaissance "
-                    + "et de synthèse vocale de Google » depuis le Play Store, puis relance Lisys.";
+            ttsError = Tr.t("Aucun moteur de synthèse vocale n'est disponible. Installe « Services de reconnaissance ")
+                    + Tr.t("et de synthèse vocale de Google » depuis le Play Store, puis relance Lisys.");
             for (Listener l : copyListeners()) l.onTtsReady(false, ttsError);
             return;
         }
@@ -194,9 +194,37 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
             } catch (Exception ignored) {
             }
         }
-        Locale fr = Locale.FRANCE;
-        if (tts.isLanguageAvailable(fr) >= TextToSpeech.LANG_AVAILABLE) tts.setLanguage(fr);
+        // Pas de voix choisie : la plus naturelle installée dans la langue (hors ligne, meilleure qualité).
+        Locale lang = Tr.locale();
+        Voice best = bestVoice(tts, lang);
+        if (best != null) {
+            tts.setVoice(best);
+            return;
+        }
+        if (tts.isLanguageAvailable(lang) >= TextToSpeech.LANG_AVAILABLE) tts.setLanguage(lang);
         else tts.setLanguage(Locale.getDefault());
+    }
+
+    /** Voix installée la plus naturelle pour une langue : hors ligne d'abord, puis qualité, puis réactivité. */
+    static Voice bestVoice(TextToSpeech tts, Locale lang) {
+        try {
+            Set<Voice> voices = tts.getVoices();
+            if (voices == null) return null;
+            Voice best = null;
+            int bestScore = Integer.MIN_VALUE;
+            for (Voice v : voices) {
+                if (v.getLocale() == null || !lang.getLanguage().equals(v.getLocale().getLanguage())) continue;
+                Set<String> f = v.getFeatures();
+                if (f != null && f.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) continue;
+                int score = v.getQuality() - v.getLatency() / 10;
+                if (!v.isNetworkConnectionRequired()) score += 1000;
+                if (lang.getCountry().length() > 0 && lang.getCountry().equals(v.getLocale().getCountry())) score += 50;
+                if (score > bestScore) { bestScore = score; best = v; }
+            }
+            return best;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @Override
@@ -646,16 +674,16 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         Notification.Builder b = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notif)
                 .setContentTitle(title.length() > 0 ? title : "Lisys")
-                .setContentText(playing ? "Lecture en cours" : "En pause")
+                .setContentText(playing ? Tr.t("Lecture en cours") : Tr.t("En pause"))
                 .setContentIntent(content)
                 .setDeleteIntent(action(ACTION_STOP, 4))
                 .setOngoing(playing)
                 .setShowWhen(false)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setCategory(Notification.CATEGORY_TRANSPORT)
-                .addAction(new Notification.Action.Builder(null, "Précédent", action(ACTION_PREV, 1)).build())
-                .addAction(new Notification.Action.Builder(null, playing ? "Pause" : "Lire", action(ACTION_TOGGLE, 2)).build())
-                .addAction(new Notification.Action.Builder(null, "Suivant", action(ACTION_NEXT, 3)).build())
+                .addAction(new Notification.Action.Builder(null, Tr.t("Précédent"), action(ACTION_PREV, 1)).build())
+                .addAction(new Notification.Action.Builder(null, playing ? Tr.t("Pause") : Tr.t("Lire"), action(ACTION_TOGGLE, 2)).build())
+                .addAction(new Notification.Action.Builder(null, Tr.t("Suivant"), action(ACTION_NEXT, 3)).build())
                 .setStyle(new Notification.MediaStyle()
                         .setMediaSession(session.getSessionToken())
                         .setShowActionsInCompactView(0, 1, 2));

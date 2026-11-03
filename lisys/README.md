@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.7 (versionCode 8)
+- Version : 1.8 (versionCode 9)
 - Package : `com.qmtech.lisys` (définitif pour le Play Store ; les versions 1.0 à 1.4 s'appelaient `com.echomatras.lisys`)
 - Android 8.0 (API 26) minimum, cible Android 16 (API 36), comme l'exige le Play Store
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -14,6 +14,13 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - Pages web : l'appli garde l'article et retire les menus, publicités, bandeaux cookies et commentaires
 - Navigateur intégré pour les sites qui demandent JavaScript ou une connexion. Le bouton « Lire cette page » lit toute la page, ou seulement la sélection.
 - Texte copié dans le presse-papiers, ou saisi à la main
+
+**Nouveau en 1.8**
+- **Version gratuite + Lisys Pro** : 14 jours d'essai de tout. Ensuite, la clé payante `com.qmtech.lisys.pro` (dossier `pro-key/`, `./build-pro.sh`, même clé de signature) débloque le bouton flottant, la lecture au doigt, l'annonce des messages, les photos et PDF scannés, la loupe, les codes-barres et l'export audio (`Features.java`, `ProActivity.java`). Documents, pages web et texte copié restent gratuits.
+- **Livres DAISY** (.zip) : DAISY 3 (DTBook) et DAISY 2.02 avec texte. Les livres DAISY uniquement audio ne sont pas pris en charge.
+- **Codes-barres** dans la loupe (bouton 🏷) : lecture EAN/UPC avec ZXing (Apache 2.0), puis nom, marque, quantité, Nutri-Score, allergènes et ingrédients via Open Food Facts (internet).
+- **Anglais et espagnol** selon la langue du téléphone (`Tr.java`, textes du Store dans `play-store/`), commandes vocales comprises. La reconnaissance de texte des photos reste optimisée pour le français.
+- **Voix** : Lisys choisit tout seul la voix la plus naturelle installée dans la langue (hors ligne, meilleure qualité).
 
 **Nouveau en 1.7**
 - **Lecture au doigt** : Lisys lit seulement la phrase sous le doigt, puis s'arrête. Déplacer le doigt lit la phrase suivante touchée, et reposer le doigt relit. Une option permet de continuer jusqu'en bas comme avant (Réglages > Bouton flottant).

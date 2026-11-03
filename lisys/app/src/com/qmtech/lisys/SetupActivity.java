@@ -48,7 +48,7 @@ public class SetupActivity extends Activity {
         if (step == STEP_BUBBLE && sentToSettings) {
             sentToSettings = false;
             if (ScreenReaderService.isEnabled(this)) { step = STEP_DONE; show(); }
-            else Speaker.say(this, "Le bouton flottant n'est pas encore activé. Tu peux réessayer, ou passer cette étape.");
+            else Speaker.say(this, Tr.t("Le bouton flottant n'est pas encore activé. Tu peux réessayer, ou passer cette étape."));
         }
     }
 
@@ -74,44 +74,44 @@ public class SetupActivity extends Activity {
         buttons.setOrientation(LinearLayout.VERTICAL);
         switch (step) {
             case STEP_WELCOME:
-                title = "Bienvenue dans Lisys";
-                text = "Lisys lit à voix haute tes documents, les pages web, le courrier en photo, et tout ce qui est "
-                        + "affiché sur le téléphone.\n\nAvant de commencer, choisis un affichage confortable. "
-                        + "Tu pourras tout changer plus tard dans les réglages.";
-                addButton(buttons, pal, Prefs.theme(this) == Prefs.THEME_CONTRASTE ? "Affichage normal (noir sur blanc)"
-                        : "Contraste élevé (jaune sur noir)", false, new Runnable() {
+                title = Tr.t("Bienvenue dans Lisys");
+                text = Tr.t("Lisys lit à voix haute tes documents, les pages web, le courrier en photo, et tout ce qui est ")
+                        + Tr.t("affiché sur le téléphone.\n\nAvant de commencer, choisis un affichage confortable. ")
+                        + Tr.t("Tu pourras tout changer plus tard dans les réglages.");
+                addButton(buttons, pal, Prefs.theme(this) == Prefs.THEME_CONTRASTE ? Tr.t("Affichage normal (noir sur blanc)")
+                        : Tr.t("Contraste élevé (jaune sur noir)"), false, new Runnable() {
                     public void run() {
                         Prefs.setTheme(SetupActivity.this, Prefs.theme(SetupActivity.this) == Prefs.THEME_CONTRASTE
                                 ? Prefs.THEME_CLAIR : Prefs.THEME_CONTRASTE);
                         show();
                     }
                 });
-                addButton(buttons, pal, Prefs.bigControls(this) ? "Boutons normaux" : "Boutons géants", false, new Runnable() {
+                addButton(buttons, pal, Prefs.bigControls(this) ? Tr.t("Boutons normaux") : Tr.t("Boutons géants"), false, new Runnable() {
                     public void run() { Prefs.setBigControls(SetupActivity.this, !Prefs.bigControls(SetupActivity.this)); show(); }
                 });
-                addButton(buttons, pal, "Continuer", true, new Runnable() { public void run() { next(); } });
+                addButton(buttons, pal, Tr.t("Continuer"), true, new Runnable() { public void run() { next(); } });
                 break;
             case STEP_NOTIF:
-                title = "Notifications";
-                text = "Lisys affiche les commandes de lecture (pause, phrase suivante) dans les notifications et sur "
-                        + "l'écran verrouillé. Appuie sur « Autoriser », puis accepte dans la fenêtre d'Android.";
-                addButton(buttons, pal, "Autoriser", true, new Runnable() {
+                title = Tr.t("Notifications");
+                text = Tr.t("Lisys affiche les commandes de lecture (pause, phrase suivante) dans les notifications et sur ")
+                        + Tr.t("l'écran verrouillé. Appuie sur « Autoriser », puis accepte dans la fenêtre d'Android.");
+                addButton(buttons, pal, Tr.t("Autoriser"), true, new Runnable() {
                     public void run() { requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1); }
                 });
-                addButton(buttons, pal, "Passer", false, new Runnable() { public void run() { next(); } });
+                addButton(buttons, pal, Tr.t("Passer"), false, new Runnable() { public void run() { next(); } });
                 break;
             case STEP_BUBBLE:
-                title = "Le bouton flottant";
-                text = "Le bouton flottant reste par-dessus toutes les applis : un appui, et Lisys lit ce qui est affiché "
-                        + "(mails, messages, sites).\n\nAppuie sur « Activer » : Android ouvre ses réglages "
-                        + "d'accessibilité. Choisis « Lisys : bouton de lecture » (parfois dans « Applis installées »), "
-                        + "active-le et accepte. Puis reviens ici avec la flèche retour."
-                        + (Build.VERSION.SDK_INT >= 33 ? "\n\nSi Android dit « Paramètre restreint » : appuie sur "
-                        + "« Infos appli », puis sur les trois points en haut à droite, puis « Autoriser les paramètres "
-                        + "restreints », et recommence." : "");
-                addButton(buttons, pal, "Activer", true, new Runnable() { public void run() { activateBubble(); } });
+                title = Tr.t("Le bouton flottant");
+                text = Tr.t("Le bouton flottant reste par-dessus toutes les applis : un appui, et Lisys lit ce qui est affiché ")
+                        + Tr.t("(mails, messages, sites).\n\nAppuie sur « Activer » : Android ouvre ses réglages ")
+                        + Tr.t("d'accessibilité. Choisis « Lisys : bouton de lecture » (parfois dans « Applis installées »), ")
+                        + Tr.t("active-le et accepte. Puis reviens ici avec la flèche retour.")
+                        + (Build.VERSION.SDK_INT >= 33 ? Tr.t("\n\nSi Android dit « Paramètre restreint » : appuie sur ")
+                        + Tr.t("« Infos appli », puis sur les trois points en haut à droite, puis « Autoriser les paramètres ")
+                        + Tr.t("restreints », et recommence.") : "");
+                addButton(buttons, pal, Tr.t("Activer"), true, new Runnable() { public void run() { activateBubble(); } });
                 if (Build.VERSION.SDK_INT >= 33) {
-                    addButton(buttons, pal, "Infos appli (paramètre restreint)", false, new Runnable() {
+                    addButton(buttons, pal, Tr.t("Infos appli (paramètre restreint)"), false, new Runnable() {
                         public void run() {
                             try {
                                 startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -121,15 +121,15 @@ public class SetupActivity extends Activity {
                         }
                     });
                 }
-                addButton(buttons, pal, "Passer cette étape", false, new Runnable() { public void run() { next(); } });
+                addButton(buttons, pal, Tr.t("Passer cette étape"), false, new Runnable() { public void run() { next(); } });
                 break;
             default:
-                title = "C'est prêt !";
-                text = "Pour lire :\n• un document : « Ouvrir un document »\n• le courrier : « Lire une photo »\n"
-                        + "• la loupe : « Loupe »\n• un site, un mail : la bulle 🔊 (appui long : lecture au doigt)\n\n"
-                        + "Dans un texte, appui long sur un paragraphe : répéter lentement ou épeler un mot. "
-                        + "Le bouton micro permet de donner des ordres à la voix : « lis », « pause », « suivant »…";
-                addButton(buttons, pal, "Commencer", true, new Runnable() { public void run() { finishSetup(); } });
+                title = Tr.t("C'est prêt !");
+                text = Tr.t("Pour lire :\n• un document : « Ouvrir un document »\n• le courrier : « Lire une photo »\n")
+                        + Tr.t("• la loupe : « Loupe »\n• un site, un mail : la bulle 🔊 (appui long : lecture au doigt)\n\n")
+                        + Tr.t("Dans un texte, appui long sur un paragraphe : répéter lentement ou épeler un mot. ")
+                        + Tr.t("Le bouton micro permet de donner des ordres à la voix : « lis », « pause », « suivant »…");
+                addButton(buttons, pal, Tr.t("Commencer"), true, new Runnable() { public void run() { finishSetup(); } });
         }
 
         LinearLayout root = new LinearLayout(this);
@@ -137,7 +137,7 @@ public class SetupActivity extends Activity {
         root.setBackgroundColor(pal.bg);
         int p = Ui.dp(this, 22);
         root.setPadding(p, p, p, p);
-        TextView stepLabel = Ui.label(this, "Étape " + (step + 1) + " sur 4", 16, pal.muted, false);
+        TextView stepLabel = Ui.label(this, Tr.t("Étape ") + (step + 1) + Tr.t(" sur 4"), 16, pal.muted, false);
         root.addView(stepLabel);
         TextView t = Ui.label(this, title, 30, pal.text, true);
         t.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 14));
@@ -147,7 +147,7 @@ public class SetupActivity extends Activity {
         body.setLineSpacing(0, 1.2f);
         sv.addView(body);
         root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        addButton(buttons, pal, "🎤   Répondre à voix haute", false, new Runnable() { public void run() { listen(); } });
+        addButton(buttons, pal, Tr.t("🎤   Répondre à voix haute"), false, new Runnable() { public void run() { listen(); } });
         root.addView(buttons);
         Ui.setContent(this, root);
         retries = 0;
@@ -159,10 +159,10 @@ public class SetupActivity extends Activity {
 
     private String question() {
         switch (step) {
-            case STEP_WELCOME: return "Dis « oui » pour continuer, « contraste » pour le jaune sur noir, « gros boutons », ou « répète ».";
-            case STEP_NOTIF: return "Dis « oui » pour autoriser, ou « non » pour passer.";
-            case STEP_BUBBLE: return "Dis « oui » pour activer le bouton flottant, ou « non » pour passer.";
-            default: return "Dis « oui » pour commencer.";
+            case STEP_WELCOME: return Tr.t("Dis « oui » pour continuer, « contraste » pour le jaune sur noir, « gros boutons », ou « répète ».");
+            case STEP_NOTIF: return Tr.t("Dis « oui » pour autoriser, ou « non » pour passer.");
+            case STEP_BUBBLE: return Tr.t("Dis « oui » pour activer le bouton flottant, ou « non » pour passer.");
+            default: return Tr.t("Dis « oui » pour commencer.");
         }
     }
 
@@ -174,13 +174,13 @@ public class SetupActivity extends Activity {
         final Runnable go = new Runnable() {
             public void run() {
                 sentToSettings = true;
-                Speaker.say(SetupActivity.this, "J'ouvre les réglages d'Android. Choisis « Lisys : bouton de lecture », active-le, accepte, puis reviens avec la flèche retour.",
+                Speaker.say(SetupActivity.this, Tr.t("J'ouvre les réglages d'Android. Choisis « Lisys : bouton de lecture », active-le, accepte, puis reviens avec la flèche retour."),
                         new Runnable() { public void run() { MainActivity.openAccessibilitySettings(SetupActivity.this); } });
             }
         };
         if (Prefs.a11yConsent(this)) { go.run(); return; }
-        Speaker.say(this, "Une fenêtre explique ce que Lisys lit à l'écran : seulement quand tu le demandes, et rien ne quitte "
-                + "le téléphone. Appuie sur le bouton « J'accepte », en bas à droite de la fenêtre.");
+        Speaker.say(this, Tr.t("Une fenêtre explique ce que Lisys lit à l'écran : seulement quand tu le demandes, et rien ne quitte ")
+                + Tr.t("le téléphone. Appuie sur le bouton « J'accepte », en bas à droite de la fenêtre."));
         MainActivity.showAccessibilityDisclosure(this, go);
     }
 
@@ -227,11 +227,11 @@ public class SetupActivity extends Activity {
         }
         // Pas compris : on redemande (deux fois au plus, ensuite les boutons restent là).
         if (retries++ < 2) {
-            Speaker.say(this, "Je n'ai pas compris « " + raw + " ». " + question(), new Runnable() {
+            Speaker.say(this, Tr.t("Je n'ai pas compris « ") + raw + " ». " + question(), new Runnable() {
                 public void run() { if (resumed && !isFinishing()) listen(); }
             });
         } else {
-            Speaker.say(this, "Tu peux aussi appuyer sur les gros boutons en bas de l'écran.");
+            Speaker.say(this, Tr.t("Tu peux aussi appuyer sur les gros boutons en bas de l'écran."));
         }
     }
 

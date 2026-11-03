@@ -48,7 +48,7 @@ public final class WebExtractor {
 
     public static Extractor.Result fromUrl(Context c, String url, Extractor.Progress progress) throws Exception {
         url = normalizeUrl(url);
-        if (progress != null) progress.onProgress("Téléchargement de la page…");
+        if (progress != null) progress.onProgress(Tr.t("Téléchargement de la page…"));
         Connection.Response resp;
         try {
             resp = Jsoup.connect(url)
@@ -61,13 +61,13 @@ public final class WebExtractor {
                     .maxBodySize(40 * 1024 * 1024)
                     .execute();
         } catch (java.net.UnknownHostException e) {
-            throw new Extractor.UserError("Site introuvable. Vérifie l'adresse et la connexion internet.");
+            throw new Extractor.UserError(Tr.t("Site introuvable. Vérifie l'adresse et la connexion internet."));
         } catch (java.net.SocketTimeoutException e) {
-            throw new Extractor.UserError("Le site met trop de temps à répondre.");
+            throw new Extractor.UserError(Tr.t("Le site met trop de temps à répondre."));
         }
         if (resp.statusCode() >= 400) {
-            throw new Extractor.UserError("Le site a refusé la page (erreur " + resp.statusCode()
-                    + "). Essaie avec le navigateur intégré.");
+            throw new Extractor.UserError(Tr.t("Le site a refusé la page (erreur ") + resp.statusCode()
+                    + Tr.t("). Essaie avec le navigateur intégré."));
         }
         String type = resp.contentType() == null ? "" : resp.contentType().toLowerCase(Locale.ROOT);
         String path = resp.url().getPath().toLowerCase(Locale.ROOT);
@@ -93,13 +93,13 @@ public final class WebExtractor {
             r.kind = "WEB";
             return Extractor.finish(r);
         }
-        if (progress != null) progress.onProgress("Extraction du texte…");
+        if (progress != null) progress.onProgress(Tr.t("Extraction du texte…"));
         Document doc = resp.parse();
         Extractor.Result r = fromDocument(doc);
         r.kind = "WEB";
         if (r.paragraphs.isEmpty()) {
-            throw new Extractor.UserError("Aucun texte trouvé sur cette page. Si le site a besoin de JavaScript "
-                    + "ou d'une connexion, ouvre-la avec le navigateur intégré.");
+            throw new Extractor.UserError(Tr.t("Aucun texte trouvé sur cette page. Si le site a besoin de JavaScript ")
+                    + Tr.t("ou d'une connexion, ouvre-la avec le navigateur intégré."));
         }
         return Extractor.finish(r);
     }

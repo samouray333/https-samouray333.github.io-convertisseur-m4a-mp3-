@@ -64,12 +64,12 @@ public class WebActivity extends Activity {
         bar.setBackgroundColor(pal.bar);
         int p6 = Ui.dp(this, 6);
         bar.setPadding(p6, p6, p6, p6);
-        TextView close = Ui.roundButton(this, "✕", "Fermer le navigateur", pal.bar, pal.barText, 44);
+        TextView close = Ui.roundButton(this, "✕", Tr.t("Fermer le navigateur"), pal.bar, pal.barText, 44);
         close.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { finish(); } });
         bar.addView(close);
         address = new EditText(this);
         address.setSingleLine(true);
-        address.setHint("Adresse du site ou recherche");
+        address.setHint(Tr.t("Adresse du site ou recherche"));
         address.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         address.setTextColor(pal.barText);
         address.setHintTextColor(pal.muted);
@@ -83,7 +83,7 @@ public class WebActivity extends Activity {
             }
         });
         bar.addView(address, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView reload = Ui.roundButton(this, "⟳", "Recharger", pal.bar, pal.barText, 44);
+        TextView reload = Ui.roundButton(this, "⟳", Tr.t("Recharger"), pal.bar, pal.barText, 44);
         reload.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { web.reload(); } });
         bar.addView(reload);
         root.addView(bar);
@@ -136,9 +136,9 @@ public class WebActivity extends Activity {
         bottom.setBackgroundColor(pal.bar);
         int p10 = Ui.dp(this, 10);
         bottom.setPadding(p10, p10, p10, p10);
-        readBtn = Ui.bigButton(this, "🔊   Lire cette page", pal.button, pal.buttonText);
+        readBtn = Ui.bigButton(this, Tr.t("🔊   Lire cette page"), pal.button, pal.buttonText);
         readBtn.setGravity(Gravity.CENTER);
-        readBtn.setContentDescription("Lire cette page à voix haute. Si du texte est sélectionné, seule la sélection est lue.");
+        readBtn.setContentDescription(Tr.t("Lire cette page à voix haute. Si du texte est sélectionné, seule la sélection est lue."));
         readBtn.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { readPage(); } });
         bottom.addView(readBtn, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(bottom);
@@ -186,7 +186,7 @@ public class WebActivity extends Activity {
     private void readPage() {
         if (working) return;
         working = true;
-        readBtn.setText("Préparation…");
+        readBtn.setText(Tr.t("Préparation…"));
         web.evaluateJavascript(JS, new ValueCallback<String>() {
             @Override public void onReceiveValue(final String value) {
                 final String url = web.getUrl();
@@ -206,24 +206,24 @@ public class WebActivity extends Activity {
             Extractor.Result r;
             String source;
             if (v.startsWith("SEL:")) {
-                r = Extractor.fromText(pageTitle != null && pageTitle.length() > 0 ? pageTitle : "Sélection", v.substring(4));
+                r = Extractor.fromText(pageTitle != null && pageTitle.length() > 0 ? pageTitle : Tr.t("Sélection"), v.substring(4));
                 r.kind = "WEB";
                 source = "selection:" + url + ":" + v.hashCode();
             } else {
                 r = WebExtractor.fromHtml(v.startsWith("HTML:") ? v.substring(5) : v, url);
                 source = url;
             }
-            if (r.paragraphs.isEmpty()) error = "Aucun texte trouvé sur cette page.";
+            if (r.paragraphs.isEmpty()) error = Tr.t("Aucun texte trouvé sur cette page.");
             else entry = Library.add(this, r, source);
         } catch (Throwable t) {
-            error = "Impossible de lire cette page.";
+            error = Tr.t("Impossible de lire cette page.");
         }
         final String err = error;
         final Library.Entry e = entry;
         main.post(new Runnable() {
             @Override public void run() {
                 working = false;
-                readBtn.setText("🔊   Lire cette page");
+                readBtn.setText(Tr.t("🔊   Lire cette page"));
                 if (isFinishing()) return;
                 if (err != null) {
                     Ui.dialog(WebActivity.this).setMessage(err).setPositiveButton("OK", null).show();
@@ -233,7 +233,7 @@ public class WebActivity extends Activity {
                 i.putExtra(ReaderActivity.EXTRA_ID, e.id);
                 i.putExtra(ReaderActivity.EXTRA_AUTOPLAY, true);
                 startActivity(i);
-                Toast.makeText(WebActivity.this, "Astuce : sélectionne un passage pour ne lire que lui.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(WebActivity.this, Tr.t("Astuce : sélectionne un passage pour ne lire que lui."), Toast.LENGTH_SHORT).show();
             }
         });
     }

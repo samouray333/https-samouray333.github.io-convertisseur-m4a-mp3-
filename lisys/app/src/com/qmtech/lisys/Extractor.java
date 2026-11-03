@@ -72,10 +72,10 @@ public final class Extractor {
         String ext = extension(name);
         if (ext.length() == 0 && mime != null) ext = extensionFromMime(mime);
 
-        if (progress != null) progress.onProgress("Copie du fichier…");
+        if (progress != null) progress.onProgress(Tr.t("Copie du fichier…"));
         File tmp = new File(c.getCacheDir(), "import." + (ext.length() > 0 ? ext : "bin"));
         InputStream in = c.getContentResolver().openInputStream(uri);
-        if (in == null) throw new UserError("Impossible d'ouvrir ce fichier.");
+        if (in == null) throw new UserError(Tr.t("Impossible d'ouvrir ce fichier."));
         try {
             copy(in, tmp, MAX_FILE);
         } finally {
@@ -96,6 +96,7 @@ public final class Extractor {
         if (ext.equals("docx") || ext.equals("docm") || ext.equals("dotx")) return docx(f);
         if (ext.equals("odt") || ext.equals("ott")) return odt(f);
         if (ext.equals("epub")) return epub(f, progress);
+        if (ext.equals("zip")) return daisy(f, progress);
         if (ext.equals("html") || ext.equals("htm") || ext.equals("xhtml") || ext.equals("mht")) {
             Result r = WebExtractor.fromDocument(Jsoup.parse(f, null));
             r.kind = "HTML";
@@ -103,8 +104,8 @@ public final class Extractor {
         }
         if (ext.equals("rtf")) return rtf(f);
         if (ext.equals("doc")) {
-            throw new UserError("L'ancien format Word .doc n'est pas pris en charge. "
-                    + "Enregistre le document en .docx ou en PDF, puis rouvre-le.");
+            throw new UserError(Tr.t("L'ancien format Word .doc n'est pas pris en charge. ")
+                    + Tr.t("Enregistre le document en .docx ou en PDF, puis rouvre-le."));
         }
         // Par défaut : on tente du texte brut, en refusant les vrais fichiers binaires.
         byte[] data = readBytes(f, 50L * 1024 * 1024);
@@ -116,9 +117,10 @@ public final class Extractor {
             if (data.length > 4 && data[0] == 'P' && data[1] == 'K') {
                 try { return docx(f); } catch (Exception ignored) {}
                 try { return epub(f, progress); } catch (Exception ignored) {}
+                try { return daisy(f, progress); } catch (UserError e) { throw e; } catch (Exception ignored) {}
                 try { return odt(f); } catch (Exception ignored) {}
             }
-            throw new UserError("Ce type de fichier n'est pas pris en charge.");
+            throw new UserError(Tr.t("Ce type de fichier n'est pas pris en charge."));
         }
         Result r = plainText(decode(data), ext.equals("md"));
         r.kind = ext.equals("md") ? "MARKDOWN" : "TEXTE";
@@ -141,7 +143,7 @@ public final class Extractor {
         try {
             doc = PDDocument.load(f, MemoryUsageSetting.setupMixed(24L * 1024 * 1024));
         } catch (InvalidPasswordException e) {
-            throw new UserError("Ce PDF est protégé par un mot de passe.");
+            throw new UserError(Tr.t("Ce PDF est protégé par un mot de passe."));
         }
         Result r = new Result();
         r.kind = "PDF";
@@ -159,7 +161,7 @@ public final class Extractor {
             List<List<String>> pageBlocks = new ArrayList<List<String>>();
             for (int p = 1; p <= pages; p++) {
                 if (progress != null && (p == 1 || p % 5 == 0)) {
-                    progress.onProgress("Lecture du PDF : page " + p + " / " + pages);
+                    progress.onProgress(Tr.t("Lecture du PDF : page ") + p + " / " + pages);
                 }
                 st.setStartPage(p);
                 st.setEndPage(p);
@@ -184,7 +186,7 @@ public final class Extractor {
             doc.close();
         }
         if (countChars(r.paragraphs) < 20) {
-            throw new NeedsOcr("Ce PDF ne contient pas de texte : c'est un document scanné (des images).");
+            throw new NeedsOcr(Tr.t("Ce PDF ne contient pas de texte : c'est un document scanné (des images)."));
         }
         return r;
     }
@@ -304,7 +306,7 @@ public final class Extractor {
         r.kind = "WORD";
         try {
             ZipEntry e = zip.getEntry("word/document.xml");
-            if (e == null) throw new UserError("Document Word invalide.");
+            if (e == null) throw new UserError(Tr.t("Document Word invalide."));
             r.title = coreTitle(zip, "docProps/core.xml");
             XmlPullParser xp = Xml.newPullParser();
             xp.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false);
@@ -348,7 +350,7 @@ public final class Extractor {
         r.kind = "ODT";
         try {
             ZipEntry e = zip.getEntry("content.xml");
-            if (e == null) throw new UserError("Document OpenOffice invalide.");
+            if (e == null) throw new UserError(Tr.t("Document OpenOffice invalide."));
             r.title = coreTitle(zip, "meta.xml");
             XmlPullParser xp = Xml.newPullParser();
             xp.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false);
@@ -420,14 +422,14 @@ public final class Extractor {
         r.kind = "EPUB";
         try {
             ZipEntry ce = zip.getEntry("META-INF/container.xml");
-            if (ce == null) throw new UserError("Livre EPUB invalide.");
+            if (ce == null) throw new UserError(Tr.t("Livre EPUB invalide."));
             org.jsoup.nodes.Document container = Jsoup.parse(readEntry(zip, ce), "", org.jsoup.parser.Parser.xmlParser());
             org.jsoup.nodes.Element rootfile = container.selectFirst("rootfile");
-            if (rootfile == null) throw new UserError("Livre EPUB invalide.");
+            if (rootfile == null) throw new UserError(Tr.t("Livre EPUB invalide."));
             String opfPath = rootfile.attr("full-path");
             String base = opfPath.contains("/") ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : "";
             ZipEntry oe = zip.getEntry(opfPath);
-            if (oe == null) throw new UserError("Livre EPUB invalide.");
+            if (oe == null) throw new UserError(Tr.t("Livre EPUB invalide."));
             org.jsoup.nodes.Document opf = Jsoup.parse(readEntry(zip, oe), "", org.jsoup.parser.Parser.xmlParser());
             for (org.jsoup.nodes.Element t : opf.getAllElements()) {
                 if (t.tagName().equalsIgnoreCase("dc:title") && t.text().trim().length() > 0) {
@@ -441,7 +443,7 @@ public final class Extractor {
             int i = 0;
             for (org.jsoup.nodes.Element ref : spine) {
                 i++;
-                if (progress != null) progress.onProgress("Lecture du livre : chapitre " + i + " / " + spine.size());
+                if (progress != null) progress.onProgress(Tr.t("Lecture du livre : chapitre ") + i + " / " + spine.size());
                 String href = hrefs.get(ref.attr("idref"));
                 if (href == null) continue;
                 String path = normalizePath(base + Uri.decode(href));
@@ -453,7 +455,7 @@ public final class Extractor {
         } finally {
             zip.close();
         }
-        if (r.paragraphs.isEmpty()) throw new UserError("Ce livre ne contient pas de texte lisible.");
+        if (r.paragraphs.isEmpty()) throw new UserError(Tr.t("Ce livre ne contient pas de texte lisible."));
         return r;
     }
 
@@ -475,6 +477,96 @@ public final class Extractor {
         } finally {
             in.close();
         }
+    }
+
+    // ------------------------------------------------------------------ DAISY (livres adaptés)
+
+    /**
+     * Livres DAISY en archive .zip : DAISY 3 (texte DTBook) ou DAISY 2.02 (ncc.html + fichiers texte).
+     * Les livres DAISY uniquement audio (MP3 sans texte) ne sont pas pris en charge.
+     */
+    private static Result daisy(File f, Progress progress) throws Exception {
+        ZipFile zip = new ZipFile(f);
+        Result r = new Result();
+        r.kind = "DAISY";
+        try {
+            ZipEntry dtbook = null, ncc = null, opf = null;
+            java.util.Enumeration<? extends ZipEntry> en = zip.entries();
+            List<ZipEntry> all = new ArrayList<ZipEntry>();
+            while (en.hasMoreElements()) {
+                ZipEntry e = en.nextElement();
+                all.add(e);
+                String n = e.getName().toLowerCase(Locale.ROOT);
+                if (n.endsWith("ncc.html") || n.endsWith("ncc.htm")) ncc = e;
+                else if (n.endsWith(".opf")) opf = e;
+            }
+            if (opf != null) {
+                org.jsoup.nodes.Document o = Jsoup.parse(readEntry(zip, opf), "", org.jsoup.parser.Parser.xmlParser());
+                for (org.jsoup.nodes.Element t : o.getAllElements()) {
+                    if (t.tagName().toLowerCase(Locale.ROOT).endsWith("title") && r.title == null && t.text().trim().length() > 0) r.title = t.text().trim();
+                }
+                String base = opf.getName().contains("/") ? opf.getName().substring(0, opf.getName().lastIndexOf('/') + 1) : "";
+                for (org.jsoup.nodes.Element it : o.select("item")) {
+                    if (it.attr("media-type").contains("dtbook")) dtbook = zip.getEntry(normalizePath(base + it.attr("href")));
+                }
+            }
+            if (dtbook != null) {
+                if (progress != null) progress.onProgress(Tr.t("Lecture du livre DAISY…"));
+                org.jsoup.nodes.Document x = Jsoup.parse(readEntry(zip, dtbook), "", org.jsoup.parser.Parser.xmlParser());
+                org.jsoup.nodes.Element book = x.selectFirst("book");
+                if (r.title == null) {
+                    org.jsoup.nodes.Element dt = x.selectFirst("doctitle");
+                    if (dt != null) r.title = dt.text().trim();
+                }
+                WebExtractor.collectBlocks(book != null ? book : x, r.paragraphs);
+            } else if (ncc != null) {
+                // DAISY 2.02 : l'ordre des fichiers texte vient des fichiers SMIL cités dans ncc.html.
+                String base = ncc.getName().contains("/") ? ncc.getName().substring(0, ncc.getName().lastIndexOf('/') + 1) : "";
+                org.jsoup.nodes.Document n = Jsoup.parse(readEntry(zip, ncc));
+                if (n.title() != null && n.title().trim().length() > 0) r.title = n.title().trim();
+                List<String> order = new ArrayList<String>();
+                List<String> smils = new ArrayList<String>();
+                for (org.jsoup.nodes.Element a : n.select("a[href]")) {
+                    String h = a.attr("href");
+                    int hash = h.indexOf('#');
+                    String file = hash >= 0 ? h.substring(0, hash) : h;
+                    if (file.toLowerCase(Locale.ROOT).endsWith(".smil") && !smils.contains(file)) smils.add(file);
+                }
+                for (String sm : smils) {
+                    ZipEntry se = zip.getEntry(normalizePath(base + sm));
+                    if (se == null) continue;
+                    org.jsoup.nodes.Document sd = Jsoup.parse(readEntry(zip, se), "", org.jsoup.parser.Parser.xmlParser());
+                    for (org.jsoup.nodes.Element t : sd.select("text[src]")) {
+                        String src = t.attr("src");
+                        int hash = src.indexOf('#');
+                        String file = hash >= 0 ? src.substring(0, hash) : src;
+                        if (!order.contains(file)) order.add(file);
+                    }
+                }
+                if (order.isEmpty()) {
+                    for (ZipEntry e : all) {
+                        String nm = e.getName().toLowerCase(Locale.ROOT);
+                        if ((nm.endsWith(".html") || nm.endsWith(".htm")) && !nm.endsWith("ncc.html") && !nm.endsWith("ncc.htm")) {
+                            order.add(e.getName().substring(base.length()));
+                        }
+                    }
+                }
+                for (String file : order) {
+                    ZipEntry ce = zip.getEntry(normalizePath(base + file));
+                    if (ce == null || ce == ncc) continue;
+                    WebExtractor.collectBlocks(Jsoup.parse(readEntry(zip, ce)).body(), r.paragraphs);
+                }
+                if (r.paragraphs.isEmpty()) {
+                    throw new UserError(Tr.t("Ce livre DAISY ne contient que de l'audio. Lisys lit les livres DAISY qui contiennent du texte."));
+                }
+            } else {
+                throw new UserError(Tr.t("Cette archive .zip n'est pas un livre DAISY."));
+            }
+        } finally {
+            zip.close();
+        }
+        if (r.paragraphs.isEmpty()) throw new UserError(Tr.t("Ce livre DAISY ne contient pas de texte lisible."));
+        return r;
     }
 
     // ------------------------------------------------------------------ RTF
@@ -647,7 +739,7 @@ public final class Extractor {
         }
         r.paragraphs = out;
         if (r.title == null || r.title.trim().length() == 0) {
-            r.title = out.isEmpty() ? "Sans titre" : out.get(0);
+            r.title = out.isEmpty() ? Tr.t("Sans titre") : out.get(0);
         }
         r.title = r.title.replaceAll("\\s+", " ").trim();
         if (r.title.length() > 120) r.title = r.title.substring(0, 117) + "…";
@@ -695,6 +787,7 @@ public final class Extractor {
         if (mime.contains("wordprocessingml")) return "docx";
         if (mime.contains("opendocument.text")) return "odt";
         if (mime.contains("epub")) return "epub";
+        if (mime.contains("zip")) return "zip";
         if (mime.contains("html")) return "html";
         if (mime.contains("rtf")) return "rtf";
         if (mime.contains("msword")) return "doc";
@@ -711,7 +804,7 @@ public final class Extractor {
             int n;
             while ((n = in.read(buf)) > 0) {
                 total += n;
-                if (total > max) throw new UserError("Fichier trop volumineux.");
+                if (total > max) throw new UserError(Tr.t("Fichier trop volumineux."));
                 os.write(buf, 0, n);
             }
         } finally {
@@ -720,7 +813,7 @@ public final class Extractor {
     }
 
     static byte[] readBytes(File f, long max) throws Exception {
-        if (f.length() > max) throw new UserError("Fichier trop volumineux.");
+        if (f.length() > max) throw new UserError(Tr.t("Fichier trop volumineux."));
         FileInputStream in = new FileInputStream(f);
         try {
             return readStream(in, max);
@@ -736,7 +829,7 @@ public final class Extractor {
         int n;
         while ((n = in.read(buf)) > 0) {
             total += n;
-            if (total > max) throw new UserError("Fichier trop volumineux.");
+            if (total > max) throw new UserError(Tr.t("Fichier trop volumineux."));
             bos.write(buf, 0, n);
         }
         return bos.toByteArray();

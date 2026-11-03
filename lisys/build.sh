@@ -20,7 +20,7 @@ source signing/signing.properties
 rm -rf "$B"; mkdir -p "$B"/{res,gen,classes,dex,pdfbox}
 echo "== Bibliothèques"
 (cd "$B/pdfbox" && unzip -q "$ROOT/libs/pdfbox-android-2.0.27.0.aar")
-LIBS="$ROOT/libs/jsoup-1.13.1.jar:$B/pdfbox/classes.jar"
+LIBS="$ROOT/libs/jsoup-1.13.1.jar:$B/pdfbox/classes.jar:$ROOT/libs/zxing-core-3.5.3.jar"
 
 echo "== Ressources"
 aapt2 compile --dir app/res -o "$B/res/res.zip"
@@ -33,7 +33,7 @@ find app/src "$B/gen" -name '*.java' > "$B/sources.txt"
 javac -nowarn -encoding UTF-8 --release 8 -Xlint:-options -cp "$ANDROID_JAR:$LIBS" -d "$B/classes" @"$B/sources.txt"
 
 echo "== Dex"
-dalvik-exchange --dex --min-sdk-version=26 --multi-dex --output="$B/dex" "$B/classes" "$ROOT/libs/jsoup-1.13.1.jar" "$B/pdfbox/classes.jar"
+dalvik-exchange --dex --min-sdk-version=26 --multi-dex --output="$B/dex" "$B/classes" "$ROOT/libs/jsoup-1.13.1.jar" "$B/pdfbox/classes.jar" "$ROOT/libs/zxing-core-3.5.3.jar"
 
 echo "== Assemblage"
 cp "$B/base.apk" "$B/unsigned.apk"

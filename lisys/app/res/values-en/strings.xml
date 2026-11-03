@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lisys</string>
+    <string name="read_with">Read with Lisys</string>
+    <string name="read_selection">Read with Lisys</string>
+    <string name="a11y_label">Lisys: reading button</string>
+    <string name="a11y_description">Shows a floating Lisys button on top of all apps. One tap reads aloud the text on the screen (website, app, message). A long press starts finger reading: Lisys reads the text under your finger. Lisys reads the screen only when you press the button, and nothing is sent to the internet.</string>
+    <string name="widget_desc">Big buttons: read a photo, copied text, magnifier</string>
+    <string name="tile_label">Lisys: read the screen</string>
+</resources>

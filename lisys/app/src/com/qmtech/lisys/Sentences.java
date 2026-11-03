@@ -15,7 +15,7 @@ public final class Sentences {
     /** Renvoie les phrases avec leurs positions [début, fin[ dans le paragraphe. */
     public static List<int[]> bounds(String p) {
         List<int[]> raw = new ArrayList<int[]>();
-        BreakIterator it = BreakIterator.getSentenceInstance(Locale.FRENCH);
+        BreakIterator it = BreakIterator.getSentenceInstance(Tr.locale());
         it.setText(p);
         int start = it.first();
         for (int end = it.next(); end != BreakIterator.DONE; start = end, end = it.next()) {

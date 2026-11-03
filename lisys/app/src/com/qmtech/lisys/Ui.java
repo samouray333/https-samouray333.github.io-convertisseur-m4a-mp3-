@@ -35,7 +35,7 @@ final class Ui {
     static final int ACCENT = 0xFFF59E0B;     // ambre
 
     /** Couleurs de la bulle flottante : nom, fond, symbole, bordure (toujours bien contrastées). */
-    static final String[] BUBBLE_COLOR_NAMES = {"Bleu", "Jaune", "Rouge", "Vert", "Orange", "Violet", "Noir", "Blanc"};
+    static final String[] BUBBLE_COLOR_NAMES = {Tr.t("Bleu"), Tr.t("Jaune"), Tr.t("Rouge"), Tr.t("Vert"), Tr.t("Orange"), Tr.t("Violet"), Tr.t("Noir"), Tr.t("Blanc")};
     static final int[][] BUBBLE_COLORS = {
             {0xFF1E3A8A, 0xFFFFFFFF, 0xFFFFFFFF},
             {0xFFFFD600, 0xFF000000, 0xFF000000},
@@ -46,7 +46,7 @@ final class Ui {
             {0xFF000000, 0xFFFFFF00, 0xFFFFFF00},
             {0xFFFFFFFF, 0xFF000000, 0xFF000000}};
     /** Couleurs du bandeau : nom, puis fond, texte, fond du mot lu, mot lu. */
-    static final String[] CAPTION_COLOR_NAMES = {"Jaune sur noir", "Blanc sur noir", "Noir sur blanc", "Noir sur jaune", "Blanc sur bleu"};
+    static final String[] CAPTION_COLOR_NAMES = {Tr.t("Jaune sur noir"), Tr.t("Blanc sur noir"), Tr.t("Noir sur blanc"), Tr.t("Noir sur jaune"), Tr.t("Blanc sur bleu")};
     static final int[][] CAPTION_COLORS = {
             {0xF0000000, 0xFFFFFF00, 0xFFFFFFFF, 0xFF000000},
             {0xF0000000, 0xFFFFFFFF, 0xFFFFFF00, 0xFF000000},
@@ -56,7 +56,7 @@ final class Ui {
     static final int[] CAPTION_SIZES = {26, 34, 44, 56, 72};
 
     static final int[] BUBBLE_SIZES = {56, 76, 96, 120, 150};
-    static final String[] BUBBLE_SIZE_NAMES = {"Petit", "Moyen", "Grand", "Très grand", "Géant"};
+    static final String[] BUBBLE_SIZE_NAMES = {Tr.t("Petit"), Tr.t("Moyen"), Tr.t("Grand"), Tr.t("Très grand"), Tr.t("Géant")};
 
     /** Couleurs d'un thème de lecture. */
     static final class Palette {
@@ -94,10 +94,10 @@ final class Ui {
 
     static String themeName(int t) {
         switch (t) {
-            case Prefs.THEME_SOMBRE: return "Sombre";
-            case Prefs.THEME_CONTRASTE: return "Contraste élevé (jaune sur noir)";
-            case Prefs.THEME_SEPIA: return "Sépia";
-            default: return "Clair";
+            case Prefs.THEME_SOMBRE: return Tr.t("Sombre");
+            case Prefs.THEME_CONTRASTE: return Tr.t("Contraste élevé (jaune sur noir)");
+            case Prefs.THEME_SEPIA: return Tr.t("Sépia");
+            default: return Tr.t("Clair");
         }
     }
 

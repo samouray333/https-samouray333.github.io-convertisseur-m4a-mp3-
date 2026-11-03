@@ -4,7 +4,7 @@ Tout ce qu'il faut copier-coller dans la Play Console, dans l'ordre où elle le 
 
 - Package : `com.qmtech.lisys` (ne pourra plus changer)
 - Éditeur : QMTech
-- Fichier à envoyer : `release/Lisys-1.7.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
+- Fichier à envoyer : `release/Lisys-1.8.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
 - Politique de confidentialité : `https://samouray333.github.io/https-samouray333.github.io-convertisseur-m4a-mp3-/lisys/confidentialite.html`
   (la page doit être en ligne : fusionner la branche dans `main`, vérifier que GitHub Pages est activé, et remplacer `[ADRESSE E-MAIL DE CONTACT]` dans `confidentialite.html`)
 
@@ -17,7 +17,7 @@ Tout ce qu'il faut copier-coller dans la Play Console, dans l'ordre où elle le 
 | Nom de l'appli | Lisys : lecture à voix haute |
 | Langue par défaut | Français (France) – fr-FR |
 | Appli ou jeu | Appli |
-| Gratuite ou payante | Gratuite (on peut passer de payante à gratuite, jamais l'inverse) |
+| Gratuite ou payante | **Lisys : gratuite.** La clé **Lisys Pro** (`com.qmtech.lisys.pro`, fichier `release/Lisys-Pro-cle-1.0.aab`) est une 2e appli **payante** (par exemple 2,99 €), à créer dans la même Play Console avec la même clé de signature. |
 
 ## 2. Fiche principale du Store
 
@@ -36,7 +36,7 @@ Lit à voix haute documents, pages web, photos et l’écran. Pour les malvoyant
 Lisys lit à voix haute tout ce que vous avez du mal à lire : vos documents, les pages web, le courrier papier et même ce qui est affiché dans vos autres applis. Pensé pour les personnes malvoyantes, les personnes dyslexiques et tous ceux qui préfèrent écouter.
 
 📄 VOS DOCUMENTS
-• PDF, Word (.docx), OpenOffice (.odt), livres EPUB, RTF, HTML, fichiers texte
+• PDF, Word (.docx), OpenOffice (.odt), livres EPUB, livres DAISY (avec texte), RTF, HTML, fichiers texte
 • Ouvrez-les depuis Lisys, ou « Partager » / « Ouvrir avec » depuis n'importe quelle appli
 • Lisys reprend là où vous vous étiez arrêté
 
@@ -59,6 +59,7 @@ Lisys lit à voix haute tout ce que vous avez du mal à lire : vos documents, le
 🔍 LA LOUPE
 • L'appareil photo grossit jusqu'à ×8, avec lampe et couleurs renforcées (jaune sur noir, blanc sur noir…)
 • Image figée pour lire tranquillement, et lecture à voix haute du texte visible
+• Codes-barres des produits : nom, allergènes, Nutri-Score (base libre Open Food Facts)
 
 🎤 COMMANDES VOCALES ET RACCOURCIS
 • « Lis », « pause », « suivant », « plus vite », « plus gros », « signet »…
@@ -76,6 +77,10 @@ Lisys lit à voix haute tout ce que vous avez du mal à lire : vos documents, le
 • Mise en route guidée à la voix : on répond en parlant (« oui », « non », « répète »)
 • Réglages en très gros caractères
 • Création d'un fichier audio (.m4a) à partir d'un document
+
+⭐ GRATUIT ET PRO
+• Gratuit : lecture des documents, pages web et texte copié, avec tous les réglages de confort
+• Essai de 14 jours de toutes les fonctions, puis « Lisys Pro » en un seul achat : bouton flottant, lecture au doigt, photos, loupe, codes-barres, fichiers audio
 
 🔒 RESPECT DE LA VIE PRIVÉE
 • Aucun compte, aucune publicité, aucune collecte de données
@@ -146,7 +151,7 @@ Lisys est une appli de lecture à voix haute pour les personnes malvoyantes ou a
 ## 4. Tests obligatoires avant la publication
 
 Pour un compte développeur personnel récent, Google exige un **test fermé avec au moins 12 testeurs inscrits pendant 14 jours d'affilée** avant d'autoriser la publication pour tout le monde.
-1. Tests > Tests fermés > créer un canal, envoyer `Lisys-1.7.aab`.
+1. Tests > Tests fermés > créer un canal, envoyer `Lisys-1.8.aab`.
 2. Ajouter les adresses Gmail des testeurs (famille, amis, club…).
 3. Leur envoyer le lien d'inscription : ils installent Lisys depuis le Play Store et la gardent 14 jours.
 4. Ensuite : Production > demander l'accès, répondre aux questions sur le test, publier.
@@ -154,3 +159,17 @@ Pour un compte développeur personnel récent, Google exige un **test fermé ave
 ## 5. Signature
 
 À la première publication, choisir **« Laisser Google gérer et protéger la clé de signature »** (Play App Signing). `lisys-release.jks` devient alors la **clé d'envoi** : toutes les mises à jour (`.aab`) doivent être signées avec elle. `./build.sh` puis `./build-aab.sh` le font automatiquement.
+
+## 6. Lisys Pro (2e appli, la clé)
+
+- Package `com.qmtech.lisys.pro`, fichier `release/Lisys-Pro-cle-1.0.aab`, **même clé de signature** que Lisys (sinon le déblocage ne marche pas).
+- Nom : `Lisys Pro (clé)` · Description courte : `Débloque toutes les fonctions de Lisys : bouton flottant, photos, loupe, codes-barres.`
+- Description : `Cette appli est la clé de Lisys Pro. Installez d'abord Lisys (gratuit), puis cette clé : Lisys se débloque tout seul, pour toujours. Elle n'a pas d'autre fonction. Gardez-la installée.`
+- Prix conseillé : 2,99 €. Sécurité des données : aucune donnée collectée. Public : 18 ans et plus.
+
+## 7. Fiches en anglais et en espagnol
+
+Dans « Fiche principale du Store » > « Gérer les traductions », ajouter l'anglais (en-US) et l'espagnol (es-ES).
+- EN, nom : `Lisys: read aloud` · courte : `Reads documents, web pages, photos and the screen aloud. For low vision.`
+- ES, nom : `Lisys: lectura en voz alta` · courte : `Lee en voz alta documentos, webs, fotos y la pantalla. Para baja visión.`
+- Pour la description complète, traduire la version française (Google propose une traduction automatique dans la Play Console, à relire).

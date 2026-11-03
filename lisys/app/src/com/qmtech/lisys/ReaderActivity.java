@@ -186,7 +186,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         top.setBackgroundColor(pal.bar);
         int p8 = Ui.dp(this, 8);
         top.setPadding(p8, p8, p8, p8);
-        TextView back = Ui.roundButton(this, "←", "Retour", pal.bar, pal.barText, 46);
+        TextView back = Ui.roundButton(this, "←", Tr.t("Retour"), pal.bar, pal.barText, 46);
         back.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { finish(); } });
         top.addView(back);
         Library.Entry e = Library.get(this, docId);
@@ -194,19 +194,19 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         titleView.setSingleLine(true);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         top.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        TextView smaller = Ui.roundButton(this, "A−", "Texte plus petit", pal.bar, pal.barText, 46);
+        TextView smaller = Ui.roundButton(this, "A−", Tr.t("Texte plus petit"), pal.bar, pal.barText, 46);
         smaller.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { zoom(-2); } });
         top.addView(smaller);
-        TextView bigger = Ui.roundButton(this, "A+", "Texte plus grand", pal.bar, pal.barText, 46);
+        TextView bigger = Ui.roundButton(this, "A+", Tr.t("Texte plus grand"), pal.bar, pal.barText, 46);
         bigger.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { zoom(2); } });
         top.addView(bigger);
-        TextView loupe = Ui.roundButton(this, "🔍", "Mode grand texte", pal.bar, pal.barText, 46);
+        TextView loupe = Ui.roundButton(this, "🔍", Tr.t("Mode grand texte"), pal.bar, pal.barText, 46);
         loupe.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { toggleBig(); } });
         top.addView(loupe);
-        TextView mic = Ui.roundButton(this, "🎤", "Commande vocale", pal.bar, pal.barText, 46);
+        TextView mic = Ui.roundButton(this, "🎤", Tr.t("Commande vocale"), pal.bar, pal.barText, 46);
         mic.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { listenCommand(); } });
         top.addView(mic);
-        TextView menu = Ui.roundButton(this, "⋮", "Plus d'options", pal.bar, pal.barText, 46);
+        TextView menu = Ui.roundButton(this, "⋮", Tr.t("Plus d'options"), pal.bar, pal.barText, 46);
         menu.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { showMenu(); } });
         top.addView(menu);
         root.addView(top);
@@ -260,10 +260,10 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         progressText.setGravity(Gravity.CENTER);
         bottom.addView(progressText, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         seek = new SeekBar(this);
-        seek.setContentDescription("Position dans le document");
+        seek.setContentDescription(Tr.t("Position dans le document"));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int v, boolean user) {
-                if (user) progressText.setText("Aller au paragraphe " + (v + 1) + " / " + paras.size());
+                if (user) progressText.setText(Tr.t("Aller au paragraphe ") + (v + 1) + " / " + paras.size());
             }
             @Override public void onStartTrackingTouch(SeekBar s) { seeking = true; }
             @Override public void onStopTrackingTouch(SeekBar s) {
@@ -279,12 +279,12 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER);
         float k = Prefs.bigControls(this) ? 1.35f : 1f; // option « boutons géants »
-        TextView prevPara = Ui.roundButton(this, "⏮", "Paragraphe précédent", pal.surface, pal.text, Math.round(50 * k));
-        TextView prev = Ui.roundButton(this, "◀", "Phrase précédente", pal.surface, pal.text, Math.round(56 * k));
-        playBtn = Ui.roundButton(this, "▶", "Lire", pal.button, pal.buttonText, Math.round(74 * k));
-        TextView next = Ui.roundButton(this, "▶▶", "Phrase suivante", pal.surface, pal.text, Math.round(56 * k));
+        TextView prevPara = Ui.roundButton(this, "⏮", Tr.t("Paragraphe précédent"), pal.surface, pal.text, Math.round(50 * k));
+        TextView prev = Ui.roundButton(this, "◀", Tr.t("Phrase précédente"), pal.surface, pal.text, Math.round(56 * k));
+        playBtn = Ui.roundButton(this, "▶", Tr.t("Lire"), pal.button, pal.buttonText, Math.round(74 * k));
+        TextView next = Ui.roundButton(this, "▶▶", Tr.t("Phrase suivante"), pal.surface, pal.text, Math.round(56 * k));
         next.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        TextView nextPara = Ui.roundButton(this, "⏭", "Paragraphe suivant", pal.surface, pal.text, Math.round(50 * k));
+        TextView nextPara = Ui.roundButton(this, "⏭", Tr.t("Paragraphe suivant"), pal.surface, pal.text, Math.round(50 * k));
         prevPara.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.previousParagraph(); } } });
         prev.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.previous(); } } });
         playBtn.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) {
@@ -293,7 +293,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
             boolean was = svc.isPlaying();
             Ui.tick(v);
             svc.toggle();
-            if (was) Speaker.say(ReaderActivity.this, "Pause");
+            if (was) Speaker.say(ReaderActivity.this, Tr.t("Pause"));
         } });
         next.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.next(); } } });
         nextPara.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.nextParagraph(); } } });
@@ -308,11 +308,11 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         chips.setOrientation(LinearLayout.HORIZONTAL);
         chips.setGravity(Gravity.CENTER);
         chips.setPadding(0, Ui.dp(this, 8), 0, 0);
-        speedChip = chip("Vitesse " + speedLabel(Prefs.rate(this)));
+        speedChip = chip(Tr.t("Vitesse ") + speedLabel(Prefs.rate(this)));
         speedChip.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { speedDialog(); } });
-        TextView voiceChip = chip("Voix");
+        TextView voiceChip = chip(Tr.t("Voix"));
         voiceChip.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { voiceDialog(); } });
-        sleepChip = chip("Minuterie");
+        sleepChip = chip(Tr.t("Minuterie"));
         sleepChip.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { sleepDialog(); } });
         chips.addView(speedChip);
         chips.addView(voiceChip);
@@ -458,8 +458,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         if (tv != null) try { off = tv.getOffsetForPosition(touchX, touchY); } catch (Exception ignored) {}
         final int offset = Math.max(0, off);
         Ui.dialog(this)
-                .setItems(new String[]{"Lire à partir d'ici", "Répéter la phrase lentement", "Épeler le mot touché",
-                                "Ajouter un signet ici", "Copier ce paragraphe", "Partager ce paragraphe"},
+                .setItems(new String[]{Tr.t("Lire à partir d'ici"), Tr.t("Répéter la phrase lentement"), Tr.t("Épeler le mot touché"),
+                                Tr.t("Ajouter un signet ici"), Tr.t("Copier ce paragraphe"), Tr.t("Partager ce paragraphe")},
                         new DialogInterface.OnClickListener() {
                             @Override public void onClick(DialogInterface d, int w) {
                                 String text = paras.get(pos);
@@ -470,7 +470,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                                 else if (w == 4) {
                                     android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                                     cm.setPrimaryClip(android.content.ClipData.newPlainText("Lisys", text));
-                                    Toast.makeText(ReaderActivity.this, "Copié", Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(ReaderActivity.this, Tr.t("Copié"), Toast.LENGTH_SHORT).show();
                                 } else shareText(text);
                             }
                         })
@@ -482,7 +482,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         Prefs.setTextSize(this, textSize);
         adapter.notifyDataSetChanged();
         updateBig();
-        Toast.makeText(this, "Taille du texte : " + Math.round(textSize), Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, Tr.t("Taille du texte : ") + Math.round(textSize), Toast.LENGTH_SHORT).show();
     }
 
     private void toggleBig() {
@@ -490,8 +490,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         Prefs.setBigMode(this, bigMode);
         applyBigMode();
         if (!bigMode) { userScrollAt = 0; jumpTo(curPara); }
-        Toast.makeText(this, bigMode ? "Mode grand texte : la phrase lue s'affiche en très grand"
-                : "Mode page", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, bigMode ? Tr.t("Mode grand texte : la phrase lue s'affiche en très grand")
+                : Tr.t("Mode page"), Toast.LENGTH_SHORT).show();
     }
 
     private void applyBigMode() {
@@ -537,10 +537,10 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     private void updateProgress() {
         if (seeking || paras.isEmpty()) return;
         int pct = paras.size() <= 1 ? 0 : Math.round(100f * curPara / (paras.size() - 1));
-        progressText.setText("Paragraphe " + (curPara + 1) + " / " + paras.size() + "  ·  " + pct + " %");
+        progressText.setText(Tr.t("Paragraphe ") + (curPara + 1) + " / " + paras.size() + "  ·  " + pct + " %");
         seek.setProgress(Math.max(0, curPara));
         long sleep = svc != null ? svc.sleepRemainingMs() : 0;
-        sleepChip.setText(sleep > 0 ? "Arrêt dans " + Math.max(1, (sleep + 59999) / 60000) + " min" : "Minuterie");
+        sleepChip.setText(sleep > 0 ? Tr.t("Arrêt dans ") + Math.max(1, (sleep + 59999) / 60000) + Tr.t(" min") : Tr.t("Minuterie"));
     }
 
     // ------------------------------------------------------------------ rappels du service
@@ -572,7 +572,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     @Override
     public void onState(boolean playing) {
         playBtn.setText(playing ? "❚❚" : "▶");
-        playBtn.setContentDescription(playing ? "Pause" : "Lire");
+        playBtn.setContentDescription(playing ? Tr.t("Pause") : Tr.t("Lire"));
         if (!playing) {
             wordStart = wordEnd = -1;
             refreshPara(curPara);
@@ -584,11 +584,11 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     @Override
     public void onTtsReady(boolean ok, String error) {
         if (!ok && error != null) {
-            Ui.dialog(this).setTitle("Synthèse vocale").setMessage(error)
-                    .setPositiveButton("Installer", new DialogInterface.OnClickListener() {
+            Ui.dialog(this).setTitle(Tr.t("Synthèse vocale")).setMessage(error)
+                    .setPositiveButton(Tr.t("Installer"), new DialogInterface.OnClickListener() {
                         @Override public void onClick(DialogInterface d, int w) { MainActivity.installVoices(ReaderActivity.this); }
                     })
-                    .setNegativeButton("Fermer", null).show();
+                    .setNegativeButton(Tr.t("Fermer"), null).show();
         }
     }
 
@@ -611,23 +611,23 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
 
     @Override
     public void onFinished() {
-        Toast.makeText(this, "Fin du document", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, Tr.t("Fin du document"), Toast.LENGTH_SHORT).show();
     }
 
     // ------------------------------------------------------------------ menus
 
     private void showMenu() {
         final List<String> items = new ArrayList<String>();
-        items.add("Rechercher dans le texte");
-        items.add("Créer un fichier audio (.m4a)");
-        items.add("Thème : " + Ui.themeName(Prefs.theme(this)));
-        items.add((Prefs.followWord(this) ? "✓ " : "") + "Surligner le mot lu");
-        items.add((bigMode ? "✓ " : "") + "Mode grand texte (loupe)");
-        items.add("Revenir au début");
-        items.add("Partager tout le texte");
-        items.add("Signets");
-        items.add("Ajouter un signet ici");
-        items.add("Commande vocale");
+        items.add(Tr.t("Rechercher dans le texte"));
+        items.add(Tr.t("Créer un fichier audio (.m4a)"));
+        items.add(Tr.t("Thème : ") + Ui.themeName(Prefs.theme(this)));
+        items.add((Prefs.followWord(this) ? "✓ " : "") + Tr.t("Surligner le mot lu"));
+        items.add((bigMode ? "✓ " : "") + Tr.t("Mode grand texte (loupe)"));
+        items.add(Tr.t("Revenir au début"));
+        items.add(Tr.t("Partager tout le texte"));
+        items.add(Tr.t("Signets"));
+        items.add(Tr.t("Ajouter un signet ici"));
+        items.add(Tr.t("Commande vocale"));
         Ui.dialog(this)
                 .setItems(items.toArray(new String[0]), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
@@ -672,7 +672,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     private void shareText(String text) {
         if (text.length() > 90000) text = text.substring(0, 90000);
         Intent i = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text);
-        startActivity(Intent.createChooser(i, "Partager le texte"));
+        startActivity(Intent.createChooser(i, Tr.t("Partager le texte")));
     }
 
     private void speedDialog() {
@@ -693,8 +693,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         pitch.setProgress(Math.round((Prefs.pitch(this) - 0.5f) * 10));
         SeekBar.OnSeekBarChangeListener l = new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int v, boolean u) {
-                rateLabel.setText("Vitesse : " + speedLabel(0.5f + rate.getProgress() / 10f));
-                pitchLabel.setText("Tonalité : " + String.format(Locale.FRANCE, "%.1f", 0.5f + pitch.getProgress() / 10f));
+                rateLabel.setText(Tr.t("Vitesse : ") + speedLabel(0.5f + rate.getProgress() / 10f));
+                pitchLabel.setText(Tr.t("Tonalité : ") + String.format(Locale.FRANCE, "%.1f", 0.5f + pitch.getProgress() / 10f));
             }
             @Override public void onStartTrackingTouch(SeekBar s) {}
             @Override public void onStopTrackingTouch(SeekBar s) {
@@ -702,7 +702,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                 if (s == rate) {
                     float r = 0.5f + rate.getProgress() / 10f;
                     svc.setRate(r);
-                    speedChip.setText("Vitesse " + speedLabel(r));
+                    speedChip.setText(Tr.t("Vitesse ") + speedLabel(r));
                 } else {
                     svc.setPitch(0.5f + pitch.getProgress() / 10f);
                 }
@@ -715,13 +715,13 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         box.addView(rate);
         box.addView(pitchLabel);
         box.addView(pitch);
-        Ui.dialog(this).setTitle("Vitesse et tonalité").setView(box)
-                .setNeutralButton("Par défaut", new DialogInterface.OnClickListener() {
+        Ui.dialog(this).setTitle(Tr.t("Vitesse et tonalité")).setView(box)
+                .setNeutralButton(Tr.t("Par défaut"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         if (svc == null) return;
                         svc.setRate(1f);
                         svc.setPitch(1f);
-                        speedChip.setText("Vitesse " + speedLabel(1f));
+                        speedChip.setText(Tr.t("Vitesse ") + speedLabel(1f));
                     }
                 })
                 .setPositiveButton("OK", null).show();
@@ -729,7 +729,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
 
     private void voiceDialog() {
         if (svc == null || !svc.isTtsReady()) {
-            Toast.makeText(this, "La synthèse vocale démarre, réessaie dans un instant.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, Tr.t("La synthèse vocale démarre, réessaie dans un instant."), Toast.LENGTH_SHORT).show();
             return;
         }
         final List<Voice> voices = new ArrayList<Voice>();
@@ -740,24 +740,24 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
             voices.add(v);
         }
         final List<String> names = new ArrayList<String>();
-        names.add("Voix par défaut (français)");
+        names.add(Tr.t("Voix par défaut (français)"));
         String current = Prefs.voice(this);
         int checked = 0;
         int frCount = 0;
         for (int i = 0; i < voices.size(); i++) {
             Voice v = voices.get(i);
-            String lang = v.getLocale().getDisplayName(Locale.FRENCH);
+            String lang = v.getLocale().getDisplayName(Locale.getDefault());
             lang = lang.length() > 0 ? Character.toUpperCase(lang.charAt(0)) + lang.substring(1) : v.getLocale().toString();
             StringBuilder sb = new StringBuilder(lang);
             if ("fr".equals(v.getLocale().getLanguage())) sb.append(" · voix ").append(++frCount);
             else sb.append(" · ").append(shortName(v.getName()));
-            if (v.getQuality() >= Voice.QUALITY_HIGH) sb.append(" · haute qualité");
-            sb.append(v.isNetworkConnectionRequired() ? " · en ligne" : " · hors ligne");
+            if (v.getQuality() >= Voice.QUALITY_HIGH) sb.append(Tr.t(" · haute qualité"));
+            sb.append(v.isNetworkConnectionRequired() ? Tr.t(" · en ligne") : Tr.t(" · hors ligne"));
             names.add(sb.toString());
             if (v.getName().equals(current)) checked = i + 1;
         }
         Ui.dialog(this)
-                .setTitle("Choisir la voix")
+                .setTitle(Tr.t("Choisir la voix"))
                 .setSingleChoiceItems(names.toArray(new String[0]), checked, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         if (svc == null) return;
@@ -765,13 +765,13 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                         svc.setVoice(v);
                         if (!svc.isPlaying()) {
                             boolean fr = v == null || "fr".equals(v.getLocale().getLanguage());
-                            svc.tts().speak(fr ? "Bonjour, voici la voix choisie." : "Hello, this is the selected voice.",
+                            svc.tts().speak(fr ? Tr.t("Bonjour, voici la voix choisie.") : "Hello, this is the selected voice.",
                                     TextToSpeech.QUEUE_FLUSH, null, "apercu");
                         }
                     }
                 })
                 .setPositiveButton("OK", null)
-                .setNeutralButton("Plus de voix", new DialogInterface.OnClickListener() {
+                .setNeutralButton(Tr.t("Plus de voix"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) { MainActivity.installVoices(ReaderActivity.this); }
                 })
                 .show();
@@ -784,9 +784,9 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
 
     private void sleepDialog() {
         final int[] minutes = {0, 10, 15, 30, 45, 60, 90};
-        String[] labels = {"Désactivée", "10 minutes", "15 minutes", "30 minutes", "45 minutes", "1 heure", "1 h 30"};
+        String[] labels = {Tr.t("Désactivée"), Tr.t("10 minutes"), Tr.t("15 minutes"), Tr.t("30 minutes"), Tr.t("45 minutes"), Tr.t("1 heure"), Tr.t("1 h 30")};
         Ui.dialog(this)
-                .setTitle("Arrêter la lecture dans…")
+                .setTitle(Tr.t("Arrêter la lecture dans…"))
                 .setItems(labels, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         if (svc != null) svc.setSleepTimer(minutes[w]);
@@ -799,17 +799,17 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     private void searchDialog() {
         final EditText field = new EditText(this);
         field.setSingleLine(true);
-        field.setHint("Mot ou expression");
+        field.setHint(Tr.t("Mot ou expression"));
         field.setText(lastSearch);
         LinearLayout box = new LinearLayout(this);
         int p = Ui.dp(this, 20);
         box.setPadding(p, Ui.dp(this, 8), p, 0);
         box.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        Ui.dialog(this).setTitle("Rechercher").setView(box)
-                .setPositiveButton("Suivant", new DialogInterface.OnClickListener() {
+        Ui.dialog(this).setTitle(Tr.t("Rechercher")).setView(box)
+                .setPositiveButton(Tr.t("Suivant"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) { search(field.getText().toString()); }
                 })
-                .setNegativeButton("Annuler", null).show();
+                .setNegativeButton(Tr.t("Annuler"), null).show();
     }
 
     private void search(String q) {
@@ -832,16 +832,17 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                 }
                 userScrollAt = 0;
                 jumpTo(i);
-                Toast.makeText(this, "Trouvé au paragraphe " + (i + 1) + ". Appuie sur Lire.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, Tr.t("Trouvé au paragraphe ") + (i + 1) + Tr.t(". Appuie sur Lire."), Toast.LENGTH_SHORT).show();
                 return;
             }
         }
-        Toast.makeText(this, "« " + q + " » introuvable", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "« " + q + Tr.t(" » introuvable"), Toast.LENGTH_SHORT).show();
     }
 
     private void exportAudio() {
+        if (!Features.require(this, Tr.t("La création de fichiers audio"))) return;
         if (ExportService.isRunning()) {
-            Toast.makeText(this, "Un export est déjà en cours (voir les notifications).", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, Tr.t("Un export est déjà en cours (voir les notifications)."), Toast.LENGTH_LONG).show();
             return;
         }
         if (Build.VERSION.SDK_INT < 29 && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -854,17 +855,17 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         // Environ 900 caractères par minute à vitesse normale.
         int minutes = Math.max(1, Math.round(chars / (900f * Prefs.rate(this))));
         Ui.dialog(this)
-                .setTitle("Créer un fichier audio")
-                .setMessage("Le document entier va être enregistré en .m4a avec la voix et la vitesse actuelles "
-                        + "(environ " + minutes + " min d'écoute).\n\nLe fichier sera dans Téléchargements/Lisys. "
-                        + "La création continue en arrière-plan, tu peux suivre la progression dans les notifications.")
-                .setPositiveButton("Créer", new DialogInterface.OnClickListener() {
+                .setTitle(Tr.t("Créer un fichier audio"))
+                .setMessage(Tr.t("Le document entier va être enregistré en .m4a avec la voix et la vitesse actuelles ")
+                        + Tr.t("(environ ") + minutes + Tr.t(" min d'écoute).\n\nLe fichier sera dans Téléchargements/Lisys. ")
+                        + Tr.t("La création continue en arrière-plan, tu peux suivre la progression dans les notifications."))
+                .setPositiveButton(Tr.t("Créer"), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         Intent i = new Intent(ReaderActivity.this, ExportService.class).putExtra(ExportService.EXTRA_ID, docId);
                         startForegroundService(i);
                     }
                 })
-                .setNegativeButton("Annuler", null).show();
+                .setNegativeButton(Tr.t("Annuler"), null).show();
     }
 
     @Override
@@ -908,7 +909,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         StringBuilder sb = new StringBuilder(word).append(". ");
         for (int i = 0; i < word.length(); i++) {
             char c = word.charAt(i);
-            if (Character.isUpperCase(c)) sb.append("majuscule ");
+            if (Character.isUpperCase(c)) sb.append(Tr.t("majuscule "));
             sb.append(c == '-' ? "tiret" : c == '\'' ? "apostrophe" : String.valueOf(Character.toLowerCase(c))).append(", ");
         }
         sb.append(". ").append(word);
@@ -932,8 +933,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
             o.put("p", p); o.put("s", s); o.put("t", t.length() > 70 ? t.substring(0, 67) + "…" : t);
             a.put(o);
             Prefs.setBookmarks(this, docId, a.toString());
-            Toast.makeText(this, "Signet ajouté", Toast.LENGTH_SHORT).show();
-            Speaker.say(this, "Signet ajouté");
+            Toast.makeText(this, Tr.t("Signet ajouté"), Toast.LENGTH_SHORT).show();
+            Speaker.say(this, Tr.t("Signet ajouté"));
         } catch (Exception ignored) {
         }
     }
@@ -942,8 +943,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         try {
             final org.json.JSONArray a = new org.json.JSONArray(Prefs.bookmarks(this, docId));
             if (a.length() == 0) {
-                Toast.makeText(this, "Aucun signet. Appui long sur un paragraphe pour en ajouter.", Toast.LENGTH_LONG).show();
-                Speaker.say(this, "Aucun signet.");
+                Toast.makeText(this, Tr.t("Aucun signet. Appui long sur un paragraphe pour en ajouter."), Toast.LENGTH_LONG).show();
+                Speaker.say(this, Tr.t("Aucun signet."));
                 return;
             }
             String[] names = new String[a.length()];
@@ -951,7 +952,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                 org.json.JSONObject o = a.getJSONObject(i);
                 names[i] = "Paragraphe " + (o.optInt("p") + 1) + " : " + o.optString("t");
             }
-            Ui.dialog(this).setTitle("Signets")
+            Ui.dialog(this).setTitle(Tr.t("Signets"))
                     .setItems(names, new DialogInterface.OnClickListener() {
                         @Override public void onClick(DialogInterface d, int w) {
                             org.json.JSONObject o = a.optJSONObject(w);
@@ -961,10 +962,10 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                             jumpTo(o.optInt("p"));
                         }
                     })
-                    .setNeutralButton("Tout effacer", new DialogInterface.OnClickListener() {
+                    .setNeutralButton(Tr.t("Tout effacer"), new DialogInterface.OnClickListener() {
                         @Override public void onClick(DialogInterface d, int w) { Prefs.setBookmarks(ReaderActivity.this, docId, "[]"); }
                     })
-                    .setNegativeButton("Fermer", null).show();
+                    .setNegativeButton(Tr.t("Fermer"), null).show();
         } catch (Exception ignored) {
         }
     }
@@ -973,7 +974,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
 
     private void listenCommand() {
         if (svc != null && svc.isPlaying()) svc.pause(); // sinon le micro entend la lecture
-        VoiceCommands.listen(this, REQ_VOICE, "Dis une commande : lis, pause, suivant, plus vite, plus gros, signet…");
+        VoiceCommands.listen(this, REQ_VOICE, Tr.t("Dis une commande : lis, pause, suivant, plus vite, plus gros, signet…"));
     }
 
     private void command(String raw) {
@@ -999,14 +1000,14 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         else if (VoiceCommands.has(c, "loupe")) startActivity(new Intent(this, MagnifierActivity.class));
         else if (VoiceCommands.has(c, "accueil", "retour", "quitte", "ferme")) finish();
         else if (VoiceCommands.has(c, "lis", "lire", "lecture", "reprends", "reprendre", "continue", "joue", "demarre")) svc.play();
-        else Speaker.say(this, "Je n'ai pas compris : " + raw + ". Dis par exemple : lis, pause, suivant, plus vite, ou signet.");
+        else Speaker.say(this, Tr.t("Je n'ai pas compris : ") + raw + Tr.t(". Dis par exemple : lis, pause, suivant, plus vite, ou signet."));
     }
 
     private void changeRate(float d) {
         float r = Math.max(0.5f, Math.min(3f, Prefs.rate(this) + d));
         svc.setRate(r);
-        speedChip.setText("Vitesse " + speedLabel(r));
-        Speaker.say(this, "Vitesse " + String.format(Locale.FRANCE, "%.1f", r));
+        speedChip.setText(Tr.t("Vitesse ") + speedLabel(r));
+        Speaker.say(this, Tr.t("Vitesse ") + String.format(Locale.FRANCE, "%.1f", r));
     }
 
     @Override
