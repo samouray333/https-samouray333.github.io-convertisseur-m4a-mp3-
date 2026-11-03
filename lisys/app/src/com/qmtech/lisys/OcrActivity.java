@@ -43,6 +43,8 @@ public class OcrActivity extends Activity {
     public static final String MODE_GALLERY = "gallery";
     public static final String MODE_IMAGE = "image";
     public static final String MODE_PDF = "pdf";
+    /** Chemin d'une image de l'appli à lire (loupe). */
+    public static final String EXTRA_PATH = "path";
 
     private static final int REQ_CAMERA = 1;
     private static final int REQ_GALLERY = 2;
@@ -124,6 +126,7 @@ public class OcrActivity extends Activity {
             Uri data = getIntent().getData();
             if (MODE_CAMERA.equals(mode)) takePhoto();
             else if (MODE_GALLERY.equals(mode)) pickImage();
+            else if (getIntent().getStringExtra(EXTRA_PATH) != null) processImage(Uri.fromFile(new File(getIntent().getStringExtra(EXTRA_PATH))));
             else if (MODE_PDF.equals(mode) && data != null) processPdf(data);
             else if (data != null) processImage(data);
         }
@@ -141,6 +144,11 @@ public class OcrActivity extends Activity {
 
     private void takePhoto() {
         if (working) return;
+        // Lisys déclare l'appareil photo (loupe) : Android exige alors l'autorisation, même pour l'appli Photo.
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, REQ_CAMERA);
+            return;
+        }
         PhotoProvider.photoFile(this).delete();
         Uri out = PhotoProvider.photoUri();
         Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
@@ -164,6 +172,12 @@ public class OcrActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, "Aucune galerie trouvée.", Toast.LENGTH_LONG).show();
         }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] p, int[] res) {
+        if (req == REQ_CAMERA && res.length > 0 && res[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) takePhoto();
+        else if (req == REQ_CAMERA) setWorking(false, "Lisys a besoin de l'appareil photo pour lire le papier. Tu peux aussi choisir une image.");
     }
 
     @Override

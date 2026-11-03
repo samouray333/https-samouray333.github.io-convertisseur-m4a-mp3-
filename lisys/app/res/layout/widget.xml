@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:padding="4dp">
+    <Button android:id="@+id/w_photo" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+        android:layout_margin="3dp" android:background="@drawable/widget_btn" android:text="📷 Photo"
+        android:textColor="#FFFFFFFF" android:textSize="18sp" android:textStyle="bold" android:contentDescription="Lisys : lire une photo" />
+    <Button android:id="@+id/w_clip" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+        android:layout_margin="3dp" android:background="@drawable/widget_btn" android:text="📋 Copié"
+        android:textColor="#FFFFFFFF" android:textSize="18sp" android:textStyle="bold" android:contentDescription="Lisys : lire le texte copié" />
+    <Button android:id="@+id/w_loupe" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+        android:layout_margin="3dp" android:background="@drawable/widget_btn" android:text="🔍 Loupe"
+        android:textColor="#FFFFFFFF" android:textSize="18sp" android:textStyle="bold" android:contentDescription="Lisys : loupe" />
+</LinearLayout>

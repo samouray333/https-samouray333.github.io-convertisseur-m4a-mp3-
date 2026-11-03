@@ -75,6 +75,21 @@ public final class Prefs {
     public static boolean a11yConsent(Context c) { return sp(c).getBoolean("a11yConsent", false); }
     public static void setA11yConsent(Context c, boolean v) { sp(c).edit().putBoolean("a11yConsent", v).apply(); }
 
+    /** Annonces vocales et vibrations de l'interface (« Pause », « Réglage modifié »…). */
+    public static boolean voiceFeedback(Context c) { return sp(c).getBoolean("voiceFeedback", true); }
+    public static void setVoiceFeedback(Context c, boolean v) { sp(c).edit().putBoolean("voiceFeedback", v).apply(); }
+    public static boolean vibrate(Context c) { return sp(c).getBoolean("vibrate", true); }
+    public static void setVibrate(Context c, boolean v) { sp(c).edit().putBoolean("vibrate", v).apply(); }
+    /** Boutons de lecture géants. */
+    public static boolean bigControls(Context c) { return sp(c).getBoolean("bigControls", false); }
+    public static void setBigControls(Context c, boolean v) { sp(c).edit().putBoolean("bigControls", v).apply(); }
+    /** Assistant de démarrage terminé. */
+    public static boolean setupDone(Context c) { return sp(c).getBoolean("setupDone", false); }
+    public static void setSetupDone(Context c, boolean v) { sp(c).edit().putBoolean("setupDone", v).apply(); }
+    /** Signets d'un document : tableau JSON de {p, s, t}. */
+    public static String bookmarks(Context c, String id) { return sp(c).getString("bm_" + id, "[]"); }
+    public static void setBookmarks(Context c, String id, String json) { sp(c).edit().putString("bm_" + id, json).apply(); }
+
     public static String lastUrl(Context c) { return sp(c).getString("lastUrl", ""); }
     public static void setLastUrl(Context c, String v) { sp(c).edit().putString("lastUrl", v).apply(); }
 }

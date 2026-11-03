@@ -1,6 +1,10 @@
 package com.qmtech.lisys;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -171,7 +175,79 @@ final class Ui {
         b.setMinHeight(dp(c, 64));
         b.setStateListAnimator(null);
         background(b, bg, dp(c, 16), 0x33FFFFFF);
+        b.setContentDescription(spoken(text));
         return b;
+    }
+
+    /** Texte pour TalkBack : sans émojis ni symboles décoratifs. */
+    static String spoken(String text) {
+        return text.replaceAll("[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{2190}-\\x{21FF}\\x{2B00}-\\x{2BFF}\\x{FE0F}\\x{200D}]", "")
+                .replaceAll("\\s+", " ").trim();
+    }
+
+    /** Animations coupées dans les réglages du téléphone (Accessibilité > Supprimer les animations). */
+    static boolean animationsOff(Context c) {
+        try {
+            return android.provider.Settings.Global.getFloat(c.getContentResolver(),
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Petite vibration de confirmation (si l'option est activée). */
+    static void tick(View v) {
+        if (Prefs.vibrate(v.getContext())) v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+    }
+
+    /** Fenêtres en gros texte, claires ou sombres selon le thème de Lisys. */
+    static AlertDialog.Builder dialog(Context c) {
+        return new BigDialog(c, palette(c).dark ? android.R.style.Theme_DeviceDefault_Dialog_Alert
+                : android.R.style.Theme_DeviceDefault_Light_Dialog_Alert);
+    }
+
+    static final class BigDialog extends AlertDialog.Builder {
+        private final Context ctx;
+
+        BigDialog(Context c, int theme) {
+            super(c, theme);
+            ctx = getContext();
+        }
+
+        private ArrayAdapter<CharSequence> adapter(CharSequence[] items, int layout) {
+            return new ArrayAdapter<CharSequence>(ctx, layout, items) {
+                @Override public View getView(int pos, View convert, ViewGroup parent) {
+                    View v = super.getView(pos, convert, parent);
+                    if (v instanceof TextView) {
+                        TextView t = (TextView) v;
+                        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+                        t.setMinHeight(dp(ctx, 60));
+                        t.setPadding(dp(ctx, 22), dp(ctx, 10), dp(ctx, 22), dp(ctx, 10));
+                        t.setContentDescription(spoken(t.getText().toString()));
+                    }
+                    return v;
+                }
+            };
+        }
+
+        @Override public AlertDialog.Builder setItems(CharSequence[] items, DialogInterface.OnClickListener l) {
+            return setAdapter(adapter(items, android.R.layout.simple_list_item_1), l);
+        }
+
+        @Override public AlertDialog.Builder setSingleChoiceItems(CharSequence[] items, int checked, DialogInterface.OnClickListener l) {
+            return setSingleChoiceItems(adapter(items, android.R.layout.simple_list_item_single_choice), checked, l);
+        }
+
+        @Override public AlertDialog show() {
+            AlertDialog d = super.show();
+            TextView m = d.findViewById(android.R.id.message);
+            if (m != null) m.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19);
+            for (int which : new int[]{AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL}) {
+                Button b = d.getButton(which);
+                if (b != null) { b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18); b.setMinHeight(dp(ctx, 56)); }
+            }
+            return d;
+        }
     }
 
     /** Bouton rond des commandes de lecture. */

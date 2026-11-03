@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.5 (versionCode 6)
+- Version : 1.6 (versionCode 7)
 - Package : `com.qmtech.lisys` (définitif pour le Play Store ; les versions 1.0 à 1.4 s'appelaient `com.echomatras.lisys`)
 - Android 8.0 (API 26) minimum, cible Android 16 (API 36), comme l'exige le Play Store
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -15,7 +15,15 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - Navigateur intégré pour les sites qui demandent JavaScript ou une connexion. Le bouton « Lire cette page » lit toute la page, ou seulement la sélection.
 - Texte copié dans le presse-papiers, ou saisi à la main
 
-**Lire le papier (photo) et les documents scannés (nouveau en 1.4)**
+**Nouveau en 1.6**
+- **Accessibilité** : écran de réglages en très gros caractères (interrupteurs, appui pour changer, appui long pour la liste), assistant de démarrage guidé à la voix (affichage, notifications, activation du bouton flottant, paramètre restreint), fenêtres en gros texte aux couleurs du thème, libellés TalkBack sans émojis, annonces vocales et vibrations (réglables), boutons de lecture géants (option), animations coupées si le téléphone le demande.
+- **Loupe** (`MagnifierActivity`) : appareil photo grossi jusqu'au maximum du téléphone, pincement, 5 filtres de couleurs, lampe, image figée déplaçable, bouton « Lire » (reconnaissance de texte).
+- **Épeler / répéter lentement** : appui long sur un paragraphe.
+- **Signets** : appui long sur un paragraphe, ou menu ⋮ > Signets.
+- **Commandes vocales** (bouton 🎤) : lis, pause, suivant, précédent, répète, plus vite, moins vite, plus gros, plus petit, début, signet, cherche…, loupe, accueil. À l'accueil : photo, loupe, document, page web, texte copié, reprendre.
+- **Widget** (photo, texte copié, loupe) et **raccourci du menu du haut** « Lisys : lire l'écran ».
+
+**Lire le papier (photo) et les documents scannés**
 - Bouton « Lire une photo » : on photographie un courrier, une notice, une étiquette, et Lisys lit le texte. Un appui long sur le bouton permet de choisir une image dans la galerie. On peut aussi partager une image vers Lisys.
 - Les PDF scannés (des images) sont proposés à la reconnaissance de texte, page par page.
 - La reconnaissance se fait sur le téléphone, sans internet : Tesseract compilé en WebAssembly (`app/assets/ocr`, licence Apache 2.0, paquet npm tesseract-wasm 0.11), avec le modèle français `fra.traineddata` (tessdata_best_int). La photo est redressée automatiquement.

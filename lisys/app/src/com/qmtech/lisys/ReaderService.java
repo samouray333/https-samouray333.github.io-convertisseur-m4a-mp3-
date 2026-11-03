@@ -82,6 +82,8 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
     private int queued;              // phrases en attente dans le moteur
     private int generation;          // change à chaque arrêt / saut, pour ignorer les anciens rappels
     private boolean playing;
+    /** Lecture en cours (pour ne pas couvrir la voix par les annonces de l'interface). */
+    static volatile boolean playingNow;
     private boolean pausedByFocus;
     private long lastSave;
     private long sleepAt;            // minuterie de sommeil (0 = aucune)
@@ -226,6 +228,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
     public void onDestroy() {
         savePosition(true);
         playing = false;
+        playingNow = false;
         main.removeCallbacks(sleepTask);
         abandonFocus();
         if (tts != null) {
@@ -320,6 +323,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         // Document terminé : on repart du début.
         if (para >= paras.size()) { para = 0; sent = 0; }
         playing = true;
+        playingNow = true;
         pausedByFocus = false;
         if (!noisyRegistered) {
             registerReceiver(noisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
@@ -334,6 +338,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         pendingPlay = false;
         if (!playing) return;
         playing = false;
+        playingNow = false;
         generation++;
         if (tts != null) tts.stop();
         if (noisyRegistered) {
@@ -510,6 +515,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         if (last) {
             // Fin du document.
             playing = false;
+        playingNow = false;
             para = paras.size() - 1;
             sent = Math.max(0, sentences(para).size() - 1);
             abandonFocus();

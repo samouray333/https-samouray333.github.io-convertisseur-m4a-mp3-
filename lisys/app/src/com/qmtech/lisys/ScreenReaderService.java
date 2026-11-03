@@ -109,9 +109,24 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
 
     // ------------------------------------------------------------------ cycle de vie
 
+    /** Service en marche (pour le raccourci du menu du haut). */
+    static volatile ScreenReaderService instance;
+
+    /** Ferme le menu du haut d'Android, puis lit l'écran qui était dessous. */
+    void readScreenFromShade() {
+        main.post(new Runnable() {
+            @Override public void run() {
+                performGlobalAction(android.os.Build.VERSION.SDK_INT >= 31
+                        ? 15 /* GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE */ : GLOBAL_ACTION_BACK);
+                main.postDelayed(new Runnable() { @Override public void run() { readScreen(); } }, 700);
+            }
+        });
+    }
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        instance = this;
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         bound = bindService(new Intent(this, ReaderService.class), conn, Context.BIND_AUTO_CREATE);
         getSharedPreferences("reglages", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(prefsListener);
@@ -141,6 +156,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
 
     @Override
     public void onDestroy() {
+        instance = null;
         getSharedPreferences("reglages", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefsListener);
         stopFingerMode(false);
         hideCaption();

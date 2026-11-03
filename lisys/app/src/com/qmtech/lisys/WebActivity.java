@@ -226,7 +226,7 @@ public class WebActivity extends Activity {
                 readBtn.setText("🔊   Lire cette page");
                 if (isFinishing()) return;
                 if (err != null) {
-                    new AlertDialog.Builder(WebActivity.this).setMessage(err).setPositiveButton("OK", null).show();
+                    Ui.dialog(WebActivity.this).setMessage(err).setPositiveButton("OK", null).show();
                     return;
                 }
                 Intent i = new Intent(WebActivity.this, ReaderActivity.class);

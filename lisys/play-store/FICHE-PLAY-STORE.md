@@ -4,7 +4,7 @@ Tout ce qu'il faut copier-coller dans la Play Console, dans l'ordre où elle le 
 
 - Package : `com.qmtech.lisys` (ne pourra plus changer)
 - Éditeur : QMTech
-- Fichier à envoyer : `release/Lisys-1.5.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
+- Fichier à envoyer : `release/Lisys-1.6.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
 - Politique de confidentialité : `https://samouray333.github.io/https-samouray333.github.io-convertisseur-m4a-mp3-/lisys/confidentialite.html`
   (la page doit être en ligne : fusionner la branche dans `main`, vérifier que GitHub Pages est activé, et remplacer `[ADRESSE E-MAIL DE CONTACT]` dans `confidentialite.html`)
 
@@ -56,13 +56,24 @@ Lisys lit à voix haute tout ce que vous avez du mal à lire : vos documents, le
 • Bulle réglable : 5 tailles, 8 couleurs bien contrastées
 • Options : bandeau en très gros texte, lecture avec les boutons de volume, annonce des messages reçus
 
+🔍 LA LOUPE
+• L'appareil photo grossit jusqu'à ×8, avec lampe et couleurs renforcées (jaune sur noir, blanc sur noir…)
+• Image figée pour lire tranquillement, et lecture à voix haute du texte visible
+
+🎤 COMMANDES VOCALES ET RACCOURCIS
+• « Lis », « pause », « suivant », « plus vite », « plus gros », « signet »…
+• Widget avec gros boutons et raccourci dans le menu du haut
+
 👁 CONFORT DE LECTURE
 • Phrase et mot lus surlignés
 • Mode loupe : la phrase en cours en très gros caractères
 • Thèmes clair, sombre, sépia et contraste élevé jaune sur noir
 • Texte de 14 à 60, vitesse de 0,5× à 3×, choix de la voix
 • Lecture écran éteint, commandes sur l'écran de verrouillage et le casque
+• Épeler un mot ou répéter une phrase lentement
+• Signets dans les longs documents
 • Minuterie de sommeil
+• Assistant de démarrage guidé à la voix, réglages en très gros caractères
 • Création d'un fichier audio (.m4a) à partir d'un document
 
 🔒 RESPECT DE LA VIE PRIVÉE
@@ -134,7 +145,7 @@ Lisys est une appli de lecture à voix haute pour les personnes malvoyantes ou a
 ## 4. Tests obligatoires avant la publication
 
 Pour un compte développeur personnel récent, Google exige un **test fermé avec au moins 12 testeurs inscrits pendant 14 jours d'affilée** avant d'autoriser la publication pour tout le monde.
-1. Tests > Tests fermés > créer un canal, envoyer `Lisys-1.5.aab`.
+1. Tests > Tests fermés > créer un canal, envoyer `Lisys-1.6.aab`.
 2. Ajouter les adresses Gmail des testeurs (famille, amis, club…).
 3. Leur envoyer le lien d'inscription : ils installent Lisys depuis le Play Store et la gardent 14 jours.
 4. Ensuite : Production > demander l'accès, répondre aux questions sur le test, publier.

@@ -43,6 +43,9 @@ public class MainActivity extends Activity {
 
     private static final int REQ_OPEN = 1;
     private static final int REQ_NOTIF = 2;
+    private static final int REQ_VOICE = 3;
+    static final String ACTION_READ_CLIPBOARD = "com.qmtech.lisys.READ_CLIPBOARD";
+    private boolean clipboardPending;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private Ui.Palette pal;
@@ -60,6 +63,7 @@ public class MainActivity extends Activity {
         build();
         askNotificationPermission();
         if (state == null) handleIntent(getIntent());
+        if (state == null && !Prefs.setupDone(this)) startActivity(new Intent(this, SetupActivity.class));
     }
 
     @Override
@@ -100,8 +104,15 @@ public class MainActivity extends Activity {
         head.addView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView gear = Ui.roundButton(this, "⚙", "Réglages", pal.surface, pal.text, 52);
         gear.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { showSettings(); }
+            @Override public void onClick(View v) { openSettings(); }
         });
+        TextView mic = Ui.roundButton(this, "🎤", "Commande vocale", pal.surface, pal.text, 52);
+        mic.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                VoiceCommands.listen(MainActivity.this, REQ_VOICE, "Dis : photo, loupe, document, page web, texte copié ou reprendre");
+            }
+        });
+        head.addView(mic);
         head.addView(gear);
         root.addView(head);
 
@@ -122,6 +133,13 @@ public class MainActivity extends Activity {
             @Override public boolean onLongClick(View v) { openOcr(OcrActivity.MODE_GALLERY, null); return true; }
         });
         root.addView(photo, fullWidth());
+        root.addView(space(10));
+
+        Button loupe = Ui.bigButton(this, "🔍   Loupe (agrandir avec l'appareil photo)", pal.button, pal.buttonText);
+        loupe.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { startActivity(new Intent(MainActivity.this, MagnifierActivity.class)); }
+        });
+        root.addView(loupe, fullWidth());
         root.addView(space(10));
 
         Button web = Ui.bigButton(this, "🌐   Lire une page web", pal.button, pal.buttonText);
@@ -198,18 +216,18 @@ public class MainActivity extends Activity {
 
     private void showBubbleHelp() {
         if (ScreenReaderService.isEnabled(this)) {
-            bubbleSettings();
+            openSettings();
             return;
         }
         if (!Prefs.a11yConsent(this)) {
-            showAccessibilityDisclosure();
+            showAccessibilityDisclosure(this, new Runnable() { @Override public void run() { showBubbleHelp(); } });
             return;
         }
         String restricted = Build.VERSION.SDK_INT >= 33
                 ? "\n\nSi Android affiche « Paramètre restreint » (appli installée depuis un fichier APK) : "
                 + "appuie sur « Infos appli », puis sur ⋮ en haut à droite, puis « Autoriser les paramètres restreints », "
                 + "et recommence." : "";
-        new AlertDialog.Builder(this)
+        Ui.dialog(this)
                 .setTitle("Lire les autres applis et les sites")
                 .setMessage("Lisys peut afficher un bouton flottant 🔊 par-dessus toutes les applis : "
                         + "un appui, et Lisys lit à voix haute ce qui est à l'écran.\n\n"
@@ -218,7 +236,7 @@ public class MainActivity extends Activity {
                         + "Lisys ne lit l'écran que quand tu appuies sur le bouton, et rien n'est envoyé sur internet."
                         + restricted)
                 .setPositiveButton("Activer", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { openAccessibilitySettings(); }
+                    @Override public void onClick(DialogInterface d, int w) { openAccessibilitySettings(MainActivity.this); }
                 })
                 .setNeutralButton(Build.VERSION.SDK_INT >= 33 ? "Infos appli" : null, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
@@ -236,10 +254,10 @@ public class MainActivity extends Activity {
      * Information obligatoire (règles Google Play) avant d'activer le service d'accessibilité :
      * ce que Lisys lit, pourquoi, et ce qu'il en fait. L'utilisateur doit accepter.
      */
-    private void showAccessibilityDisclosure() {
-        TextView t = new TextView(this);
-        int p = Ui.dp(this, 22);
-        t.setPadding(p, Ui.dp(this, 12), p, 0);
+    static void showAccessibilityDisclosure(final Activity a, final Runnable onAccept) {
+        TextView t = new TextView(a);
+        int p = Ui.dp(a, 22);
+        t.setPadding(p, Ui.dp(a, 12), p, 0);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         t.setText("Lisys utilise le service d'accessibilité d'Android (AccessibilityService). Il est conçu pour aider "
                 + "les personnes malvoyantes ou ayant des difficultés de lecture.\n\n"
@@ -255,23 +273,23 @@ public class MainActivity extends Activity {
                 + "ni envoyées sur internet, ni partagées, ni vendues. Seul le dernier texte lu est gardé sur le "
                 + "téléphone pour pouvoir le relire dans Lisys.\n\n"
                 + "Tu peux désactiver ce service à tout moment dans Paramètres > Accessibilité.");
-        ScrollView sv = new ScrollView(this);
+        ScrollView sv = new ScrollView(a);
         sv.addView(t);
-        new AlertDialog.Builder(this)
+        Ui.dialog(a)
                 .setTitle("Autorisation d'accessibilité")
                 .setView(sv)
                 .setCancelable(false)
                 .setPositiveButton("J'accepte", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
-                        Prefs.setA11yConsent(MainActivity.this, true);
-                        showBubbleHelp();
+                        Prefs.setA11yConsent(a, true);
+                        if (onAccept != null) onAccept.run();
                     }
                 })
                 .setNegativeButton("Refuser", null)
                 .setNeutralButton("Confidentialité", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         try {
-                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));
+                            a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));
                         } catch (Exception ignored) {
                         }
                     }
@@ -279,205 +297,25 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    /** Réglages de la bulle : taille, couleur, annonces vocales, affichage. */
-    private void bubbleSettings() {
-        final boolean shown = Prefs.bubble(this);
-        int size = Prefs.bubbleSize(this);
-        String sizeName = Ui.BUBBLE_SIZE_NAMES[1];
-        for (int i = 0; i < Ui.BUBBLE_SIZES.length; i++) if (Ui.BUBBLE_SIZES[i] == size) sizeName = Ui.BUBBLE_SIZE_NAMES[i];
-        int color = Math.max(0, Math.min(Prefs.bubbleColor(this), Ui.BUBBLE_COLOR_NAMES.length - 1));
-        String yes = "✅ activé", no = "désactivé";
-        String[] items = {
-                "Taille de la bulle : " + sizeName,
-                "Couleur de la bulle : " + Ui.BUBBLE_COLOR_NAMES[color],
-                "Annonces vocales de la bulle : " + (Prefs.bubbleVoice(this) ? "oui" : "non"),
-                shown ? "Masquer la bulle" : "Afficher la bulle",
-                "Bandeau en très gros texte : " + (Prefs.caption(this) ? yes : no),
-                "Boutons de volume : " + (Prefs.volumeKeys(this) ? yes : no),
-                "Annoncer les messages reçus : " + (Prefs.announce(this) ? yes : no),
-                "Comment ça marche ?",
-                "Rapport de la dernière lecture (dépannage)",
-                "Désactiver le bouton (réglages Android)"};
-        new AlertDialog.Builder(this)
-                .setTitle("Bouton flottant Lisys")
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) {
-                        switch (w) {
-                            case 0: chooseBubbleSize(); break;
-                            case 1: chooseBubbleColor(); break;
-                            case 2:
-                                Prefs.setBubbleVoice(MainActivity.this, !Prefs.bubbleVoice(MainActivity.this));
-                                bubbleSettings();
-                                break;
-                            case 3:
-                                Prefs.setBubble(MainActivity.this, !shown);
-                                bubbleSettings();
-                                break;
-                            case 4: captionSettings(); break;
-                            case 5: volumeSettings(); break;
-                            case 6: announceSettings(); break;
-                            case 7: bubbleHowTo(); break;
-                            case 8: showReport(); break;
-                            default: openAccessibilitySettings();
-                        }
-                    }
-                })
-                .setNegativeButton("Fermer", null)
-                .show();
-    }
-
-    /** Bandeau : la phrase lue s'affiche en très gros par-dessus les autres applis. */
-    private void captionSettings() {
-        final boolean on = Prefs.caption(this);
-        int size = Prefs.captionSize(this);
-        String sizeName = Ui.BUBBLE_SIZE_NAMES[1];
-        for (int i = 0; i < Ui.CAPTION_SIZES.length; i++) if (Ui.CAPTION_SIZES[i] == size) sizeName = Ui.BUBBLE_SIZE_NAMES[i];
-        int col = Math.max(0, Math.min(Prefs.captionColors(this), Ui.CAPTION_COLOR_NAMES.length - 1));
-        String[] items = {
-                on ? "Désactiver le bandeau" : "Activer le bandeau",
-                "Taille du texte : " + sizeName,
-                "Couleurs : " + Ui.CAPTION_COLOR_NAMES[col],
-                "Position : " + (Prefs.captionTop(this) ? "en haut de l'écran" : "en bas de l'écran")};
-        new AlertDialog.Builder(this)
-                .setTitle("Bandeau en très gros texte")
-                .setMessage(null)
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) {
-                        final MainActivity a = MainActivity.this;
-                        if (w == 0) { Prefs.setCaption(a, !on); captionSettings(); }
-                        else if (w == 1) {
-                            int cur = 1;
-                            for (int i = 0; i < Ui.CAPTION_SIZES.length; i++) if (Ui.CAPTION_SIZES[i] == Prefs.captionSize(a)) cur = i;
-                            new AlertDialog.Builder(a).setTitle("Taille du texte du bandeau")
-                                    .setSingleChoiceItems(Ui.BUBBLE_SIZE_NAMES, cur, new DialogInterface.OnClickListener() {
-                                        @Override public void onClick(DialogInterface d2, int k) {
-                                            Prefs.setCaptionSize(a, Ui.CAPTION_SIZES[k]);
-                                            d2.dismiss();
-                                            captionSettings();
-                                        }
-                                    }).show();
-                        } else if (w == 2) {
-                            new AlertDialog.Builder(a).setTitle("Couleurs du bandeau")
-                                    .setSingleChoiceItems(Ui.CAPTION_COLOR_NAMES, Prefs.captionColors(a), new DialogInterface.OnClickListener() {
-                                        @Override public void onClick(DialogInterface d2, int k) {
-                                            Prefs.setCaptionColors(a, k);
-                                            d2.dismiss();
-                                            captionSettings();
-                                        }
-                                    }).show();
-                        } else {
-                            Prefs.setCaptionTop(a, !Prefs.captionTop(a));
-                            captionSettings();
-                        }
-                    }
-                })
-                .setNegativeButton("Retour", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
-                })
-                .show();
-        if (!on) {
-            Toast.makeText(this, "Quand la bulle lit un mail ou un site, la phrase lue s'affiche en très gros.",
-                    Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void volumeSettings() {
-        final boolean on = Prefs.volumeKeys(this);
-        new AlertDialog.Builder(this)
-                .setTitle("Boutons de volume")
-                .setMessage("Avec cette option, dans n'importe quelle appli :\n\n"
-                        + "• Deux appuis rapides sur VOLUME BAS : Lisys lit l'écran (ou arrête la lecture).\n"
-                        + "• Rester appuyé sur VOLUME BAS (1 seconde) : lecture au doigt (ou la quitter).\n"
-                        + "• Un seul appui baisse le son, comme d'habitude.\n\n"
-                        + "Pendant un appel, les boutons fonctionnent normalement.")
-                .setPositiveButton(on ? "Désactiver" : "Activer", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) {
-                        Prefs.setVolumeKeys(MainActivity.this, !on);
-                        Toast.makeText(MainActivity.this, on ? "Boutons de volume : désactivé" : "Boutons de volume : activé",
-                                Toast.LENGTH_SHORT).show();
-                        bubbleSettings();
-                    }
-                })
-                .setNegativeButton("Retour", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
-                })
-                .show();
-    }
-
-    private void announceSettings() {
-        final boolean on = Prefs.announce(this);
-        final boolean content = Prefs.announceContent(this);
-        new AlertDialog.Builder(this)
-                .setTitle("Annoncer les messages reçus")
-                .setMessage("Lisys dit à voix haute qui t'écrit (SMS, WhatsApp, Messenger, Telegram, Signal, mails…)"
-                        + (content ? ", puis lit le message." : ".")
-                        + "\n\nRien n'est annoncé pendant un appel, en mode Ne pas déranger, ou pendant une lecture.")
-                .setPositiveButton(on ? "Désactiver" : "Activer", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) {
-                        Prefs.setAnnounce(MainActivity.this, !on);
-                        bubbleSettings();
-                    }
-                })
-                .setNeutralButton(content ? "Dire seulement qui écrit" : "Lire aussi le message", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) {
-                        Prefs.setAnnounceContent(MainActivity.this, !content);
-                        announceSettings();
-                    }
-                })
-                .setNegativeButton("Retour", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
-                })
-                .show();
-    }
-
-    private void chooseBubbleSize() {
-        int cur = 1;
-        for (int i = 0; i < Ui.BUBBLE_SIZES.length; i++) if (Ui.BUBBLE_SIZES[i] == Prefs.bubbleSize(this)) cur = i;
-        new AlertDialog.Builder(this)
-                .setTitle("Taille de la bulle")
-                .setSingleChoiceItems(Ui.BUBBLE_SIZE_NAMES, cur, new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) {
-                        // La bulle change tout de suite : on voit le résultat derrière la fenêtre.
-                        Prefs.setBubbleSize(MainActivity.this, Ui.BUBBLE_SIZES[w]);
-                    }
-                })
-                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
-                })
-                .show();
-    }
-
-    private void chooseBubbleColor() {
-        new AlertDialog.Builder(this)
-                .setTitle("Couleur de la bulle")
-                .setSingleChoiceItems(Ui.BUBBLE_COLOR_NAMES, Prefs.bubbleColor(this), new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { Prefs.setBubbleColor(MainActivity.this, w); }
-                })
-                .setPositiveButton("OK", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { bubbleSettings(); }
-                })
-                .show();
-    }
-
-    private void showReport() {
-        final String r = getSharedPreferences("reglages", MODE_PRIVATE).getString("rapport",
+    static void showReport(final Activity a) {
+        final String r = a.getSharedPreferences("reglages", Context.MODE_PRIVATE).getString("rapport",
                 "Pas encore de lecture avec la bulle. Ouvre l'appli ou le mail à lire, appuie sur la bulle, puis reviens ici.");
-        new AlertDialog.Builder(this)
+        Ui.dialog(a)
                 .setTitle("Dernière lecture de l'écran")
                 .setMessage(r)
                 .setPositiveButton("Copier", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
-                        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        ClipboardManager cm = (ClipboardManager) a.getSystemService(Context.CLIPBOARD_SERVICE);
                         cm.setPrimaryClip(ClipData.newPlainText("Rapport Lisys", r));
-                        Toast.makeText(MainActivity.this, "Rapport copié", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(a, "Rapport copié", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .setNegativeButton("Fermer", null)
                 .show();
     }
 
-    private void bubbleHowTo() {
-        new AlertDialog.Builder(this)
+    static void bubbleHowTo(final Activity a) {
+        Ui.dialog(a)
                 .setTitle("Comment ça marche ?")
                 .setMessage("La bulle 🔊 reste par-dessus toutes les applis.\n\n"
                         + "• Un appui : Lisys lit tout le texte affiché (page web, appli, message…). "
@@ -492,11 +330,11 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void openAccessibilitySettings() {
+    static void openAccessibilitySettings(final Activity a) {
         try {
-            startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            a.startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
         } catch (Exception e) {
-            Toast.makeText(this, "Ouvre Paramètres > Accessibilité.", Toast.LENGTH_LONG).show();
+            Toast.makeText(a, "Ouvre Paramètres > Accessibilité.", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -538,7 +376,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmRemove(final Library.Entry e) {
-        new AlertDialog.Builder(this)
+        Ui.dialog(this)
                 .setTitle(e.title)
                 .setItems(new String[]{"Lire depuis le début", "Retirer de la liste"}, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int which) {
@@ -577,6 +415,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_VOICE && res == RESULT_OK) { homeCommand(VoiceCommands.heard(data)); return; }
         if (req == REQ_OPEN && res == RESULT_OK && data != null && data.getData() != null) {
             importUri(data.getData());
         }
@@ -603,7 +442,7 @@ public class MainActivity extends Activity {
                 + "ou ne s'affiche pas bien, choisis « Navigateur ».");
         help.setPadding(0, Ui.dp(this, 8), 0, 0);
         box.addView(help);
-        final AlertDialog d = new AlertDialog.Builder(this)
+        final AlertDialog d = Ui.dialog(this)
                 .setTitle("Lire une page web")
                 .setView(box)
                 .setPositiveButton("Lire", new DialogInterface.OnClickListener() {
@@ -650,7 +489,7 @@ public class MainActivity extends Activity {
         int p = Ui.dp(this, 20);
         box.setPadding(p, Ui.dp(this, 8), p, 0);
         box.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        new AlertDialog.Builder(this)
+        Ui.dialog(this)
                 .setTitle("Le presse-papiers est vide")
                 .setView(box)
                 .setPositiveButton("Lire", new DialogInterface.OnClickListener() {
@@ -687,7 +526,36 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------------------------ intentions reçues
 
+    /** Commandes vocales de l'accueil. */
+    private void homeCommand(String raw) {
+        if (raw == null) return;
+        String c = VoiceCommands.norm(raw);
+        if (VoiceCommands.has(c, "loupe", "agrandir", "zoom")) startActivity(new Intent(this, MagnifierActivity.class));
+        else if (VoiceCommands.has(c, "photo", "courrier", "papier", "camera", "lettre")) openOcr(OcrActivity.MODE_CAMERA, null);
+        else if (VoiceCommands.has(c, "document", "fichier", "pdf", "livre")) pickDocument();
+        else if (VoiceCommands.has(c, "web", "site", "internet", "page")) askUrl();
+        else if (VoiceCommands.has(c, "copie", "presse", "colle", "coller")) readClipboard();
+        else if (VoiceCommands.has(c, "reprendre", "reprends", "continue", "dernier", "lis", "lire")) {
+            List<Library.Entry> l = Library.list(this);
+            if (l.isEmpty()) Speaker.say(this, "Aucun document à reprendre.");
+            else openReader(l.get(0).id, true);
+        } else if (VoiceCommands.has(c, "reglage", "reglages", "parametre", "parametres")) openSettings();
+        else Speaker.say(this, "Je n'ai pas compris : " + raw + ". Dis par exemple : photo, loupe, document, ou reprendre.");
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // Android 10+ : le presse-papiers ne se lit qu'une fois la fenêtre au premier plan (widget, raccourci).
+        if (hasFocus && clipboardPending) { clipboardPending = false; readClipboard(); }
+    }
+
     private void handleIntent(Intent i) {
+        if (i != null && ACTION_READ_CLIPBOARD.equals(i.getAction())) {
+            clipboardPending = true;
+            setIntent(new Intent(this, MainActivity.class));
+            return;
+        }
         if (i == null || i.getAction() == null) return;
         String a = i.getAction();
         if (Intent.ACTION_VIEW.equals(a) && i.getData() != null) {
@@ -804,7 +672,7 @@ public class MainActivity extends Activity {
                         hideBusy();
                         if (isFinishing()) return;
                         if (ocr) {
-                            new AlertDialog.Builder(MainActivity.this).setTitle("Document scanné")
+                            Ui.dialog(MainActivity.this).setTitle("Document scanné")
                                     .setMessage(err + "\n\nLisys peut reconnaître le texte des pages, comme pour une photo. "
                                             + "Compte quelques secondes par page.")
                                     .setPositiveButton("Reconnaître le texte", new DialogInterface.OnClickListener() {
@@ -812,7 +680,7 @@ public class MainActivity extends Activity {
                                     })
                                     .setNegativeButton("Annuler", null).show();
                         } else if (err != null) {
-                            new AlertDialog.Builder(MainActivity.this).setTitle("Oups").setMessage(err)
+                            Ui.dialog(MainActivity.this).setTitle("Oups").setMessage(err)
                                     .setPositiveButton("OK", null).show();
                         } else {
                             refresh();
@@ -836,7 +704,7 @@ public class MainActivity extends Activity {
         busyText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
         busyText.setPadding(Ui.dp(this, 16), 0, 0, 0);
         box.addView(busyText);
-        busy = new AlertDialog.Builder(this).setView(box).setCancelable(false).create();
+        busy = Ui.dialog(this).setView(box).setCancelable(false).create();
         busy.show();
     }
 
@@ -857,37 +725,14 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------------------------ réglages
 
-    private void showSettings() {
-        String[] items = {
-                "Thème : " + Ui.themeName(Prefs.theme(this)),
-                "Bouton flottant (lire les autres applis)",
-                "Réglages de la synthèse vocale d'Android",
-                "Installer d'autres voix",
-                "Vider la liste des documents",
-                "À propos de Lisys"};
-        new AlertDialog.Builder(this)
-                .setTitle("Réglages")
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int which) {
-                        switch (which) {
-                            case 0: chooseTheme(MainActivity.this, new Runnable() {
-                                @Override public void run() { build(); refresh(); }
-                            }); break;
-                            case 1: showBubbleHelp(); break;
-                            case 2: openTtsSettings(MainActivity.this); break;
-                            case 3: installVoices(MainActivity.this); break;
-                            case 4: confirmClear(); break;
-                            default: about();
-                        }
-                    }
-                })
-                .show();
+    private void openSettings() {
+        startActivity(new Intent(this, SettingsActivity.class));
     }
 
     static void chooseTheme(final Activity a, final Runnable done) {
         String[] names = new String[4];
         for (int i = 0; i < 4; i++) names[i] = Ui.themeName(i);
-        new AlertDialog.Builder(a)
+        Ui.dialog(a)
                 .setTitle("Thème d'affichage")
                 .setSingleChoiceItems(names, Prefs.theme(a), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int which) {
@@ -915,21 +760,21 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void confirmClear() {
-        new AlertDialog.Builder(this)
+    static void confirmClear(final Activity a) {
+        Ui.dialog(a)
                 .setMessage("Retirer tous les documents de la liste ? (Tes fichiers d'origine ne sont pas supprimés.)")
                 .setPositiveButton("Vider", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { Library.clear(MainActivity.this); refresh(); }
+                    @Override public void onClick(DialogInterface d, int w) { Library.clear(a); }
                 })
                 .setNegativeButton("Annuler", null)
                 .show();
     }
 
-    private void about() {
+    static void about(final Activity a) {
         String v = "";
-        try { v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) {}
-        TextView t = new TextView(this);
-        int p = Ui.dp(this, 22);
+        try { v = a.getPackageManager().getPackageInfo(a.getPackageName(), 0).versionName; } catch (Exception ignored) {}
+        TextView t = new TextView(a);
+        int p = Ui.dp(a, 22);
         t.setPadding(p, p, p, 0);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         t.setText("Lisys " + v + " · QMTech\n\n"
@@ -940,11 +785,11 @@ public class MainActivity extends Activity {
                 + "Bibliothèques : PdfBox-Android (Apache 2.0), jsoup (MIT), Tesseract OCR et son modèle français "
                 + "(Apache 2.0), tesseract-wasm (Apache 2.0).");
         t.setTypeface(Typeface.DEFAULT);
-        new AlertDialog.Builder(this).setTitle("À propos").setView(t).setPositiveButton("OK", null)
+        Ui.dialog(a).setTitle("À propos").setView(t).setPositiveButton("OK", null)
                 .setNeutralButton("Confidentialité", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         try {
-                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));
+                            a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(Ui.PRIVACY_URL)));
                         } catch (Exception ignored) {
                         }
                     }

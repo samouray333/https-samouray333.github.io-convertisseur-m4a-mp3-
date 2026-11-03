@@ -203,6 +203,9 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         TextView loupe = Ui.roundButton(this, "🔍", "Mode grand texte", pal.bar, pal.barText, 46);
         loupe.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { toggleBig(); } });
         top.addView(loupe);
+        TextView mic = Ui.roundButton(this, "🎤", "Commande vocale", pal.bar, pal.barText, 46);
+        mic.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { listenCommand(); } });
+        top.addView(mic);
         TextView menu = Ui.roundButton(this, "⋮", "Plus d'options", pal.bar, pal.barText, 46);
         menu.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { showMenu(); } });
         top.addView(menu);
@@ -275,15 +278,23 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER);
-        TextView prevPara = Ui.roundButton(this, "⏮", "Paragraphe précédent", pal.surface, pal.text, 50);
-        TextView prev = Ui.roundButton(this, "◀", "Phrase précédente", pal.surface, pal.text, 56);
-        playBtn = Ui.roundButton(this, "▶", "Lire", pal.button, pal.buttonText, 74);
-        TextView next = Ui.roundButton(this, "▶▶", "Phrase suivante", pal.surface, pal.text, 56);
+        float k = Prefs.bigControls(this) ? 1.35f : 1f; // option « boutons géants »
+        TextView prevPara = Ui.roundButton(this, "⏮", "Paragraphe précédent", pal.surface, pal.text, Math.round(50 * k));
+        TextView prev = Ui.roundButton(this, "◀", "Phrase précédente", pal.surface, pal.text, Math.round(56 * k));
+        playBtn = Ui.roundButton(this, "▶", "Lire", pal.button, pal.buttonText, Math.round(74 * k));
+        TextView next = Ui.roundButton(this, "▶▶", "Phrase suivante", pal.surface, pal.text, Math.round(56 * k));
         next.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        TextView nextPara = Ui.roundButton(this, "⏭", "Paragraphe suivant", pal.surface, pal.text, 50);
+        TextView nextPara = Ui.roundButton(this, "⏭", "Paragraphe suivant", pal.surface, pal.text, Math.round(50 * k));
         prevPara.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.previousParagraph(); } } });
         prev.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.previous(); } } });
-        playBtn.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.toggle(); } } });
+        playBtn.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) {
+            if (svc == null) return;
+            userScrollAt = 0;
+            boolean was = svc.isPlaying();
+            Ui.tick(v);
+            svc.toggle();
+            if (was) Speaker.say(ReaderActivity.this, "Pause");
+        } });
         next.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.next(); } } });
         nextPara.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { if (svc != null) { userScrollAt = 0; svc.nextParagraph(); } } });
         controls.addView(prevPara);
@@ -416,7 +427,10 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
             int line = layout.getLineForOffset(Math.min(off, Math.max(0, paras.get(curPara).length() - 1)));
             y += t.getPaddingTop() + layout.getLineTop(line);
         }
-        if (y < h / 10 || y > h * 2 / 3) list.smoothScrollBy(y - h / 5, 350);
+        if (y < h / 10 || y > h * 2 / 3) {
+            if (Ui.animationsOff(this)) list.scrollListBy(y - h / 5);
+            else list.smoothScrollBy(y - h / 5, 350);
+        }
     }
 
     private void jumpTo(int para) {
@@ -438,13 +452,22 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     }
 
     private void paragraphMenu(final int pos) {
-        new AlertDialog.Builder(this)
-                .setItems(new String[]{"Lire à partir d'ici", "Copier ce paragraphe", "Partager ce paragraphe"},
+        // Position du doigt dans le paragraphe (pour épeler le bon mot / répéter la bonne phrase).
+        int off = 0;
+        TextView tv = viewFor(pos);
+        if (tv != null) try { off = tv.getOffsetForPosition(touchX, touchY); } catch (Exception ignored) {}
+        final int offset = Math.max(0, off);
+        Ui.dialog(this)
+                .setItems(new String[]{"Lire à partir d'ici", "Répéter la phrase lentement", "Épeler le mot touché",
+                                "Ajouter un signet ici", "Copier ce paragraphe", "Partager ce paragraphe"},
                         new DialogInterface.OnClickListener() {
                             @Override public void onClick(DialogInterface d, int w) {
                                 String text = paras.get(pos);
                                 if (w == 0 && svc != null) { svc.seek(pos, 0); if (!svc.isPlaying()) svc.play(); }
-                                else if (w == 1) {
+                                else if (w == 1) repeatSlowly(pos, offset);
+                                else if (w == 2) spell(pos, offset);
+                                else if (w == 3) addBookmark(pos, sentenceAt(pos, offset));
+                                else if (w == 4) {
                                     android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                                     cm.setPrimaryClip(android.content.ClipData.newPlainText("Lisys", text));
                                     Toast.makeText(ReaderActivity.this, "Copié", Toast.LENGTH_SHORT).show();
@@ -561,7 +584,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     @Override
     public void onTtsReady(boolean ok, String error) {
         if (!ok && error != null) {
-            new AlertDialog.Builder(this).setTitle("Synthèse vocale").setMessage(error)
+            Ui.dialog(this).setTitle("Synthèse vocale").setMessage(error)
                     .setPositiveButton("Installer", new DialogInterface.OnClickListener() {
                         @Override public void onClick(DialogInterface d, int w) { MainActivity.installVoices(ReaderActivity.this); }
                     })
@@ -602,7 +625,10 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         items.add((bigMode ? "✓ " : "") + "Mode grand texte (loupe)");
         items.add("Revenir au début");
         items.add("Partager tout le texte");
-        new AlertDialog.Builder(this)
+        items.add("Signets");
+        items.add("Ajouter un signet ici");
+        items.add("Commande vocale");
+        Ui.dialog(this)
                 .setItems(items.toArray(new String[0]), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         switch (w) {
@@ -618,6 +644,9 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                                 break;
                             case 4: toggleBig(); break;
                             case 5: if (svc != null) { userScrollAt = 0; svc.seek(0, 0); jumpTo(0); } break;
+                            case 7: showBookmarks(); break;
+                            case 8: addBookmark(curPara, curSent); break;
+                            case 9: listenCommand(); break;
                             default:
                                 StringBuilder sb = new StringBuilder();
                                 for (String p : paras) sb.append(p).append("\n\n");
@@ -686,7 +715,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         box.addView(rate);
         box.addView(pitchLabel);
         box.addView(pitch);
-        new AlertDialog.Builder(this).setTitle("Vitesse et tonalité").setView(box)
+        Ui.dialog(this).setTitle("Vitesse et tonalité").setView(box)
                 .setNeutralButton("Par défaut", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
                         if (svc == null) return;
@@ -727,7 +756,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
             names.add(sb.toString());
             if (v.getName().equals(current)) checked = i + 1;
         }
-        new AlertDialog.Builder(this)
+        Ui.dialog(this)
                 .setTitle("Choisir la voix")
                 .setSingleChoiceItems(names.toArray(new String[0]), checked, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
@@ -756,7 +785,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     private void sleepDialog() {
         final int[] minutes = {0, 10, 15, 30, 45, 60, 90};
         String[] labels = {"Désactivée", "10 minutes", "15 minutes", "30 minutes", "45 minutes", "1 heure", "1 h 30"};
-        new AlertDialog.Builder(this)
+        Ui.dialog(this)
                 .setTitle("Arrêter la lecture dans…")
                 .setItems(labels, new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
@@ -776,7 +805,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         int p = Ui.dp(this, 20);
         box.setPadding(p, Ui.dp(this, 8), p, 0);
         box.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        new AlertDialog.Builder(this).setTitle("Rechercher").setView(box)
+        Ui.dialog(this).setTitle("Rechercher").setView(box)
                 .setPositiveButton("Suivant", new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) { search(field.getText().toString()); }
                 })
@@ -824,7 +853,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         for (String p : paras) chars += p.length();
         // Environ 900 caractères par minute à vitesse normale.
         int minutes = Math.max(1, Math.round(chars / (900f * Prefs.rate(this))));
-        new AlertDialog.Builder(this)
+        Ui.dialog(this)
                 .setTitle("Créer un fichier audio")
                 .setMessage("Le document entier va être enregistré en .m4a avec la voix et la vitesse actuelles "
                         + "(environ " + minutes + " min d'écoute).\n\nLe fichier sera dans Téléchargements/Lisys. "
@@ -841,6 +870,149 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
         if (req == REQ_STORAGE && res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) exportAudio();
+    }
+
+    // ------------------------------------------------------------------ épeler, répéter, signets, voix
+
+    private int sentenceAt(int pos, int offset) {
+        if (svc == null) return 0;
+        List<int[]> ss = svc.sentences(pos);
+        int s = 0;
+        for (int k = 0; k < ss.size(); k++) if (offset >= ss.get(k)[0]) s = k;
+        return s;
+    }
+
+    /** Relit une phrase à vitesse lente (sans changer la vitesse réglée). */
+    private void repeatSlowly(int pos, int offset) {
+        if (svc == null || svc.tts() == null) return;
+        if (svc.isPlaying()) svc.pause();
+        List<int[]> ss = svc.sentences(pos);
+        int s = sentenceAt(pos, offset);
+        if (s >= ss.size()) return;
+        String text = paras.get(pos).substring(ss.get(s)[0], ss.get(s)[1]);
+        svc.seek(pos, s);
+        svc.tts().setSpeechRate(Math.max(0.5f, Prefs.rate(this) * 0.6f));
+        svc.tts().speak(text, TextToSpeech.QUEUE_FLUSH, null, "lent");
+        svc.tts().setSpeechRate(Prefs.rate(this)); // la vitesse est prise au moment de la demande
+    }
+
+    /** Épelle le mot sous le doigt, lettre par lettre, puis le redit. */
+    private void spell(int pos, int offset) {
+        if (svc == null || svc.tts() == null) return;
+        String p = paras.get(pos);
+        int a = Math.min(offset, Math.max(0, p.length() - 1)), b = a;
+        while (a > 0 && isWordChar(p.charAt(a - 1))) a--;
+        while (b < p.length() && isWordChar(p.charAt(b))) b++;
+        if (b <= a) return;
+        String word = p.substring(a, b);
+        StringBuilder sb = new StringBuilder(word).append(". ");
+        for (int i = 0; i < word.length(); i++) {
+            char c = word.charAt(i);
+            if (Character.isUpperCase(c)) sb.append("majuscule ");
+            sb.append(c == '-' ? "tiret" : c == '\'' ? "apostrophe" : String.valueOf(Character.toLowerCase(c))).append(", ");
+        }
+        sb.append(". ").append(word);
+        if (svc.isPlaying()) svc.pause();
+        svc.tts().setSpeechRate(Math.max(0.5f, Prefs.rate(this) * 0.7f));
+        svc.tts().speak(sb.toString(), TextToSpeech.QUEUE_FLUSH, null, "epeler");
+        svc.tts().setSpeechRate(Prefs.rate(this));
+        Toast.makeText(this, word, Toast.LENGTH_LONG).show();
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '-' || c == '\'' || c == '’';
+    }
+
+    private void addBookmark(int p, int s) {
+        if (p < 0 || p >= paras.size()) return;
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(Prefs.bookmarks(this, docId));
+            String t = paras.get(p);
+            org.json.JSONObject o = new org.json.JSONObject();
+            o.put("p", p); o.put("s", s); o.put("t", t.length() > 70 ? t.substring(0, 67) + "…" : t);
+            a.put(o);
+            Prefs.setBookmarks(this, docId, a.toString());
+            Toast.makeText(this, "Signet ajouté", Toast.LENGTH_SHORT).show();
+            Speaker.say(this, "Signet ajouté");
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void showBookmarks() {
+        try {
+            final org.json.JSONArray a = new org.json.JSONArray(Prefs.bookmarks(this, docId));
+            if (a.length() == 0) {
+                Toast.makeText(this, "Aucun signet. Appui long sur un paragraphe pour en ajouter.", Toast.LENGTH_LONG).show();
+                Speaker.say(this, "Aucun signet.");
+                return;
+            }
+            String[] names = new String[a.length()];
+            for (int i = 0; i < a.length(); i++) {
+                org.json.JSONObject o = a.getJSONObject(i);
+                names[i] = "Paragraphe " + (o.optInt("p") + 1) + " : " + o.optString("t");
+            }
+            Ui.dialog(this).setTitle("Signets")
+                    .setItems(names, new DialogInterface.OnClickListener() {
+                        @Override public void onClick(DialogInterface d, int w) {
+                            org.json.JSONObject o = a.optJSONObject(w);
+                            if (o == null || svc == null) return;
+                            userScrollAt = 0;
+                            svc.seek(o.optInt("p"), o.optInt("s"));
+                            jumpTo(o.optInt("p"));
+                        }
+                    })
+                    .setNeutralButton("Tout effacer", new DialogInterface.OnClickListener() {
+                        @Override public void onClick(DialogInterface d, int w) { Prefs.setBookmarks(ReaderActivity.this, docId, "[]"); }
+                    })
+                    .setNegativeButton("Fermer", null).show();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static final int REQ_VOICE = 7;
+
+    private void listenCommand() {
+        if (svc != null && svc.isPlaying()) svc.pause(); // sinon le micro entend la lecture
+        VoiceCommands.listen(this, REQ_VOICE, "Dis une commande : lis, pause, suivant, plus vite, plus gros, signet…");
+    }
+
+    private void command(String raw) {
+        if (svc == null || raw == null) return;
+        String c = VoiceCommands.norm(raw);
+        if (VoiceCommands.has(c, "cherche", "recherche", "trouve")) {
+            String q = c.replaceFirst(".*?(recherche|cherche|trouve)\\s*", "");
+            if (q.length() > 0) { search(q); return; }
+        }
+        if (VoiceCommands.has(c, "paragraphe") && VoiceCommands.has(c, "suivant")) svc.nextParagraph();
+        else if (VoiceCommands.has(c, "paragraphe") && VoiceCommands.has(c, "precedent")) svc.previousParagraph();
+        else if (VoiceCommands.has(c, "pause", "stop", "arrete", "arreter", "tais", "silence")) Speaker.say(this, "Pause");
+        else if (VoiceCommands.has(c, "suivant", "suivante", "apres", "avance")) { svc.next(); svc.play(); }
+        else if (VoiceCommands.has(c, "precedent", "precedente", "avant", "recule")) { svc.previous(); svc.play(); }
+        else if (VoiceCommands.has(c, "repete", "repeter", "encore")) { svc.seek(curPara, curSent); svc.play(); }
+        else if (VoiceCommands.has(c, "lentement", "lent", "ralentis", "doucement") || c.contains("moins vite")) changeRate(-0.2f);
+        else if (VoiceCommands.has(c, "vite", "accelere", "rapide")) changeRate(0.2f);
+        else if (VoiceCommands.has(c, "gros", "grand", "agrandis", "zoom")) zoom(4);
+        else if (VoiceCommands.has(c, "petit", "reduis")) zoom(-4);
+        else if (VoiceCommands.has(c, "debut", "recommence")) { svc.seek(0, 0); jumpTo(0); svc.play(); }
+        else if (VoiceCommands.has(c, "signet", "marque", "marquer")) addBookmark(curPara, curSent);
+        else if (VoiceCommands.has(c, "signets")) showBookmarks();
+        else if (VoiceCommands.has(c, "loupe")) startActivity(new Intent(this, MagnifierActivity.class));
+        else if (VoiceCommands.has(c, "accueil", "retour", "quitte", "ferme")) finish();
+        else if (VoiceCommands.has(c, "lis", "lire", "lecture", "reprends", "reprendre", "continue", "joue", "demarre")) svc.play();
+        else Speaker.say(this, "Je n'ai pas compris : " + raw + ". Dis par exemple : lis, pause, suivant, plus vite, ou signet.");
+    }
+
+    private void changeRate(float d) {
+        float r = Math.max(0.5f, Math.min(3f, Prefs.rate(this) + d));
+        svc.setRate(r);
+        speedChip.setText("Vitesse " + speedLabel(r));
+        Speaker.say(this, "Vitesse " + String.format(Locale.FRANCE, "%.1f", r));
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == REQ_VOICE && res == RESULT_OK) command(VoiceCommands.heard(data));
     }
 
     @Override
