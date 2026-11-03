@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.8.1 (versionCode 10), entièrement gratuite
+- Version : 1.9 (versionCode 11), entièrement gratuite
 - Package : `com.qmtech.lisys` (définitif pour le Play Store ; les versions 1.0 à 1.4 s'appelaient `com.echomatras.lisys`)
 - Android 8.0 (API 26) minimum, cible Android 16 (API 36), comme l'exige le Play Store
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -14,6 +14,16 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - Pages web : l'appli garde l'article et retire les menus, publicités, bandeaux cookies et commentaires
 - Navigateur intégré pour les sites qui demandent JavaScript ou une connexion. Le bouton « Lire cette page » lit toute la page, ou seulement la sélection.
 - Texte copié dans le presse-papiers, ou saisi à la main
+
+**Nouveau en 1.9 (accessibilité « ultimate »)**
+- **Loupe d'écran façon ZoomText** (Réglages > Bouton flottant) : pendant la lecture avec la bulle, l'écran des autres applis est agrandi (×1,5 à ×4) et suit le passage lu ; en lecture au doigt, la loupe se recentre quand on lève le doigt.
+- **Mode Simple** : accueil avec 3 boutons géants (photo, loupe, reprendre).
+- **Mode Explorer** (sans TalkBack) : un toucher dit le nom du bouton, un deuxième l'active ; glisser fait défiler.
+- **Police Atkinson Hyperlegible** (OFL 1.1), espace entre les lignes et entre les lettres réglables, couleur du surlignage au choix.
+- **Photo guidée** : Lisys dit comment bouger (« rapproche », « vers la gauche »…), allume la lampe s'il fait sombre, attend que ce soit net, puis prend la photo tout seul.
+- **« Quelle couleur ? »** dans la loupe (bouton 🎨).
+- **Navigation par titres** (menu ⋮ ou « titre suivant » à la voix).
+- **Secouer le téléphone** pour mettre en pause, **petits sons** de confirmation, commandes vocales « quelle heure », « quel jour », « batterie ».
 
 **Nouveau en 1.8**
 - **Entièrement gratuite** : toutes les fonctions pour tout le monde (pas de version Pro, pas d'achat).

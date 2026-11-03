@@ -59,7 +59,7 @@ final class VoiceCommands {
                 "find", "cherche", "magnifier", "loupe", "home", "accueil", "yes", "oui", "no", "non", "continue", "continuer",
                 "skip", "passer", "later", "tard", "photo", "photo", "picture", "photo", "letter", "courrier", "document", "document",
                 "file", "fichier", "website", "site", "page", "page", "copied", "copie", "clipboard", "presse", "contrast", "contraste",
-                "buttons", "boutons", "big", "gros", "allow", "autoriser", "enable", "activer", "settings", "reglages", "paragraph", "paragraphe",
+                "buttons", "boutons", "big", "gros", "allow", "autoriser", "enable", "activer", "settings", "reglages", "paragraph", "paragraphe", "time", "heure", "battery", "batterie", "heading", "titre", "chapter", "chapitre", "date", "date", "day", "jour",
                 // espagnol
                 "lee", "lis", "leer", "lis", "reanudar", "reprendre", "sigue", "continue", "pausa", "pause", "para", "stop", "detente", "stop",
                 "siguiente", "suivant", "anterior", "precedent", "repite", "repete", "otra", "encore", "rapido", "vite", "lento", "lent",
@@ -67,8 +67,20 @@ final class VoiceCommands {
                 "marcador", "signet", "marcadores", "signets", "busca", "cherche", "buscar", "cherche", "lupa", "loupe", "volver", "retour",
                 "si", "oui", "vale", "oui", "continuar", "continuer", "saltar", "passer", "luego", "tard", "foto", "photo", "carta", "courrier",
                 "documento", "document", "archivo", "fichier", "web", "site", "pagina", "page", "copiado", "copie", "portapapeles", "presse",
-                "botones", "boutons", "permitir", "autoriser", "activar", "activer", "ajustes", "reglages", "parrafo", "paragraphe"};
+                "botones", "boutons", "permitir", "autoriser", "activar", "activer", "ajustes", "reglages", "parrafo", "paragraphe", "hora", "heure", "bateria", "batterie", "titulo", "titre", "capitulo", "chapitre", "fecha", "date", "dia", "jour"};
         for (int i = 0; i + 1 < p.length; i += 2) SYNONYMS.put(p[i], p[i + 1]);
+    }
+
+    /** Réponse à « quelle heure », « quel jour », « batterie ». */
+    static String clockOrBattery(android.content.Context c, String said) {
+        if (has(said, "batterie", "batteries")) {
+            android.os.BatteryManager bm = (android.os.BatteryManager) c.getSystemService(android.content.Context.BATTERY_SERVICE);
+            int pct = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            return Tr.t("Batterie : ") + pct + Tr.t(" pour cent") + (bm.isCharging() ? Tr.t(", en charge.") : ".");
+        }
+        java.util.Date now = new java.util.Date();
+        if (has(said, "date", "jour")) return new java.text.SimpleDateFormat("EEEE d MMMM yyyy", Tr.locale()).format(now);
+        return Tr.t("Il est ") + new java.text.SimpleDateFormat("HH:mm", Tr.locale()).format(now).replace(":", " h ");
     }
 
     /** Vrai si la phrase contient l'un des mots-clés (sans accents). */

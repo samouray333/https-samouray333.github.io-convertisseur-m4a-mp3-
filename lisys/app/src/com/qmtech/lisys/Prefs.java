@@ -97,6 +97,33 @@ public final class Prefs {
     public static boolean voiceAnswers(Context c) { return sp(c).getBoolean("voiceAnswers", true); }
     public static void setVoiceAnswers(Context c, boolean v) { sp(c).edit().putBoolean("voiceAnswers", v).apply(); }
 
+    /** Police : 0 = système, 1 = Atkinson Hyperlegible (conçue pour les malvoyants). */
+    public static int font(Context c) { return sp(c).getInt("font", 0); }
+    public static void setFont(Context c, int v) { sp(c).edit().putInt("font", v).apply(); }
+    /** Interligne (1,0 à 2,0) et espacement des lettres (0 à 0,2 em). */
+    public static float lineSpacing(Context c) { return sp(c).getFloat("lineSpacing", 1.25f); }
+    public static void setLineSpacing(Context c, float v) { sp(c).edit().putFloat("lineSpacing", v).apply(); }
+    public static float letterSpacing(Context c) { return sp(c).getFloat("letterSpacing", 0f); }
+    public static void setLetterSpacing(Context c, float v) { sp(c).edit().putFloat("letterSpacing", v).apply(); }
+    /** Couleur du surlignage : 0 = celle du thème, puis Ui.HIGHLIGHT_NAMES. */
+    public static int highlight(Context c) { return sp(c).getInt("highlight", 0); }
+    public static void setHighlight(Context c, int v) { sp(c).edit().putInt("highlight", v).apply(); }
+    /** Petits sons de confirmation. */
+    public static boolean sounds(Context c) { return sp(c).getBoolean("sounds", true); }
+    public static void setSounds(Context c, boolean v) { sp(c).edit().putBoolean("sounds", v).apply(); }
+    /** Secouer le téléphone pour mettre la lecture en pause. */
+    public static boolean shake(Context c) { return sp(c).getBoolean("shake", true); }
+    public static void setShake(Context c, boolean v) { sp(c).edit().putBoolean("shake", v).apply(); }
+    /** Accueil simplifié : 3 boutons géants. */
+    public static boolean simpleMode(Context c) { return sp(c).getBoolean("simpleMode", false); }
+    public static void setSimpleMode(Context c, boolean v) { sp(c).edit().putBoolean("simpleMode", v).apply(); }
+    /** Mode Explorer : un toucher dit le nom du bouton, deux touchers l'activent. */
+    public static boolean explore(Context c) { return sp(c).getBoolean("explore", false); }
+    public static void setExplore(Context c, boolean v) { sp(c).edit().putBoolean("explore", v).apply(); }
+    /** Loupe d'écran (zoom des autres applis) pendant la lecture avec la bulle : 1 = désactivée. */
+    public static float screenZoom(Context c) { return sp(c).getFloat("screenZoom", 1f); }
+    public static void setScreenZoom(Context c, float v) { sp(c).edit().putFloat("screenZoom", v).apply(); }
+
     public static String lastUrl(Context c) { return sp(c).getString("lastUrl", ""); }
     public static void setLastUrl(Context c, String v) { sp(c).edit().putString("lastUrl", v).apply(); }
 }

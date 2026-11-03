@@ -89,7 +89,56 @@ final class Ui {
                 p.paraBg = 0xFFF1F5FF; p.sentBg = 0xFFFFE58A; p.wordBg = 0xFF1E3A8A; p.wordText = 0xFFFFFFFF;
                 p.bar = 0xFFF3F5F9; p.barText = 0xFF111827; p.button = BRAND; p.buttonText = 0xFFFFFFFF;
         }
+        // Couleur de surlignage choisie par l'utilisateur (phrase lue, mot prononcé).
+        int h = Prefs.highlight(c);
+        if (h > 0 && h <= HIGHLIGHTS.length) {
+            int[] hl = HIGHLIGHTS[h - 1];
+            p.sentBg = hl[0]; p.wordBg = hl[1]; p.wordText = hl[2];
+        }
         return p;
+    }
+
+    static final String[] HIGHLIGHT_NAMES = {Tr.t("Couleur du thème"), Tr.t("Jaune"), Tr.t("Vert"), Tr.t("Bleu clair"), Tr.t("Rose"), Tr.t("Orange")};
+    static final int[][] HIGHLIGHTS = {
+            {0xFFFFE58A, 0xFF1E3A8A, 0xFFFFFFFF}, {0xFFB9F6CA, 0xFF00701A, 0xFFFFFFFF}, {0xFFB3E5FC, 0xFF01579B, 0xFFFFFFFF},
+            {0xFFF8BBD0, 0xFF880E4F, 0xFFFFFFFF}, {0xFFFFCC80, 0xFFE65100, 0xFFFFFFFF}};
+
+    private static Typeface atkinson, atkinsonBold;
+
+    /** Police de l'appli (Atkinson Hyperlegible si choisie). */
+    static Typeface typeface(Context c, boolean bold) {
+        if (Prefs.font(c) == 1) {
+            try {
+                if (atkinson == null) {
+                    atkinson = Typeface.createFromAsset(c.getAssets(), "fonts/AtkinsonHyperlegible-Regular.ttf");
+                    atkinsonBold = Typeface.createFromAsset(c.getAssets(), "fonts/AtkinsonHyperlegible-Bold.ttf");
+                }
+                return bold ? atkinsonBold : atkinson;
+            } catch (Exception ignored) {
+            }
+        }
+        return bold ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT;
+    }
+
+    /** Applique police, interligne et espacement des lettres choisis à un texte de lecture. */
+    static void readingStyle(TextView t, boolean bold) {
+        Context c = t.getContext();
+        t.setTypeface(typeface(c, bold));
+        t.setLineSpacing(0, Prefs.lineSpacing(c));
+        t.setLetterSpacing(Prefs.letterSpacing(c));
+    }
+
+    private static android.media.ToneGenerator tone;
+
+    /** Petit son de confirmation : 0 = début, 1 = fin, 2 = erreur. */
+    static void beep(Context c, int kind) {
+        if (!Prefs.sounds(c)) return;
+        try {
+            if (tone == null) tone = new android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 60);
+            tone.startTone(kind == 0 ? android.media.ToneGenerator.TONE_PROP_ACK
+                    : kind == 1 ? android.media.ToneGenerator.TONE_PROP_BEEP2 : android.media.ToneGenerator.TONE_PROP_NACK, 160);
+        } catch (Exception ignored) {
+        }
     }
 
     static String themeName(int t) {
@@ -169,7 +218,7 @@ final class Ui {
         b.setAllCaps(false);
         b.setTextColor(fg);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 19);
-        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setTypeface(typeface(c, true));
         b.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         b.setPadding(dp(c, 20), dp(c, 14), dp(c, 20), dp(c, 14));
         b.setMinHeight(dp(c, 64));
@@ -258,7 +307,7 @@ final class Ui {
         t.setGravity(Gravity.CENTER);
         t.setTextColor(fg);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeDp * 0.42f);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTypeface(typeface(c, true));
         GradientDrawable d = new GradientDrawable();
         d.setShape(GradientDrawable.OVAL);
         d.setColor(bg);
@@ -276,7 +325,7 @@ final class Ui {
         t.setText(text);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
         t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTypeface(typeface(c, bold));
         return t;
     }
 

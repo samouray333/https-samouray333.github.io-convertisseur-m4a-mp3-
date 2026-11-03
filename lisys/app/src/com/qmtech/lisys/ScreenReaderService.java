@@ -2,6 +2,7 @@ package com.qmtech.lisys;
 
 import android.accessibilityservice.AccessibilityButtonController;
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityService.MagnificationController;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -392,6 +393,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                 for (int i = 0; i < items.size(); i++) {
                     if (items.get(i).visible) { start = i; break; }
                 }
+                readItems = items;
                 String id = saveDoc(items, app, start);
                 reader.playFrom(id, start);
             }
@@ -645,7 +647,12 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                 lastTouch = SystemClock.uptimeMillis();
                 if (handleTwoFingers(e)) return true;
                 int a = e.getActionMasked();
-                if (a == MotionEvent.ACTION_DOWN) { lastPara = -1; lastSent = -1; } // nouveau toucher : on relit
+                if (a == MotionEvent.ACTION_DOWN) { lastPara = -1; lastSent = -1; fingerDown = true; } // nouveau toucher : on relit
+                if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                    fingerDown = false;
+                    // Doigt levé : la loupe d'écran se recentre sur la phrase lue.
+                    if (fingerItems != null && lastPara >= 0 && lastPara < fingerItems.size()) magnifyTo(fingerItems.get(lastPara).bounds);
+                }
                 if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_MOVE) {
                     lastTouch = SystemClock.uptimeMillis();
                     fingerAt((int) e.getRawX(), (int) e.getRawY());
@@ -685,6 +692,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     };
 
     private void stopFingerMode(boolean speak) {
+        resetZoom();
         main.removeCallbacks(idleCheck);
         if (fingerRoot == null) return;
         try { wm.removeView(fingerRoot); } catch (Exception ignored) {}
@@ -698,6 +706,10 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
 
     /** Le doigt est à (x, y) : on lit la phrase qui est dessous, si ce n'est pas déjà celle en cours. */
     private void fingerAt(int x, int y) {
+        // Loupe d'écran active : le doigt touche l'image agrandie, on revient aux coordonnées réelles.
+        float[] p = unzoom(x, y);
+        x = Math.round(p[0]);
+        y = Math.round(p[1]);
         if (fingerItems == null || reader == null) return;
         int idx = itemAt(x, y);
         if (idx < 0) return;
@@ -826,7 +838,10 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                 rects.add(new RectF(b.left, top, b.right, Math.max(bottom, top + Ui.dp(this, 24))));
             }
         }
+        // Avec la loupe d'écran, le cadre jaune est dessiné là où le texte apparaît agrandi.
+        for (RectF r : rects) zoomRect(r);
         fingerLayer.setRects(rects);
+        if (!fingerDown && !rects.isEmpty()) magnifyTo(it.bounds);
     }
 
     /** Couche transparente du mode doigt, qui dessine le cadre jaune. */
@@ -1192,7 +1207,64 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
 
     // ------------------------------------------------------------------ rappels du lecteur
 
+    // ------------------------------------------------------------------ loupe d'écran (façon ZoomText)
+
+    private List<Item> readItems;
+    private boolean fingerDown;
+
+    private boolean zoomOn() { return Prefs.screenZoom(this) > 1.01f; }
+
+    /** Agrandit l'écran des autres applis et le centre sur le texte lu. */
+    private void magnifyTo(Rect r) {
+        if (!zoomOn() || r == null || r.isEmpty()) return;
+        try {
+            MagnificationController mc = getMagnificationController();
+            mc.setScale(Prefs.screenZoom(this), true);
+            mc.setCenter(r.exactCenterX(), r.exactCenterY(), true);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void resetZoom() {
+        try {
+            MagnificationController mc = getMagnificationController();
+            if (mc.getScale() > 1.01f) mc.reset(true);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Point touché sur l'écran agrandi -> point réel de l'appli dessous. */
+    private float[] unzoom(float x, float y) {
+        try {
+            MagnificationController mc = getMagnificationController();
+            float sc = mc.getScale();
+            if (sc <= 1.01f) return new float[]{x, y};
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            return new float[]{mc.getCenterX() + (x - dm.widthPixels / 2f) / sc, mc.getCenterY() + (y - dm.heightPixels / 2f) / sc};
+        } catch (Exception e) {
+            return new float[]{x, y};
+        }
+    }
+
+    /** Rectangle réel -> rectangle à l'écran agrandi (pour le cadre jaune). */
+    private void zoomRect(RectF r) {
+        try {
+            MagnificationController mc = getMagnificationController();
+            float sc = mc.getScale();
+            if (sc <= 1.01f) return;
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            float cx = mc.getCenterX(), cy = mc.getCenterY();
+            r.set((r.left - cx) * sc + dm.widthPixels / 2f, (r.top - cy) * sc + dm.heightPixels / 2f,
+                    (r.right - cx) * sc + dm.widthPixels / 2f, (r.bottom - cy) * sc + dm.heightPixels / 2f);
+        } catch (Exception ignored) {
+        }
+    }
+
     @Override public void onPosition(int para, int sentence) {
+        // Lecture lancée par la bulle : la loupe d'écran suit le passage lu.
+        if (fingerRoot == null && isScreenDoc() && readItems != null && para >= 0 && para < readItems.size()) {
+            magnifyTo(readItems.get(para).bounds);
+        }
         updateCaption(para, sentence, -1, -1);
         // En mode doigt, le cadre jaune suit la lecture quand elle continue après la phrase touchée.
         if (fingerRoot != null && isScreenDoc()) highlight(para, sentence);
@@ -1201,6 +1273,9 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         if (reader != null && caption != null) updateCaption(para, reader.sentence(), start, end);
     }
     @Override public void onState(boolean playing) {
+        if (!playing && fingerRoot == null) main.postDelayed(new Runnable() {
+            @Override public void run() { if (reader == null || !reader.isPlaying()) resetZoom(); }
+        }, 1500);
         updateBubbleState();
         if (reader != null) updateCaption(reader.para(), reader.sentence(), -1, -1);
     }

@@ -4,7 +4,7 @@ Tout ce qu'il faut copier-coller dans la Play Console, dans l'ordre où elle le 
 
 - Package : `com.qmtech.lisys` (ne pourra plus changer)
 - Éditeur : QMTech
-- Fichier à envoyer : `release/Lisys-1.8.1.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
+- Fichier à envoyer : `release/Lisys-1.9.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
 - Politique de confidentialité : `https://samouray333.github.io/https-samouray333.github.io-convertisseur-m4a-mp3-/lisys/confidentialite.html`
   (la page doit être en ligne : fusionner la branche dans `main`, vérifier que GitHub Pages est activé, et remplacer `[ADRESSE E-MAIL DE CONTACT]` dans `confidentialite.html`)
 
@@ -65,7 +65,15 @@ Lisys lit à voix haute tout ce que vous avez du mal à lire : vos documents, le
 • « Lis », « pause », « suivant », « plus vite », « plus gros », « signet »…
 • Widget avec gros boutons et raccourci dans le menu du haut
 
+🔎 LOUPE D'ÉCRAN ET AIDE À VISER
+• Pendant la lecture avec la bulle, l'écran des autres applis est agrandi et suit le texte lu
+• Photo guidée à la voix : « rapproche », « vers la gauche »… puis la photo se prend toute seule
+• « Quelle couleur ? » : Lisys dit la couleur visée
+
 👁 CONFORT DE LECTURE
+• Police Atkinson Hyperlegible, conçue pour les malvoyants, interligne et espacement réglables
+• Mode Simple (3 boutons géants) et mode Explorer (un toucher dit le nom du bouton)
+• Navigation par titres, secouer pour mettre en pause, petits sons de confirmation
 • Phrase et mot lus surlignés
 • Mode loupe : la phrase en cours en très gros caractères
 • Thèmes clair, sombre, sépia et contraste élevé jaune sur noir
@@ -150,7 +158,7 @@ Lisys est une appli de lecture à voix haute pour les personnes malvoyantes ou a
 ## 4. Tests obligatoires avant la publication
 
 Pour un compte développeur personnel récent, Google exige un **test fermé avec au moins 12 testeurs inscrits pendant 14 jours d'affilée** avant d'autoriser la publication pour tout le monde.
-1. Tests > Tests fermés > créer un canal, envoyer `Lisys-1.8.1.aab`.
+1. Tests > Tests fermés > créer un canal, envoyer `Lisys-1.9.aab`.
 2. Ajouter les adresses Gmail des testeurs (famille, amis, club…).
 3. Leur envoyer le lien d'inscription : ils installent Lisys depuis le Play Store et la gardent 14 jours.
 4. Ensuite : Production > demander l'accès, répondre aux questions sur le test, publier.

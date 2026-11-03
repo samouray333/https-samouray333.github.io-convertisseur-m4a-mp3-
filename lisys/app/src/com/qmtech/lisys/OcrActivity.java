@@ -108,7 +108,12 @@ public class OcrActivity extends Activity {
 
         actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
-        Button photo = Ui.bigButton(this, Tr.t("📷   Prendre une photo"), pal.button, pal.buttonText);
+        Button guide = Ui.bigButton(this, Tr.t("🗣   Photo guidée (je t'aide à viser)"), pal.button, pal.buttonText);
+        guide.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { guided(); } });
+        actions.addView(guide, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        View sp0 = new View(this);
+        actions.addView(sp0, new LinearLayout.LayoutParams(1, Ui.dp(this, 10)));
+        Button photo = Ui.bigButton(this, Tr.t("📷   Appareil photo du téléphone"), pal.surface, pal.text);
         photo.setOnClickListener(new View.OnClickListener() { @Override public void onClick(View v) { takePhoto(); } });
         actions.addView(photo, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         View sp = new View(this);
@@ -124,7 +129,7 @@ public class OcrActivity extends Activity {
         if (state == null) {
             String mode = getIntent().getStringExtra(EXTRA_MODE);
             Uri data = getIntent().getData();
-            if (MODE_CAMERA.equals(mode)) takePhoto();
+            if (MODE_CAMERA.equals(mode)) { guided(); finish(); return; }
             else if (MODE_GALLERY.equals(mode)) pickImage();
             else if (getIntent().getStringExtra(EXTRA_PATH) != null) processImage(Uri.fromFile(new File(getIntent().getStringExtra(EXTRA_PATH))));
             else if (MODE_PDF.equals(mode) && data != null) processPdf(data);
@@ -141,6 +146,11 @@ public class OcrActivity extends Activity {
     }
 
     // ------------------------------------------------------------------ choix de l'image
+
+    /** Photo guidée à la voix (loupe en mode cadrage) : la photo se prend toute seule. */
+    private void guided() {
+        startActivity(new Intent(this, MagnifierActivity.class).putExtra(MagnifierActivity.EXTRA_GUIDED, true));
+    }
 
     private void takePhoto() {
         if (working) return;
@@ -355,5 +365,20 @@ public class OcrActivity extends Activity {
 
     static String defaultTitle(Activity a) {
         return Tr.t("Photo du ") + DateFormat.getDateFormat(a).format(new Date());
+    }
+
+    private final Explorer explorer = new Explorer(this);
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int r = explorer.dispatch(ev);
+        if (r == Explorer.CONSUME) return true;
+        if (r == Explorer.INJECT_DOWN) {
+            android.view.MotionEvent d = android.view.MotionEvent.obtain(ev);
+            d.setAction(android.view.MotionEvent.ACTION_DOWN);
+            super.dispatchTouchEvent(d);
+            d.recycle();
+        }
+        return super.dispatchTouchEvent(ev);
     }
 }

@@ -205,6 +205,38 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         else tts.setLanguage(Locale.getDefault());
     }
 
+    // ------------------------------------------------------------------ secouer pour mettre en pause
+
+    private android.hardware.SensorManager sensors;
+    private long lastShake;
+    private final android.hardware.SensorEventListener shakeListener = new android.hardware.SensorEventListener() {
+        @Override public void onSensorChanged(android.hardware.SensorEvent e) {
+            float g = (float) Math.sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]) / 9.81f;
+            if (g < 2.6f) return;
+            long now = SystemClock.elapsedRealtime();
+            // Deux secousses franches à moins d'une seconde : pause.
+            if (now - lastShake < 1000 && now - lastShake > 150) {
+                lastShake = 0;
+                main.post(new Runnable() { @Override public void run() { if (playing) { pause(); Ui.beep(ReaderService.this, 1); } } });
+            } else {
+                lastShake = now;
+            }
+        }
+        @Override public void onAccuracyChanged(android.hardware.Sensor s, int a) {}
+    };
+
+    private void watchShake(boolean on) {
+        try {
+            if (sensors == null) sensors = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+            sensors.unregisterListener(shakeListener);
+            if (on && Prefs.shake(this)) {
+                android.hardware.Sensor acc = sensors.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
+                if (acc != null) sensors.registerListener(shakeListener, acc, android.hardware.SensorManager.SENSOR_DELAY_UI);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     /** Voix installée la plus naturelle pour une langue : hors ligne d'abord, puis qualité, puis réactivité. */
     static Voice bestVoice(TextToSpeech tts, Locale lang) {
         try {
@@ -378,6 +410,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
             registerReceiver(noisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
             noisyRegistered = true;
         }
+        watchShake(true);
         startForegroundCompat();
         speakFrom(para, sent);
         notifyState();
@@ -385,6 +418,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
 
     public void pause() {
         pendingPlay = false;
+        watchShake(false);
         if (!playing) return;
         playing = false;
         playingNow = false;
@@ -578,6 +612,8 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
             savePosition(true);
             notifyState();
             stopForegroundCompat(false);
+            watchShake(false);
+            Ui.beep(this, 1);
             for (Listener l : copyListeners()) l.onFinished();
             return;
         }

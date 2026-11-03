@@ -263,4 +263,19 @@ public class SetupActivity extends Activity {
         Speaker.stop();
         super.onPause();
     }
+
+    private final Explorer explorer = new Explorer(this);
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int r = explorer.dispatch(ev);
+        if (r == Explorer.CONSUME) return true;
+        if (r == Explorer.INJECT_DOWN) {
+            android.view.MotionEvent d = android.view.MotionEvent.obtain(ev);
+            d.setAction(android.view.MotionEvent.ACTION_DOWN);
+            super.dispatchTouchEvent(d);
+            d.recycle();
+        }
+        return super.dispatchTouchEvent(ev);
+    }
 }

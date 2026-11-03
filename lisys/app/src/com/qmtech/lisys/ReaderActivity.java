@@ -243,7 +243,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         bigText.setGravity(Gravity.CENTER_VERTICAL);
         int p20 = Ui.dp(this, 20);
         bigText.setPadding(p20, p20, p20, p20);
-        bigText.setLineSpacing(0, 1.15f);
+        Ui.readingStyle(bigText, true);
         bigPanel.addView(bigText, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         LinearLayout.LayoutParams fill = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
@@ -353,7 +353,6 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                 t = new TextView(ReaderActivity.this);
                 int h = Ui.dp(ReaderActivity.this, 18), v = Ui.dp(ReaderActivity.this, 10);
                 t.setPadding(h, v, h, v);
-                t.setLineSpacing(0, 1.25f);
                 t.setOnTouchListener(new View.OnTouchListener() {
                     @Override public boolean onTouch(View view, MotionEvent ev) {
                         if (ev.getAction() == MotionEvent.ACTION_DOWN) { touchX = ev.getX(); touchY = ev.getY(); }
@@ -371,8 +370,7 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     private void bindPara(TextView t, int i) {
         String p = paras.get(i);
         // Le titre (premier paragraphe des pages web) un peu plus visible.
-        boolean heading = p.length() < 90 && !p.endsWith(".") && i == 0;
-        t.setTypeface(heading ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        Ui.readingStyle(t, isHeading(i));
         if (i != curPara) {
             t.setText(p);
             t.setBackgroundColor(pal.bg);
@@ -628,6 +626,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         items.add(Tr.t("Signets"));
         items.add(Tr.t("Ajouter un signet ici"));
         items.add(Tr.t("Commande vocale"));
+        items.add(Tr.t("Titre suivant"));
+        items.add(Tr.t("Titre précédent"));
         Ui.dialog(this)
                 .setItems(items.toArray(new String[0]), new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface d, int w) {
@@ -647,6 +647,8 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
                             case 7: showBookmarks(); break;
                             case 8: addBookmark(curPara, curSent); break;
                             case 9: listenCommand(); break;
+                            case 10: nextHeading(1); break;
+                            case 11: nextHeading(-1); break;
                             default:
                                 StringBuilder sb = new StringBuilder();
                                 for (String p : paras) sb.append(p).append("\n\n");
@@ -874,6 +876,33 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
 
     // ------------------------------------------------------------------ épeler, répéter, signets, voix
 
+    /** Titre probable : court, sans point final, ou commençant par « Chapitre », « Partie », un numéro… */
+    private boolean isHeading(int i) {
+        if (i < 0 || i >= paras.size()) return false;
+        String p = paras.get(i).trim();
+        if (p.length() == 0 || p.length() > 90) return false;
+        char last = p.charAt(p.length() - 1);
+        if (last == '.' || last == ',' || last == ';' || last == ':' || last == '?' || last == '!') return false;
+        if (p.matches("(?i)^(chapitre|partie|chapter|part|capítulo|parte|section|annexe)\\b.*") || p.matches("^[0-9IVX]+[.)]\\s.*")) return true;
+        return p.length() < 70 && (i == 0 || p.equals(p.toUpperCase(Locale.ROOT)) || Character.isUpperCase(p.charAt(0)) && p.split(" ").length <= 9);
+    }
+
+    /** Saute au titre suivant (dir = 1) ou précédent (dir = -1) et le lit. */
+    private void nextHeading(int dir) {
+        if (svc == null) return;
+        for (int i = curPara + dir; i >= 0 && i < paras.size(); i += dir) {
+            if (isHeading(i)) {
+                userScrollAt = 0;
+                svc.seek(i, 0);
+                jumpTo(i);
+                svc.play();
+                return;
+            }
+        }
+        Ui.beep(this, 2);
+        Speaker.say(this, dir > 0 ? Tr.t("Plus de titre après.") : Tr.t("Plus de titre avant."), null);
+    }
+
     private int sentenceAt(int pos, int offset) {
         if (svc == null) return 0;
         List<int[]> ss = svc.sentences(pos);
@@ -998,6 +1027,9 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
         else if (VoiceCommands.has(c, "signets")) showBookmarks();
         else if (VoiceCommands.has(c, "loupe")) startActivity(new Intent(this, MagnifierActivity.class));
         else if (VoiceCommands.has(c, "accueil", "retour", "quitte", "ferme")) finish();
+        else if (VoiceCommands.has(c, "titre", "chapitre", "partie") && VoiceCommands.has(c, "precedent", "precedente", "avant")) nextHeading(-1);
+        else if (VoiceCommands.has(c, "titre", "chapitre", "partie")) nextHeading(1);
+        else if (VoiceCommands.has(c, "heure", "date", "jour", "batterie", "batteries")) Speaker.say(this, VoiceCommands.clockOrBattery(this, c), null);
         else if (VoiceCommands.has(c, "lis", "lire", "lecture", "reprends", "reprendre", "continue", "joue", "demarre")) svc.play();
         else Speaker.say(this, Tr.t("Je n'ai pas compris : ") + raw + Tr.t(". Dis par exemple : lis, pause, suivant, plus vite, ou signet."));
     }
@@ -1023,5 +1055,20 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
             if (code == KeyEvent.KEYCODE_DPAD_LEFT) { svc.previous(); return true; }
         }
         return super.onKeyDown(code, ev);
+    }
+
+    private final Explorer explorer = new Explorer(this);
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int r = explorer.dispatch(ev);
+        if (r == Explorer.CONSUME) return true;
+        if (r == Explorer.INJECT_DOWN) {
+            android.view.MotionEvent d = android.view.MotionEvent.obtain(ev);
+            d.setAction(android.view.MotionEvent.ACTION_DOWN);
+            super.dispatchTouchEvent(d);
+            d.recycle();
+        }
+        return super.dispatchTouchEvent(ev);
     }
 }

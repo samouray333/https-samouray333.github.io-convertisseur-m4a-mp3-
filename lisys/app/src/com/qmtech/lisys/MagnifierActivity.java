@@ -137,6 +137,7 @@ public class MagnifierActivity extends Activity {
         torchBtn = btn(row2, "💡", Tr.t("Lampe"), new Runnable() { public void run() { toggleTorch(); } });
         freezeBtn = btn(row2, "❚❚", Tr.t("Figer l'image"), new Runnable() { public void run() { toggleFreeze(); } });
         btn(row2, "🔊", Tr.t("Lire le texte"), new Runnable() { public void run() { readText(); } });
+        btn(row1, "🎨", Tr.t("Quelle couleur ?"), new Runnable() { public void run() { sayColor(); } });
         btn(row1, "🏷", Tr.t("Lire le code-barres d'un produit"), new Runnable() { public void run() { toggleScan(); } });
         panel.addView(row1);
         panel.addView(row2);
@@ -153,7 +154,14 @@ public class MagnifierActivity extends Activity {
         if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.CAMERA}, REQ_CAMERA);
         }
-        Speaker.say(this, Tr.t("Loupe. Vise le texte. Pince l'écran ou utilise plus et moins pour grossir."));
+        guided = getIntent().getBooleanExtra(EXTRA_GUIDED, false);
+        if (guided) {
+            zoom = 1f;
+            Speaker.say(this, Tr.t("Photo guidée. Pose le document à plat et tiens le téléphone au-dessus. Je te dis comment bouger, puis je prends la photo tout seul."), null);
+            ui.postDelayed(guideTask, 2500);
+        } else {
+            Speaker.say(this, Tr.t("Loupe. Vise le texte. Pince l'écran ou utilise plus et moins pour grossir."));
+        }
     }
 
     private LinearLayout row() {
@@ -181,11 +189,13 @@ public class MagnifierActivity extends Activity {
         thread.start();
         bg = new Handler(thread.getLooper());
         if (texture.isAvailable()) openCamera();
+        if (guided && !captured) { ui.removeCallbacks(guideTask); ui.postDelayed(guideTask, 1500); }
     }
 
     @Override
     protected void onPause() {
         scanning = false;
+        ui.removeCallbacks(guideTask);
         closeCamera();
         if (thread != null) { thread.quitSafely(); thread = null; }
         super.onPause();
@@ -502,6 +512,137 @@ public class MagnifierActivity extends Activity {
         }
     }
 
+    // ------------------------------------------------------------------ « Quelle couleur ? »
+
+    private void sayColor() {
+        Bitmap b = texture.getBitmap(120, 120 * Math.max(1, texture.getHeight()) / Math.max(1, texture.getWidth()));
+        if (b == null) return;
+        long r = 0, g = 0, bl = 0; int n = 0;
+        int cx = b.getWidth() / 2, cy = b.getHeight() / 2, rad = Math.max(3, b.getWidth() / 12);
+        for (int y = cy - rad; y <= cy + rad; y++) for (int x = cx - rad; x <= cx + rad; x++) {
+            if (x < 0 || y < 0 || x >= b.getWidth() || y >= b.getHeight()) continue;
+            int p = b.getPixel(x, y);
+            r += (p >> 16) & 255; g += (p >> 8) & 255; bl += p & 255; n++;
+        }
+        if (n == 0) return;
+        String name = colorName((int) (r / n), (int) (g / n), (int) (bl / n));
+        product.setText(name);
+        product.setVisibility(View.VISIBLE);
+        Speaker.say(this, name, null);
+    }
+
+    /** Nom courant d'une couleur (teinte, clarté, saturation). */
+    static String colorName(int r, int g, int b) {
+        float[] hsv = new float[3];
+        android.graphics.Color.RGBToHSV(r, g, b, hsv);
+        float h = hsv[0], sa = hsv[1], v = hsv[2];
+        if (v < 0.18f) return Tr.t("Noir");
+        if (sa < 0.15f) return v > 0.85f ? Tr.t("Blanc") : v > 0.55f ? Tr.t("Gris clair") : Tr.t("Gris foncé");
+        String base;
+        if (h < 15 || h >= 345) base = Tr.t("Rouge");
+        else if (h < 40) base = v < 0.6f ? Tr.t("Marron") : Tr.t("Orange");
+        else if (h < 65) base = v < 0.55f ? Tr.t("Kaki") : (sa < 0.4f ? Tr.t("Beige") : Tr.t("Jaune"));
+        else if (h < 165) base = Tr.t("Vert");
+        else if (h < 195) base = Tr.t("Turquoise");
+        else if (h < 255) base = Tr.t("Bleu");
+        else if (h < 290) base = Tr.t("Violet");
+        else base = Tr.t("Rose");
+        boolean before = "en".equals(Tr.lang()); // anglais : « dark blue » ; français, espagnol : « bleu foncé »
+        if (v < 0.45f) return before ? Tr.t("foncé") + " " + base.toLowerCase() : base + " " + Tr.t("foncé");
+        if (v > 0.85f && sa < 0.45f) return before ? Tr.t("clair") + " " + base.toLowerCase() : base + " " + Tr.t("clair");
+        return base;
+    }
+
+    // ------------------------------------------------------------------ photo guidée (aide au cadrage parlée)
+
+    static final String EXTRA_GUIDED = "guided";
+    private boolean guided, captured;
+    private int goodCount;
+    private String lastHint;
+    private long lastHintAt;
+
+    private final Runnable guideTask = new Runnable() {
+        @Override public void run() {
+            if (!guided || captured || isFinishing()) return;
+            Bitmap b = texture.getBitmap(160, 160 * Math.max(1, texture.getHeight()) / Math.max(1, texture.getWidth()));
+            String hint = b == null ? null : analyse(b);
+            if (hint == null) {
+                // Bien cadré et net deux fois de suite : photo.
+                if (++goodCount >= 2) {
+                    captured = true;
+                    Ui.beep(MagnifierActivity.this, 0);
+                    Speaker.say(MagnifierActivity.this, Tr.t("Ne bouge plus. Photo."), null);
+                    ui.postDelayed(new Runnable() { @Override public void run() { readText(); finish(); } }, 900);
+                    return;
+                }
+            } else {
+                goodCount = 0;
+                long now = android.os.SystemClock.uptimeMillis();
+                if (!hint.equals(lastHint) || now - lastHintAt > 3500) {
+                    lastHint = hint;
+                    lastHintAt = now;
+                    Speaker.say(MagnifierActivity.this, hint, null);
+                }
+            }
+            ui.postDelayed(this, 700);
+        }
+    };
+
+    /** Renvoie la consigne à dire, ou null si le document est bien cadré et net. */
+    private String analyse(Bitmap b) {
+        int w = b.getWidth(), h = b.getHeight();
+        int[] px = new int[w * h];
+        b.getPixels(px, 0, w, 0, 0, w, h);
+        int[] lum = new int[w * h];
+        long sum = 0;
+        for (int i = 0; i < px.length; i++) {
+            int p = px[i];
+            lum[i] = (((p >> 16) & 255) * 3 + ((p >> 8) & 255) * 6 + (p & 255)) / 10;
+            sum += lum[i];
+        }
+        int mean = (int) (sum / lum.length);
+        if (mean < 45) {
+            if (!torch && chars != null && Boolean.TRUE.equals(chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE))) {
+                torch = true;
+                applyRequest();
+                return Tr.t("C'est sombre, j'allume la lampe.");
+            }
+            return Tr.t("C'est trop sombre. Mets plus de lumière.");
+        }
+        // Le papier est plus clair que le fond : on cherche les lignes et colonnes « claires ».
+        int thr = Math.min(235, mean + 25);
+        int top = -1, bottom = -1, left = -1, right = -1, bright = 0;
+        for (int y = 0; y < h; y++) {
+            int c = 0;
+            for (int x = 0; x < w; x++) if (lum[y * w + x] > thr) c++;
+            bright += c;
+            if (c > w * 0.3f) { if (top < 0) top = y; bottom = y; }
+        }
+        for (int x = 0; x < w; x++) {
+            int c = 0;
+            for (int y = 0; y < h; y++) if (lum[y * w + x] > thr) c++;
+            if (c > h * 0.3f) { if (left < 0) left = x; right = x; }
+        }
+        if (top < 0 || left < 0 || bright < px.length * 0.08f) return Tr.t("Je ne vois pas le document. Pose-le sur une table plus sombre et vise-le.");
+        float cover = (float) (right - left) * (bottom - top) / (w * h);
+        int edges = (top <= 1 ? 1 : 0) + (bottom >= h - 2 ? 1 : 0) + (left <= 1 ? 1 : 0) + (right >= w - 2 ? 1 : 0);
+        if (edges >= 3 && cover > 0.92f) return Tr.t("Recule un peu le téléphone.");
+        if (cover < 0.35f) return Tr.t("Rapproche le téléphone du document.");
+        float dx = ((left + right) / 2f - w / 2f) / w, dy = ((top + bottom) / 2f - h / 2f) / h;
+        if (dx < -0.12f) return Tr.t("Déplace le téléphone un peu vers la gauche.");
+        if (dx > 0.12f) return Tr.t("Déplace le téléphone un peu vers la droite.");
+        if (dy < -0.12f) return Tr.t("Déplace le téléphone un peu vers le haut.");
+        if (dy > 0.12f) return Tr.t("Déplace le téléphone un peu vers le bas.");
+        // Netteté : variation entre pixels voisins (une image floue est « lisse »).
+        long lap = 0;
+        for (int y = 1; y < h - 1; y++) for (int x = 1; x < w - 1; x++) {
+            int i = y * w + x;
+            lap += Math.abs(4 * lum[i] - lum[i - 1] - lum[i + 1] - lum[i - w] - lum[i + w]);
+        }
+        if (lap / ((w - 2) * (h - 2)) < 6) return Tr.t("Ne bouge pas, je fais la mise au point.");
+        return null;
+    }
+
     /** Lit le texte de ce qui est affiché (image figée ou image en direct). */
     private void readText() {
         Bitmap b = isFrozen && frozen.getDrawable() instanceof android.graphics.drawable.BitmapDrawable
@@ -518,5 +659,20 @@ public class MagnifierActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, Tr.t("Impossible de lire l'image."), Toast.LENGTH_LONG).show();
         }
+    }
+
+    private final Explorer explorer = new Explorer(this);
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int r = explorer.dispatch(ev);
+        if (r == Explorer.CONSUME) return true;
+        if (r == Explorer.INJECT_DOWN) {
+            android.view.MotionEvent d = android.view.MotionEvent.obtain(ev);
+            d.setAction(android.view.MotionEvent.ACTION_DOWN);
+            super.dispatchTouchEvent(d);
+            d.recycle();
+        }
+        return super.dispatchTouchEvent(ev);
     }
 }

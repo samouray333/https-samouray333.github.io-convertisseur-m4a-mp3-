@@ -81,6 +81,28 @@ public class SettingsActivity extends Activity {
             public int get() { return nearest(sizes, Math.round(Prefs.textSize(a))); }
             public void set(int i) { Prefs.setTextSize(a, sizes[i]); }
         });
+        choice(Tr.t("Police"), new String[]{Tr.t("Police du téléphone"), Tr.t("Atkinson Hyperlegible (spéciale malvoyants)")}, new Choice() {
+            public int get() { return Prefs.font(a); }
+            public void set(int i) { Prefs.setFont(a, i); build(); }
+        });
+        final float[] lines = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f};
+        choice(Tr.t("Espace entre les lignes"), new String[]{"1", "1,25", "1,5", "1,75", "2"}, new Choice() {
+            public int get() { int b0 = 0; for (int i = 0; i < lines.length; i++) if (Math.abs(lines[i] - Prefs.lineSpacing(a)) < 0.01f) b0 = i; return b0; }
+            public void set(int i) { Prefs.setLineSpacing(a, lines[i]); }
+        });
+        final float[] letters = {0f, 0.05f, 0.1f, 0.15f, 0.2f};
+        choice(Tr.t("Espace entre les lettres"), new String[]{Tr.t("Normal"), "+5 %", "+10 %", "+15 %", "+20 %"}, new Choice() {
+            public int get() { int b0 = 0; for (int i = 0; i < letters.length; i++) if (Math.abs(letters[i] - Prefs.letterSpacing(a)) < 0.01f) b0 = i; return b0; }
+            public void set(int i) { Prefs.setLetterSpacing(a, letters[i]); }
+        });
+        choice(Tr.t("Couleur du surlignage"), Ui.HIGHLIGHT_NAMES, new Choice() {
+            public int get() { return Prefs.highlight(a); }
+            public void set(int i) { Prefs.setHighlight(a, i); }
+        });
+        toggle(Tr.t("Mode Simple (accueil avec 3 boutons géants)"), new Toggle() {
+            public boolean get() { return Prefs.simpleMode(a); }
+            public void set(boolean v) { Prefs.setSimpleMode(a, v); }
+        });
         toggle(Tr.t("Boutons de lecture géants"), new Toggle() {
             public boolean get() { return Prefs.bigControls(a); }
             public void set(boolean v) { Prefs.setBigControls(a, v); }
@@ -112,6 +134,18 @@ public class SettingsActivity extends Activity {
             public boolean get() { return Prefs.voiceFeedback(a); }
             public void set(boolean v) { Prefs.setVoiceFeedback(a, v); }
         });
+        toggle(Tr.t("Mode Explorer : un toucher dit le nom, deux touchers activent"), new Toggle() {
+            public boolean get() { return Prefs.explore(a); }
+            public void set(boolean v) { Prefs.setExplore(a, v); }
+        });
+        toggle(Tr.t("Petits sons de confirmation"), new Toggle() {
+            public boolean get() { return Prefs.sounds(a); }
+            public void set(boolean v) { Prefs.setSounds(a, v); }
+        });
+        toggle(Tr.t("Secouer le téléphone pour mettre en pause"), new Toggle() {
+            public boolean get() { return Prefs.shake(a); }
+            public void set(boolean v) { Prefs.setShake(a, v); }
+        });
         toggle(Tr.t("Vibrations"), new Toggle() {
             public boolean get() { return Prefs.vibrate(a); }
             public void set(boolean v) { Prefs.setVibrate(a, v); }
@@ -132,6 +166,12 @@ public class SettingsActivity extends Activity {
                     public void run() { MainActivity.openAccessibilitySettings(a); }
                 });
             }
+        });
+        final float[] zooms = {1f, 1.5f, 2f, 3f, 4f};
+        choice(Tr.t("Loupe d'écran pendant la lecture (agrandit les autres applis)"),
+                new String[]{Tr.t("Désactivée"), "×1,5", "×2", "×3", "×4"}, new Choice() {
+            public int get() { int b0 = 0; for (int i = 0; i < zooms.length; i++) if (Math.abs(zooms[i] - Prefs.screenZoom(a)) < 0.01f) b0 = i; return b0; }
+            public void set(int i) { Prefs.setScreenZoom(a, zooms[i]); }
         });
         toggle(Tr.t("Afficher la bulle"), new Toggle() {
             public boolean get() { return Prefs.bubble(a); }
@@ -303,5 +343,20 @@ public class SettingsActivity extends Activity {
         r.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { Ui.tick(v); run.run(); }
         });
+    }
+
+    private final Explorer explorer = new Explorer(this);
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int r = explorer.dispatch(ev);
+        if (r == Explorer.CONSUME) return true;
+        if (r == Explorer.INJECT_DOWN) {
+            android.view.MotionEvent d = android.view.MotionEvent.obtain(ev);
+            d.setAction(android.view.MotionEvent.ACTION_DOWN);
+            super.dispatchTouchEvent(d);
+            d.recycle();
+        }
+        return super.dispatchTouchEvent(ev);
     }
 }

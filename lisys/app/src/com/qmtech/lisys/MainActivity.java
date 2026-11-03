@@ -117,6 +117,10 @@ public class MainActivity extends Activity {
         root.addView(head);
 
         root.addView(space(14));
+        if (Prefs.simpleMode(this)) {
+            buildSimple(root);
+            return;
+        }
         Button open = Ui.bigButton(this, Tr.t("📄   Ouvrir un document"), pal.button, pal.buttonText);
         open.setContentDescription(Tr.t("Ouvrir un document : PDF, Word, livre EPUB, texte"));
         open.setOnClickListener(new View.OnClickListener() {
@@ -191,6 +195,43 @@ public class MainActivity extends Activity {
             }
         });
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        Ui.setContent(this, root);
+    }
+
+    /** Mode Simple : trois boutons géants, rien d'autre. */
+    private void buildSimple(LinearLayout root) {
+        String[] labels = {Tr.t("📷   Lire une photo"), Tr.t("🔍   Loupe"), Tr.t("▶   Reprendre la lecture")};
+        for (int k = 0; k < 3; k++) {
+            final int which = k;
+            Button b = Ui.bigButton(this, labels[k], k == 2 ? pal.surface : pal.button, k == 2 ? pal.text : pal.buttonText);
+            b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 28);
+            b.setGravity(Gravity.CENTER);
+            b.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    Ui.tick(v);
+                    if (which == 0) openOcr(OcrActivity.MODE_CAMERA, null);
+                    else if (which == 1) startActivity(new Intent(MainActivity.this, MagnifierActivity.class));
+                    else {
+                        List<Library.Entry> l = Library.list(MainActivity.this);
+                        if (l.isEmpty()) Speaker.say(MainActivity.this, Tr.t("Aucun document à reprendre."), null);
+                        else openReader(l.get(0).id, true);
+                    }
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
+            lp.setMargins(0, 0, 0, Ui.dp(this, 16));
+            root.addView(b, lp);
+        }
+        Button more = Ui.bigButton(this, Tr.t("Tous les choix (quitter le mode Simple)"), pal.bg, pal.muted);
+        more.setGravity(Gravity.CENTER);
+        more.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { Prefs.setSimpleMode(MainActivity.this, false); build(); refresh(); }
+        });
+        root.addView(more, fullWidth());
+        empty = new TextView(this);
+        list = new ListView(this);
+        adapter = new RecentAdapter();
+        bubbleBtn = new Button(this);
         Ui.setContent(this, root);
     }
 
@@ -540,6 +581,7 @@ public class MainActivity extends Activity {
             if (l.isEmpty()) Speaker.say(this, Tr.t("Aucun document à reprendre."));
             else openReader(l.get(0).id, true);
         } else if (VoiceCommands.has(c, "reglage", "reglages", "parametre", "parametres")) openSettings();
+        else if (VoiceCommands.has(c, "heure", "date", "jour", "batterie", "batteries")) Speaker.say(this, VoiceCommands.clockOrBattery(this, c), null);
         else Speaker.say(this, Tr.t("Je n'ai pas compris : ") + raw + Tr.t(". Dis par exemple : photo, loupe, document, ou reprendre."));
     }
 
@@ -783,7 +825,7 @@ public class MainActivity extends Activity {
                 + Tr.t("Tout est traité sur le téléphone, avec la synthèse vocale d'Android. Aucune donnée n'est envoyée ")
                 + Tr.t("ailleurs (sauf le téléchargement des pages web que tu demandes).\n\n")
                 + Tr.t("Bibliothèques : PdfBox-Android (Apache 2.0), jsoup (MIT), Tesseract OCR et son modèle français ")
-                + "(Apache 2.0), tesseract-wasm (Apache 2.0).");
+                + "(Apache 2.0), tesseract-wasm (Apache 2.0), ZXing (Apache 2.0), police Atkinson Hyperlegible (OFL 1.1).");
         t.setTypeface(Typeface.DEFAULT);
         Ui.dialog(a).setTitle(Tr.t("À propos")).setView(t).setPositiveButton("OK", null)
                 .setNeutralButton(Tr.t("Confidentialité"), new DialogInterface.OnClickListener() {
@@ -803,5 +845,20 @@ public class MainActivity extends Activity {
             getSharedPreferences("reglages", MODE_PRIVATE).edit().putBoolean("notifAsked", true).apply();
             requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF);
         }
+    }
+
+    private final Explorer explorer = new Explorer(this);
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        int r = explorer.dispatch(ev);
+        if (r == Explorer.CONSUME) return true;
+        if (r == Explorer.INJECT_DOWN) {
+            android.view.MotionEvent d = android.view.MotionEvent.obtain(ev);
+            d.setAction(android.view.MotionEvent.ACTION_DOWN);
+            super.dispatchTouchEvent(d);
+            d.recycle();
+        }
+        return super.dispatchTouchEvent(ev);
     }
 }
