@@ -260,35 +260,8 @@ public class MainActivity extends Activity {
             openSettings();
             return;
         }
-        if (!Prefs.a11yConsent(this)) {
-            showAccessibilityDisclosure(this, new Runnable() { @Override public void run() { showBubbleHelp(); } });
-            return;
-        }
-        String restricted = Build.VERSION.SDK_INT >= 33
-                ? Tr.t("\n\nSi Android affiche « Paramètre restreint » (appli installée depuis un fichier APK) : ")
-                + Tr.t("appuie sur « Infos appli », puis sur ⋮ en haut à droite, puis « Autoriser les paramètres restreints », ")
-                + Tr.t("et recommence.") : "";
-        Ui.dialog(this)
-                .setTitle(Tr.t("Lire les autres applis et les sites"))
-                .setMessage(Tr.t("Lisys peut afficher un bouton flottant 🔊 par-dessus toutes les applis : ")
-                        + Tr.t("un appui, et Lisys lit à voix haute ce qui est à l'écran.\n\n")
-                        + Tr.t("Pour l'activer :\n1. Appuie sur « Activer »\n2. Choisis « Lisys : bouton de lecture » ")
-                        + Tr.t("(parfois dans « Applis installées » ou « Services téléchargés »)\n3. Active-le et accepte.\n\n")
-                        + Tr.t("Lisys ne lit l'écran que quand tu appuies sur le bouton, et rien n'est envoyé sur internet.")
-                        + restricted)
-                .setPositiveButton(Tr.t("Activer"), new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) { openAccessibilitySettings(MainActivity.this); }
-                })
-                .setNeutralButton(Build.VERSION.SDK_INT >= 33 ? Tr.t("Infos appli") : null, new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int w) {
-                        try {
-                            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.parse("package:" + getPackageName())));
-                        } catch (Exception ignored) {}
-                    }
-                })
-                .setNegativeButton(Tr.t("Plus tard"), null)
-                .show();
+        // Parcours guidé (à la voix) : consentement, page du bouton, paramètre restreint si besoin.
+        startActivity(new Intent(this, SetupActivity.class).putExtra(SetupActivity.EXTRA_ONLY_BUBBLE, true));
     }
 
     /**
@@ -372,6 +345,17 @@ public class MainActivity extends Activity {
     }
 
     static void openAccessibilitySettings(final Activity a) {
+        // Directement la page « Lisys : bouton de lecture » (Android 11+ sur la plupart des téléphones),
+        // sinon la liste des réglages d'accessibilité.
+        try {
+            Intent d = new Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS")
+                    .putExtra(Intent.EXTRA_COMPONENT_NAME, new android.content.ComponentName(a, ScreenReaderService.class).flattenToString());
+            if (d.resolveActivity(a.getPackageManager()) != null) {
+                a.startActivity(d);
+                return;
+            }
+        } catch (Exception ignored) {
+        }
         try {
             a.startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
         } catch (Exception e) {

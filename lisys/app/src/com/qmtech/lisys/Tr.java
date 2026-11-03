@@ -52,6 +52,9 @@ final class Tr {
     }
 
     private static final String[] EN = {
+            "C'est activé ! La bulle Lisys est maintenant sur l'écran.", "It's on! The Lisys bubble is now on the screen.",
+            "Maintenant, active « Lisys : bouton de lecture » et accepte.", "Now turn on “Lisys: reading button” and accept.",
+            "Si Android a dit « paramètre restreint », je t'ouvre la page Infos appli. Touche les trois points en haut à droite, puis « Autoriser les paramètres restreints », puis reviens avec la flèche retour.", "If Android said “restricted setting”, I'm opening the App info page. Tap the three dots at the top right, then “Allow restricted settings”, then come back with the back arrow.",
             "📷   Lire une photo", "📷   Read a photo",
             "🔍   Loupe", "🔍   Magnifier",
             "▶   Reprendre la lecture", "▶   Continue reading",
@@ -567,6 +570,9 @@ final class Tr {
     };
 
     private static final String[] ES = {
+            "C'est activé ! La bulle Lisys est maintenant sur l'écran.", "¡Activado! La burbuja de Lisys ya está en la pantalla.",
+            "Maintenant, active « Lisys : bouton de lecture » et accepte.", "Ahora activa «Lisys: botón de lectura» y acepta.",
+            "Si Android a dit « paramètre restreint », je t'ouvre la page Infos appli. Touche les trois points en haut à droite, puis « Autoriser les paramètres restreints », puis reviens avec la flèche retour.", "Si Android ha dicho «ajuste restringido», te abro la página Información de la app. Toca los tres puntos arriba a la derecha, luego «Permitir ajustes restringidos» y vuelve con la flecha atrás.",
             "📷   Lire une photo", "📷   Leer una foto",
             "🔍   Loupe", "🔍   Lupa",
             "▶   Reprendre la lecture", "▶   Seguir leyendo",

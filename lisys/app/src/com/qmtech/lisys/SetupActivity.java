@@ -23,6 +23,10 @@ public class SetupActivity extends Activity {
     private static final int STEP_WELCOME = 0, STEP_NOTIF = 1, STEP_BUBBLE = 2, STEP_DONE = 3;
     private int step = STEP_WELCOME;
     private boolean sentToSettings;
+    static final String EXTRA_ONLY_BUBBLE = "onlyBubble";
+    private boolean onlyBubble;
+    private int attempts;
+    private boolean sentToAppInfo;
     private boolean resumed;
     private int retries;
     private static final int REQ_VOICE = 5;
@@ -30,7 +34,9 @@ public class SetupActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        if (state != null) step = state.getInt("step", STEP_WELCOME);
+        onlyBubble = getIntent().getBooleanExtra(EXTRA_ONLY_BUBBLE, false);
+        if (onlyBubble) step = STEP_BUBBLE;
+        if (state != null) step = state.getInt("step", step);
         show();
     }
 
@@ -45,14 +51,49 @@ public class SetupActivity extends Activity {
         super.onResume();
         resumed = true;
         // Retour des réglages d'Android : on vérifie tout seul si le bouton flottant est activé.
-        if (step == STEP_BUBBLE && sentToSettings) {
+        if (step != STEP_BUBBLE) return;
+        if (ScreenReaderService.isEnabled(this) && (sentToSettings || sentToAppInfo)) {
+            sentToSettings = sentToAppInfo = false;
+            Ui.beep(this, 0);
+            if (onlyBubble) {
+                Speaker.say(this, Tr.t("C'est activé ! La bulle Lisys est maintenant sur l'écran."), null);
+                finish();
+            } else { step = STEP_DONE; show(); }
+            return;
+        }
+        if (sentToAppInfo) {
+            // Retour de « Infos appli » : on rouvre tout de suite la page du bouton flottant.
+            sentToAppInfo = false;
+            sentToSettings = true;
+            Speaker.say(this, Tr.t("Maintenant, active « Lisys : bouton de lecture » et accepte."),
+                    new Runnable() { public void run() { MainActivity.openAccessibilitySettings(SetupActivity.this); } });
+            return;
+        }
+        if (sentToSettings) {
             sentToSettings = false;
-            if (ScreenReaderService.isEnabled(this)) { step = STEP_DONE; show(); }
-            else Speaker.say(this, Tr.t("Le bouton flottant n'est pas encore activé. Tu peux réessayer, ou passer cette étape."));
+            attempts++;
+            if (Build.VERSION.SDK_INT >= 33 && attempts <= 2) {
+                // Pas activé au retour : c'est presque toujours le « paramètre restreint » (appli installée par APK).
+                sentToAppInfo = true;
+                Speaker.say(this, Tr.t("Si Android a dit « paramètre restreint », je t'ouvre la page Infos appli. Touche les trois points en haut à droite, puis « Autoriser les paramètres restreints », puis reviens avec la flèche retour."),
+                        new Runnable() {
+                            public void run() {
+                                try {
+                                    startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.parse("package:" + getPackageName())));
+                                } catch (Exception e) {
+                                    sentToAppInfo = false;
+                                }
+                            }
+                        });
+            } else {
+                Speaker.say(this, Tr.t("Le bouton flottant n'est pas encore activé. Tu peux réessayer, ou passer cette étape."));
+            }
         }
     }
 
     private void next() {
+        if (onlyBubble) { finish(); return; }
         step++;
         if (step == STEP_NOTIF && (Build.VERSION.SDK_INT < 33
                 || checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED)) step++;
@@ -62,7 +103,7 @@ public class SetupActivity extends Activity {
     }
 
     private void finishSetup() {
-        Prefs.setSetupDone(this, true);
+        if (!onlyBubble) Prefs.setSetupDone(this, true);
         finish();
     }
 
