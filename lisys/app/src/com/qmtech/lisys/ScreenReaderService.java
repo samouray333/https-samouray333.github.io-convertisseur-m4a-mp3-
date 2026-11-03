@@ -346,6 +346,11 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     }
 
     private void onBubbleTap() {
+        // Un vocal vient d'être annoncé : la bulle sert à l'écouter.
+        if (pendingVoice != null && SystemClock.uptimeMillis() - pendingVoiceAt < 30000) {
+            playVoiceNote();
+            return;
+        }
         if (fingerRoot != null) {
             stopFingerMode(true);
             return;
@@ -1103,6 +1108,10 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         lastAnnounceKey = key;
         lastAnnounceAt = now;
         String app = appLabel(pkg);
+        if (Prefs.voiceNotes(this) && isVoiceNote(text)) {
+            offerVoiceNote(n, title, app);
+            return;
+        }
         StringBuilder sb = new StringBuilder(Tr.t("Nouveau message"));
         if (title != null && title.length() > 0) sb.append(Tr.t(" de ")).append(title);
         if (app != null) sb.append(", ").append(app);
@@ -1115,6 +1124,155 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
             reader.tts().speak(sb.toString(), TextToSpeech.QUEUE_ADD, null, "annonce");
         } catch (Exception ignored) {
         }
+    }
+
+    // ------------------------------------------------------------------ messages vocaux : « Veux-tu l'écouter ? »
+
+    private android.app.Notification pendingVoice;
+    private long pendingVoiceAt;
+    private android.speech.SpeechRecognizer recognizer;
+
+    static boolean isVoiceNote(CharSequence text) {
+        if (text == null) return false;
+        String t = text.toString().toLowerCase(java.util.Locale.ROOT);
+        return t.contains("message vocal") || t.contains("messages vocaux") || t.contains("voice message")
+                || t.contains("mensaje de voz") || t.contains("nota de voz") || t.contains("audio") || t.contains("\uD83C\uDFA4")
+                || t.contains("\uD83C\uDF99");
+    }
+
+    /** Annonce le vocal, bip, puis écoute la réponse (« oui ») pendant quelques secondes. */
+    private void offerVoiceNote(android.app.Notification n, CharSequence from, String app) {
+        pendingVoice = n;
+        pendingVoiceAt = SystemClock.uptimeMillis();
+        String who = from != null && from.length() > 0 ? from.toString() : Tr.t("Quelqu'un");
+        final boolean canListen = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                && android.speech.SpeechRecognizer.isRecognitionAvailable(this);
+        String q = who + Tr.t(" t'a envoyé un message vocal") + (app != null ? ", " + app : "") + ". "
+                + (canListen ? Tr.t("Veux-tu l'écouter ? Réponds oui après le bip.") : Tr.t("Touche la bulle pour l'écouter."));
+        Speaker.say(this, q, new Runnable() {
+            @Override public void run() {
+                if (!canListen) return;
+                Ui.beep(ScreenReaderService.this, 0);
+                main.postDelayed(new Runnable() { @Override public void run() { listenYes(); } }, 350);
+            }
+        });
+    }
+
+    private void listenYes() {
+        try {
+            if (recognizer == null) {
+                recognizer = android.speech.SpeechRecognizer.createSpeechRecognizer(this);
+                recognizer.setRecognitionListener(new android.speech.RecognitionListener() {
+                    @Override public void onResults(Bundle r) {
+                        java.util.ArrayList<String> l = r.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
+                        boolean yes = false;
+                        if (l != null) for (String s : l) {
+                            String c = VoiceCommands.norm(s).replace("d accord", "daccord");
+                            if (VoiceCommands.has(c, "oui", "ouais", "ok", "okay", "daccord", "vas", "ecoute", "ecouter", "lis", "yes", "si")) yes = true;
+                        }
+                        if (yes) playVoiceNote();
+                        else { pendingVoice = null; Speaker.say(ScreenReaderService.this, Tr.t("D'accord, plus tard."), null); }
+                    }
+                    @Override public void onError(int e) {
+                        // Pas de réponse : la bulle reste possible 30 secondes. Micro refusé par Android : on le dit.
+                        if (e == 9 /* ERROR_INSUFFICIENT_PERMISSIONS */ || e == 5 /* ERROR_CLIENT */)
+                            Speaker.say(ScreenReaderService.this, Tr.t("Touche la bulle pour l'écouter."), null);
+                    }
+                    @Override public void onReadyForSpeech(Bundle b) {}
+                    @Override public void onBeginningOfSpeech() {}
+                    @Override public void onRmsChanged(float v) {}
+                    @Override public void onBufferReceived(byte[] b) {}
+                    @Override public void onEndOfSpeech() {}
+                    @Override public void onPartialResults(Bundle b) {}
+                    @Override public void onEvent(int t, Bundle b) {}
+                });
+            }
+            Intent i = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, Tr.locale().toLanguageTag())
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 3);
+            recognizer.startListening(i);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Ouvre la conversation (comme un toucher sur la notification), puis appuie sur ▶ du dernier vocal. */
+    private void playVoiceNote() {
+        final android.app.Notification n = pendingVoice;
+        pendingVoice = null;
+        if (n == null || n.contentIntent == null) return;
+        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (km != null && km.isKeyguardLocked()) {
+            // Écran verrouillé : on attend le déverrouillage (une minute au plus).
+            Speaker.say(this, Tr.t("Déverrouille le téléphone, puis je lance le message vocal."), null);
+            final android.content.BroadcastReceiver[] r = new android.content.BroadcastReceiver[1];
+            r[0] = new android.content.BroadcastReceiver() {
+                @Override public void onReceive(android.content.Context c, Intent i) {
+                    try { unregisterReceiver(this); } catch (Exception ignored) {}
+                    openAndPlay(n);
+                }
+            };
+            registerReceiver(r[0], new android.content.IntentFilter(Intent.ACTION_USER_PRESENT));
+            main.postDelayed(new Runnable() { @Override public void run() { try { unregisterReceiver(r[0]); } catch (Exception ignored) {} } }, 60000);
+            return;
+        }
+        openAndPlay(n);
+    }
+
+    private void openAndPlay(android.app.Notification n) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                android.app.ActivityOptions o = android.app.ActivityOptions.makeBasic();
+                o.setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                n.contentIntent.send(this, 0, null, null, null, null, o.toBundle());
+            } else {
+                n.contentIntent.send();
+            }
+        } catch (Exception e) {
+            Speaker.say(this, Tr.t("Je n'arrive pas à ouvrir la conversation."), null);
+            return;
+        }
+        pressPlay(0);
+    }
+
+    private static final String[] PLAY_WORDS = {"lire", "écouter", "ecouter", "lecture", "play", "reproducir", "riproduci"};
+
+    /** Cherche le dernier bouton ▶ (vocal) visible de l'écran et appuie dessus ; réessaie quelques fois. */
+    private void pressPlay(final int attempt) {
+        main.postDelayed(new Runnable() {
+            @Override public void run() {
+                AccessibilityNodeInfo root = appRoot();
+                AccessibilityNodeInfo best = null;
+                Rect bestRect = null;
+                if (root != null) {
+                    java.util.ArrayList<AccessibilityNodeInfo> stack = new java.util.ArrayList<AccessibilityNodeInfo>();
+                    stack.add(root);
+                    int visited = 0;
+                    while (!stack.isEmpty() && visited++ < 5000) {
+                        AccessibilityNodeInfo nd = stack.remove(stack.size() - 1);
+                        if (nd == null) continue;
+                        CharSequence d = nd.getContentDescription();
+                        if (d != null && nd.isVisibleToUser()) {
+                            String ds = d.toString().toLowerCase(java.util.Locale.ROOT).trim();
+                            for (String w : PLAY_WORDS) {
+                                if (ds.equals(w) || ds.startsWith(w + " ")) {
+                                    Rect r = new Rect();
+                                    nd.getBoundsInScreen(r);
+                                    if (bestRect == null || r.top > bestRect.top) { best = nd; bestRect = r; } // le plus bas = le plus récent
+                                    break;
+                                }
+                            }
+                        }
+                        for (int i = 0; i < nd.getChildCount(); i++) stack.add(nd.getChild(i));
+                    }
+                }
+                AccessibilityNodeInfo target = best;
+                while (target != null && !target.isClickable()) target = target.getParent();
+                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+                if (attempt < 5) pressPlay(attempt + 1);
+                else Speaker.say(ScreenReaderService.this, Tr.t("La conversation est ouverte. Touche le bouton lecture du message vocal."), null);
+            }
+        }, attempt == 0 ? 1500 : 800);
     }
 
     private String appLabel(String pkg) {

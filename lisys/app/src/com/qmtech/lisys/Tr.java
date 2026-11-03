@@ -52,6 +52,15 @@ final class Tr {
     }
 
     private static final String[] EN = {
+            " t'a envoyé un message vocal", " sent you a voice message",
+            "Quelqu'un", "Someone",
+            "Veux-tu l'écouter ? Réponds oui après le bip.", "Do you want to listen to it? Say yes after the beep.",
+            "Touche la bulle pour l'écouter.", "Tap the bubble to listen to it.",
+            "D'accord, plus tard.", "OK, later.",
+            "Déverrouille le téléphone, puis je lance le message vocal.", "Unlock the phone, then I'll play the voice message.",
+            "Je n'arrive pas à ouvrir la conversation.", "I can't open the conversation.",
+            "La conversation est ouverte. Touche le bouton lecture du message vocal.", "The conversation is open. Tap the play button of the voice message.",
+            "Messages vocaux : proposer de les écouter (répondre « oui »)", "Voice messages: offer to play them (answer “yes”)",
             "C'est activé ! La bulle Lisys est maintenant sur l'écran.", "It's on! The Lisys bubble is now on the screen.",
             "Maintenant, active « Lisys : bouton de lecture » et accepte.", "Now turn on “Lisys: reading button” and accept.",
             "Si Android a dit « paramètre restreint », je t'ouvre la page Infos appli. Touche les trois points en haut à droite, puis « Autoriser les paramètres restreints », puis reviens avec la flèche retour.", "If Android said “restricted setting”, I'm opening the App info page. Tap the three dots at the top right, then “Allow restricted settings”, then come back with the back arrow.",
@@ -570,6 +579,15 @@ final class Tr {
     };
 
     private static final String[] ES = {
+            " t'a envoyé un message vocal", " te ha enviado un mensaje de voz",
+            "Quelqu'un", "Alguien",
+            "Veux-tu l'écouter ? Réponds oui après le bip.", "¿Quieres escucharlo? Di sí después del pitido.",
+            "Touche la bulle pour l'écouter.", "Toca la burbuja para escucharlo.",
+            "D'accord, plus tard.", "De acuerdo, más tarde.",
+            "Déverrouille le téléphone, puis je lance le message vocal.", "Desbloquea el teléfono y pondré el mensaje de voz.",
+            "Je n'arrive pas à ouvrir la conversation.", "No consigo abrir la conversación.",
+            "La conversation est ouverte. Touche le bouton lecture du message vocal.", "La conversación está abierta. Toca el botón de reproducir del mensaje de voz.",
+            "Messages vocaux : proposer de les écouter (répondre « oui »)", "Mensajes de voz: ofrecer escucharlos (responder «sí»)",
             "C'est activé ! La bulle Lisys est maintenant sur l'écran.", "¡Activado! La burbuja de Lisys ya está en la pantalla.",
             "Maintenant, active « Lisys : bouton de lecture » et accepte.", "Ahora activa «Lisys: botón de lectura» y acepta.",
             "Si Android a dit « paramètre restreint », je t'ouvre la page Infos appli. Touche les trois points en haut à droite, puis « Autoriser les paramètres restreints », puis reviens avec la flèche retour.", "Si Android ha dicho «ajuste restringido», te abro la página Información de la app. Toca los tres puntos arriba a la derecha, luego «Permitir ajustes restringidos» y vuelve con la flecha atrás.",

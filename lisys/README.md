@@ -2,7 +2,8 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.9.1 (versionCode 12), entièrement gratuite
+- Version : 2.0 (versionCode 13), entièrement gratuite
+- 2.0 : **messages vocaux** : Lisys reconnaît un vocal reçu (WhatsApp, Messenger, Telegram…), demande « Veux-tu l'écouter ? », fait un bip et écoute la réponse « oui » (micro, quelques secondes) ; il ouvre alors la conversation et appuie sur ▶ du dernier vocal. Sans réponse, toucher la bulle dans les 30 secondes fait la même chose. Écran verrouillé : lancement au déverrouillage.
 - 1.9.1 : activation du bouton flottant simplifiée (ouverture directe de la page « Lisys : bouton de lecture », enchaînement automatique avec « Infos appli » en cas de paramètre restreint, guidé à la voix).
 - Package : `com.qmtech.lisys` (définitif pour le Play Store ; les versions 1.0 à 1.4 s'appelaient `com.echomatras.lisys`)
 - Android 8.0 (API 26) minimum, cible Android 16 (API 36), comme l'exige le Play Store

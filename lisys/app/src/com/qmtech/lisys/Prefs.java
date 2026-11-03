@@ -124,6 +124,10 @@ public final class Prefs {
     public static float screenZoom(Context c) { return sp(c).getFloat("screenZoom", 1f); }
     public static void setScreenZoom(Context c, float v) { sp(c).edit().putFloat("screenZoom", v).apply(); }
 
+    /** Messages vocaux : proposer de les écouter (réponse « oui »). */
+    public static boolean voiceNotes(Context c) { return sp(c).getBoolean("voiceNotes", true); }
+    public static void setVoiceNotes(Context c, boolean v) { sp(c).edit().putBoolean("voiceNotes", v).apply(); }
+
     public static String lastUrl(Context c) { return sp(c).getString("lastUrl", ""); }
     public static void setLastUrl(Context c, String v) { sp(c).edit().putString("lastUrl", v).apply(); }
 }

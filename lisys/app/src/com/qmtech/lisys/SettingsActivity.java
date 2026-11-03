@@ -215,7 +215,22 @@ public class SettingsActivity extends Activity {
         });
         toggle(Tr.t("Annoncer les messages reçus"), new Toggle() {
             public boolean get() { return Prefs.announce(a); }
-            public void set(boolean v) { Prefs.setAnnounce(a, v); }
+            public void set(boolean v) {
+                Prefs.setAnnounce(a, v);
+                if (v && Prefs.voiceNotes(a) && a.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    a.requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, 3);
+                }
+            }
+        });
+        toggle(Tr.t("Messages vocaux : proposer de les écouter (répondre « oui »)"), new Toggle() {
+            public boolean get() { return Prefs.voiceNotes(a); }
+            public void set(boolean v) {
+                Prefs.setVoiceNotes(a, v);
+                // Le micro sert seulement à entendre « oui », quelques secondes après le bip.
+                if (v && a.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    a.requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, 3);
+                }
+            }
         });
         toggle(Tr.t("Lire aussi le texte des messages"), new Toggle() {
             public boolean get() { return Prefs.announceContent(a); }

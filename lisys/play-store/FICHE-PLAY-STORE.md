@@ -4,7 +4,7 @@ Tout ce qu'il faut copier-coller dans la Play Console, dans l'ordre où elle le 
 
 - Package : `com.qmtech.lisys` (ne pourra plus changer)
 - Éditeur : QMTech
-- Fichier à envoyer : `release/Lisys-1.9.1.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
+- Fichier à envoyer : `release/Lisys-2.0.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
 - Politique de confidentialité : `https://samouray333.github.io/https-samouray333.github.io-convertisseur-m4a-mp3-/lisys/confidentialite.html`
   (la page doit être en ligne : fusionner la branche dans `main`, vérifier que GitHub Pages est activé, et remplacer `[ADRESSE E-MAIL DE CONTACT]` dans `confidentialite.html`)
 
@@ -55,6 +55,7 @@ Lisys lit à voix haute tout ce que vous avez du mal à lire : vos documents, le
 • Deux doigts pour faire défiler la page
 • Bulle réglable : 5 tailles, 8 couleurs bien contrastées
 • Options : bandeau en très gros texte, lecture avec les boutons de volume, annonce des messages reçus
+• Messages vocaux : « Veux-tu l'écouter ? », répondez « oui » et Lisys le lance
 
 🔍 LA LOUPE
 • L'appareil photo grossit jusqu'à ×8, avec lampe et couleurs renforcées (jaune sur noir, blanc sur noir…)
@@ -130,7 +131,7 @@ Lisys utilise le service d'accessibilité d'Android uniquement pour lire à voix
 **Appli d'actualités** : Non. **Appli de santé** : Non (c'est un outil d'accessibilité, pas une appli médicale). **Appli gouvernementale** : Non. **Fonctionnalités financières** : Aucune.
 
 ### Sécurité des données
-- **Votre appli collecte-t-elle ou partage-t-elle des données utilisateur ?** → **Non**.
+- **Votre appli collecte-t-elle ou partage-t-elle des données utilisateur ?** → **Non**. (Le micro ne sert qu'à entendre « oui » après l'annonce d'un vocal, via la reconnaissance vocale d'Android ; Lisys n'enregistre ni n'envoie rien.)
   Explication (pour toi) : selon les règles Google, les données traitées uniquement sur l'appareil, sans être envoyées au développeur ni à un tiers, ne sont pas « collectées ». Lisys n'a aucun serveur. Le téléchargement d'une page web demandée par l'utilisateur va directement au site concerné, comme dans un navigateur.
 - Chiffrement en transit : sans objet (pas de collecte).
 - Suppression des données : l'utilisateur peut tout effacer dans l'appli ou en la désinstallant.
@@ -158,7 +159,7 @@ Lisys est une appli de lecture à voix haute pour les personnes malvoyantes ou a
 ## 4. Tests obligatoires avant la publication
 
 Pour un compte développeur personnel récent, Google exige un **test fermé avec au moins 12 testeurs inscrits pendant 14 jours d'affilée** avant d'autoriser la publication pour tout le monde.
-1. Tests > Tests fermés > créer un canal, envoyer `Lisys-1.9.1.aab`.
+1. Tests > Tests fermés > créer un canal, envoyer `Lisys-2.0.aab`.
 2. Ajouter les adresses Gmail des testeurs (famille, amis, club…).
 3. Leur envoyer le lien d'inscription : ils installent Lisys depuis le Play Store et la gardent 14 jours.
 4. Ensuite : Production > demander l'accès, répondre aux questions sur le test, publier.
