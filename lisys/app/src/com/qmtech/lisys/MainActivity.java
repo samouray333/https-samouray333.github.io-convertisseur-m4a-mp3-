@@ -321,8 +321,8 @@ public class MainActivity extends Activity {
                         + "• Un appui : Lisys lit tout le texte affiché (page web, appli, message…). "
                         + "Un deuxième appui arrête.\n\n"
                         + "• Appui long (la bulle devient ✋) : lecture au doigt. Glisse le doigt sur le texte : "
-                        + "Lisys lit la phrase qui est sous le doigt et l'entoure en jaune. Quand tu lèves le doigt, "
-                        + "la lecture continue. Deux doigts vers le haut ou le bas : faire défiler la page. "
+                        + "Lisys lit seulement la phrase qui est sous le doigt et l'entoure en jaune. Déplace le doigt pour "
+                        + "lire une autre phrase (option dans les réglages pour continuer jusqu'en bas). Deux doigts vers le haut ou le bas : faire défiler la page. "
                         + "Touche la bulle pour quitter ce mode.\n\n"
                         + "• Glisse la bulle pour la déplacer : elle se range contre le bord.\n\n"
                         + "Avec TalkBack, les deux actions sont dans le menu des actions de la bulle.")

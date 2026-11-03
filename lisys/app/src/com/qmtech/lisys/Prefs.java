@@ -90,6 +90,13 @@ public final class Prefs {
     public static String bookmarks(Context c, String id) { return sp(c).getString("bm_" + id, "[]"); }
     public static void setBookmarks(Context c, String id, String json) { sp(c).edit().putString("bm_" + id, json).apply(); }
 
+    /** Lecture au doigt : continuer après la phrase touchée (sinon, seulement la phrase sous le doigt). */
+    public static boolean fingerContinue(Context c) { return sp(c).getBoolean("fingerContinue", false); }
+    public static void setFingerContinue(Context c, boolean v) { sp(c).edit().putBoolean("fingerContinue", v).apply(); }
+    /** Assistant : répondre à voix haute (oui, non, répète…). */
+    public static boolean voiceAnswers(Context c) { return sp(c).getBoolean("voiceAnswers", true); }
+    public static void setVoiceAnswers(Context c, boolean v) { sp(c).edit().putBoolean("voiceAnswers", v).apply(); }
+
     public static String lastUrl(Context c) { return sp(c).getString("lastUrl", ""); }
     public static void setLastUrl(Context c, String v) { sp(c).edit().putString("lastUrl", v).apply(); }
 }

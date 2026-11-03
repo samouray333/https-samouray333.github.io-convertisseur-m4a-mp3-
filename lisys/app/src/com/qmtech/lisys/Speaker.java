@@ -11,8 +11,35 @@ final class Speaker {
     private static boolean ready;
     private static String pending;
 
+    private static Runnable onDone;
+    private static int counter;
+
+    /** Parle, puis lance {@code done} à la fin de la phrase (sur le fil principal). */
+    static void say(Context c, String text, Runnable done) {
+        onDone = done;
+        sayInternal(c, text, true);
+    }
+
     static void say(Context c, String text) {
-        if (!Prefs.voiceFeedback(c) || ReaderService.playingNow) return;
+        onDone = null;
+        sayInternal(c, text, false);
+    }
+
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    private static void finished(String id) {
+        final Runnable r = onDone;
+        if (r == null || !("ui" + counter).equals(id)) return;
+        onDone = null;
+        MAIN.post(r);
+    }
+
+    private static void sayInternal(Context c, String text, boolean force) {
+        if ((!force && !Prefs.voiceFeedback(c)) || ReaderService.playingNow) {
+            if (onDone != null) { Runnable r = onDone; onDone = null; MAIN.post(r); }
+            return;
+        }
+        counter++;
         final Context app = c.getApplicationContext();
         if (tts == null) {
             pending = text;
@@ -21,8 +48,13 @@ final class Speaker {
                     if (status != TextToSpeech.SUCCESS) return;
                     ready = true;
                     ReaderService.applyVoice(app, tts);
+                    tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+                        @Override public void onStart(String id) {}
+                        @Override public void onDone(String id) { finished(id); }
+                        @Override public void onError(String id) { finished(id); }
+                    });
                     tts.setSpeechRate(Prefs.rate(app));
-                    if (pending != null) tts.speak(pending, TextToSpeech.QUEUE_FLUSH, null, "ui");
+                    if (pending != null) tts.speak(pending, TextToSpeech.QUEUE_FLUSH, null, "ui" + counter);
                     pending = null;
                 }
             });
@@ -30,7 +62,7 @@ final class Speaker {
         }
         if (!ready) { pending = text; return; }
         tts.setSpeechRate(Prefs.rate(app));
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ui");
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ui" + counter);
     }
 
     static void stop() {

@@ -623,7 +623,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         fingerRoot.addView(fingerLayer, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         final TextView hint = new TextView(this);
-        hint.setText("✋ Glisse ton doigt sur le texte\nDeux doigts pour faire défiler\nTouche la bulle pour quitter");
+        hint.setText("✋ Pose ton doigt sur le texte :\nLisys lit la phrase dessous\nDeux doigts pour faire défiler\nTouche la bulle pour quitter");
         hint.setTextColor(0xFF000000);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         hint.setTypeface(Typeface.DEFAULT_BOLD);
@@ -645,6 +645,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
                 lastTouch = SystemClock.uptimeMillis();
                 if (handleTwoFingers(e)) return true;
                 int a = e.getActionMasked();
+                if (a == MotionEvent.ACTION_DOWN) { lastPara = -1; lastSent = -1; } // nouveau toucher : on relit
                 if (a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_MOVE) {
                     lastTouch = SystemClock.uptimeMillis();
                     fingerAt((int) e.getRawX(), (int) e.getRawY());
@@ -667,7 +668,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         }
         bringBubbleToFront();
         updateBubbleState();
-        announce("Lecture au doigt. Glisse ton doigt sur le texte.");
+        announce("Lecture au doigt. Pose ton doigt sur le texte : je lis la phrase qui est dessous.");
         main.postDelayed(idleCheck, 5000);
     }
 
@@ -705,12 +706,17 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         List<int[]> ss = reader.sentences(idx);
         int sent = 0;
         for (int k = 0; k < ss.size(); k++) if (clean >= ss.get(k)[0]) sent = k;
-        if (idx == lastPara && sent == lastSent && reader.isPlaying()) return;
+        // Même phrase : on ne relit pas tant que le doigt n'a pas été levé.
+        if (idx == lastPara && sent == lastSent) return;
         lastPara = idx;
         lastSent = sent;
         if (!fingerDocId.equals(reader.docId())) reader.load(fingerDocId, true);
-        reader.seek(idx, sent);
-        if (!reader.isPlaying()) reader.play();
+        if (Prefs.fingerContinue(this)) {
+            reader.seek(idx, sent);
+            if (!reader.isPlaying()) reader.play();
+        } else {
+            reader.playSentenceOnly(idx, sent);
+        }
         highlight(idx, sent);
     }
 

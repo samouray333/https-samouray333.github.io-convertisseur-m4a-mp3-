@@ -116,6 +116,10 @@ public class SettingsActivity extends Activity {
             public boolean get() { return Prefs.vibrate(a); }
             public void set(boolean v) { Prefs.setVibrate(a, v); }
         });
+        toggle("Assistant : répondre à voix haute (oui, non, répète)", new Toggle() {
+            public boolean get() { return Prefs.voiceAnswers(a); }
+            public void set(boolean v) { Prefs.setVoiceAnswers(a, v); }
+        });
         action("Assistant de démarrage", new Runnable() { public void run() { startActivity(new Intent(a, SetupActivity.class)); } });
 
         // ---------------------------------------------------------------- bouton flottant
@@ -140,6 +144,10 @@ public class SettingsActivity extends Activity {
         choice("Couleur de la bulle", Ui.BUBBLE_COLOR_NAMES, new Choice() {
             public int get() { return Prefs.bubbleColor(a); }
             public void set(int i) { Prefs.setBubbleColor(a, i); }
+        });
+        toggle("Lecture au doigt : continuer après la phrase touchée", new Toggle() {
+            public boolean get() { return Prefs.fingerContinue(a); }
+            public void set(boolean v) { Prefs.setFingerContinue(a, v); }
         });
         toggle("Annonces vocales de la bulle", new Toggle() {
             public boolean get() { return Prefs.bubbleVoice(a); }

@@ -173,7 +173,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         for (Listener l : copyListeners()) l.onTtsReady(true, null);
         if (pendingPlay) {
             pendingPlay = false;
-            play();
+            startPlay();
         }
     }
 
@@ -310,7 +310,28 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         else play();
     }
 
+    /** Lit une seule phrase puis s'arrête (lecture au doigt). */
+    public void playSentenceOnly(int p, int s) {
+        if (paras.isEmpty()) return;
+        p = Math.max(0, Math.min(p, paras.size() - 1));
+        s = Math.max(0, Math.min(s, sentences(p).size() - 1));
+        para = p;
+        sent = s;
+        stopPara = p;
+        stopSent = s;
+        for (Listener l : copyListeners()) l.onPosition(para, sent);
+        if (playing) speakFrom(p, s);
+        else startPlay();
+    }
+
+    private int stopPara = -1, stopSent = -1;
+
     public void play() {
+        stopPara = -1;
+        startPlay();
+    }
+
+    private void startPlay() {
         if (paras.isEmpty()) return;
         if (!ttsReady) {
             pendingPlay = true;
@@ -460,6 +481,7 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         while (queued < LOOKAHEAD && qPara < paras.size()) {
             List<int[]> ss = sentences(qPara);
             if (qSent >= ss.size()) { qPara++; qSent = 0; continue; }
+            if (stopPara >= 0 && (qPara > stopPara || (qPara == stopPara && qSent > stopSent))) break;
             int[] b = ss.get(qSent);
             String text = paras.get(qPara).substring(b[0], b[1]);
             String id = generation + ":" + qPara + ":" + qSent;
@@ -511,6 +533,12 @@ public class ReaderService extends Service implements TextToSpeech.OnInitListene
         int[] pos = parseId(id);
         if (pos == null || !playing) return;
         queued--;
+        if (stopPara >= 0 && pos[0] == stopPara && pos[1] == stopSent) {
+            // Phrase sous le doigt terminée : on s'arrête là.
+            stopPara = -1;
+            pause();
+            return;
+        }
         boolean last = pos[0] == paras.size() - 1 && pos[1] == sentences(pos[0]).size() - 1;
         if (last) {
             // Fin du document.

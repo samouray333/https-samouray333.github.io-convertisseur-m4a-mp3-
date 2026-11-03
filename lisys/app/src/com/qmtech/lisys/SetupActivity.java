@@ -23,6 +23,9 @@ public class SetupActivity extends Activity {
     private static final int STEP_WELCOME = 0, STEP_NOTIF = 1, STEP_BUBBLE = 2, STEP_DONE = 3;
     private int step = STEP_WELCOME;
     private boolean sentToSettings;
+    private boolean resumed;
+    private int retries;
+    private static final int REQ_VOICE = 5;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -40,6 +43,7 @@ public class SetupActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         // Retour des réglages d'Android : on vérifie tout seul si le bouton flottant est activé.
         if (step == STEP_BUBBLE && sentToSettings) {
             sentToSettings = false;
@@ -105,15 +109,7 @@ public class SetupActivity extends Activity {
                         + (Build.VERSION.SDK_INT >= 33 ? "\n\nSi Android dit « Paramètre restreint » : appuie sur "
                         + "« Infos appli », puis sur les trois points en haut à droite, puis « Autoriser les paramètres "
                         + "restreints », et recommence." : "");
-                addButton(buttons, pal, "Activer", true, new Runnable() {
-                    public void run() {
-                        Runnable go = new Runnable() {
-                            public void run() { sentToSettings = true; MainActivity.openAccessibilitySettings(SetupActivity.this); }
-                        };
-                        if (Prefs.a11yConsent(SetupActivity.this)) go.run();
-                        else MainActivity.showAccessibilityDisclosure(SetupActivity.this, go);
-                    }
-                });
+                addButton(buttons, pal, "Activer", true, new Runnable() { public void run() { activateBubble(); } });
                 if (Build.VERSION.SDK_INT >= 33) {
                     addButton(buttons, pal, "Infos appli (paramètre restreint)", false, new Runnable() {
                         public void run() {
@@ -151,9 +147,98 @@ public class SetupActivity extends Activity {
         body.setLineSpacing(0, 1.2f);
         sv.addView(body);
         root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        addButton(buttons, pal, "🎤   Répondre à voix haute", false, new Runnable() { public void run() { listen(); } });
         root.addView(buttons);
         Ui.setContent(this, root);
-        Speaker.say(this, title + ". " + Ui.spoken(text));
+        retries = 0;
+        // Tout est lu à voix haute, puis Lisys écoute la réponse (« oui », « non », « répète »…).
+        Speaker.say(this, title + ". " + Ui.spoken(text) + " " + question(), new Runnable() {
+            public void run() { if (resumed && !isFinishing() && Prefs.voiceAnswers(SetupActivity.this)) listen(); }
+        });
+    }
+
+    private String question() {
+        switch (step) {
+            case STEP_WELCOME: return "Dis « oui » pour continuer, « contraste » pour le jaune sur noir, « gros boutons », ou « répète ».";
+            case STEP_NOTIF: return "Dis « oui » pour autoriser, ou « non » pour passer.";
+            case STEP_BUBBLE: return "Dis « oui » pour activer le bouton flottant, ou « non » pour passer.";
+            default: return "Dis « oui » pour commencer.";
+        }
+    }
+
+    private void listen() {
+        VoiceCommands.listen(this, REQ_VOICE, question());
+    }
+
+    private void activateBubble() {
+        final Runnable go = new Runnable() {
+            public void run() {
+                sentToSettings = true;
+                Speaker.say(SetupActivity.this, "J'ouvre les réglages d'Android. Choisis « Lisys : bouton de lecture », active-le, accepte, puis reviens avec la flèche retour.",
+                        new Runnable() { public void run() { MainActivity.openAccessibilitySettings(SetupActivity.this); } });
+            }
+        };
+        if (Prefs.a11yConsent(this)) { go.run(); return; }
+        Speaker.say(this, "Une fenêtre explique ce que Lisys lit à l'écran : seulement quand tu le demandes, et rien ne quitte "
+                + "le téléphone. Appuie sur le bouton « J'accepte », en bas à droite de la fenêtre.");
+        MainActivity.showAccessibilityDisclosure(this, go);
+    }
+
+    private static final String[] YES = {"oui", "ouais", "ok", "okay", "daccord", "accord", "continuer", "continue", "suivant",
+            "vas", "commencer", "commence", "active", "activer", "autoriser", "autorise", "accepte", "go"};
+    private static final String[] NO = {"non", "passer", "passe", "plus", "tard", "suivante", "ignore", "pas"};
+
+    private void answer(String raw) {
+        if (raw == null) return;
+        String c = VoiceCommands.norm(raw).replace("d accord", "daccord");
+        if (VoiceCommands.has(c, "repete", "repeter", "quoi", "comment", "pardon", "encore")) { show(); return; }
+        boolean yes = VoiceCommands.has(c, YES), no = VoiceCommands.has(c, NO) && !yes;
+        switch (step) {
+            case STEP_WELCOME:
+                if (VoiceCommands.has(c, "contraste", "jaune", "noir", "normal")) {
+                    Prefs.setTheme(this, Prefs.theme(this) == Prefs.THEME_CONTRASTE ? Prefs.THEME_CLAIR : Prefs.THEME_CONTRASTE);
+                    show();
+                    return;
+                }
+                if (VoiceCommands.has(c, "gros", "geant", "geants", "boutons", "grand")) {
+                    Prefs.setBigControls(this, !Prefs.bigControls(this));
+                    show();
+                    return;
+                }
+                if (yes || no) { next(); return; }
+                break;
+            case STEP_NOTIF:
+                if (yes) { requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1); return; }
+                if (no) { next(); return; }
+                break;
+            case STEP_BUBBLE:
+                if (VoiceCommands.has(c, "restreint", "infos", "info")) {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+                    } catch (Exception ignored) {
+                    }
+                    return;
+                }
+                if (yes) { activateBubble(); return; }
+                if (no) { next(); return; }
+                break;
+            default:
+                if (yes || no) { finishSetup(); return; }
+        }
+        // Pas compris : on redemande (deux fois au plus, ensuite les boutons restent là).
+        if (retries++ < 2) {
+            Speaker.say(this, "Je n'ai pas compris « " + raw + " ». " + question(), new Runnable() {
+                public void run() { if (resumed && !isFinishing()) listen(); }
+            });
+        } else {
+            Speaker.say(this, "Tu peux aussi appuyer sur les gros boutons en bas de l'écran.");
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == REQ_VOICE && res == RESULT_OK) answer(VoiceCommands.heard(data));
     }
 
     private void addButton(LinearLayout parent, Ui.Palette pal, String text, boolean primary, final Runnable r) {
@@ -174,6 +259,7 @@ public class SetupActivity extends Activity {
 
     @Override
     protected void onPause() {
+        resumed = false;
         Speaker.stop();
         super.onPause();
     }

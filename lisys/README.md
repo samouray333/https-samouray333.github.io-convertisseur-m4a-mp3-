@@ -2,7 +2,7 @@
 
 Appli Android qui lit à voix haute les **documents** et les **pages web**, en surlignant la phrase et le mot lus, dans l'esprit de la fonction « lecteur » de ZoomText. Tout le code est original : rien n'est copié de ZoomText.
 
-- Version : 1.6 (versionCode 7)
+- Version : 1.7 (versionCode 8)
 - Package : `com.qmtech.lisys` (définitif pour le Play Store ; les versions 1.0 à 1.4 s'appelaient `com.echomatras.lisys`)
 - Android 8.0 (API 26) minimum, cible Android 16 (API 36), comme l'exige le Play Store
 - 100 % local : la voix est celle de la synthèse vocale du téléphone. Aucun compte, aucun serveur, aucun abonnement.
@@ -14,6 +14,10 @@ Appli Android qui lit à voix haute les **documents** et les **pages web**, en s
 - Pages web : l'appli garde l'article et retire les menus, publicités, bandeaux cookies et commentaires
 - Navigateur intégré pour les sites qui demandent JavaScript ou une connexion. Le bouton « Lire cette page » lit toute la page, ou seulement la sélection.
 - Texte copié dans le presse-papiers, ou saisi à la main
+
+**Nouveau en 1.7**
+- **Lecture au doigt** : Lisys lit seulement la phrase sous le doigt, puis s'arrête. Déplacer le doigt lit la phrase suivante touchée, et reposer le doigt relit. Une option permet de continuer jusqu'en bas comme avant (Réglages > Bouton flottant).
+- **Assistant de démarrage entièrement à la voix** : chaque étape est lue, puis Lisys écoute la réponse (« oui », « non », « répète », « contraste », « gros boutons »). Bouton « Répondre à voix haute » à chaque étape ; option pour couper l'écoute automatique.
 
 **Nouveau en 1.6**
 - **Accessibilité** : écran de réglages en très gros caractères (interrupteurs, appui pour changer, appui long pour la liste), assistant de démarrage guidé à la voix (affichage, notifications, activation du bouton flottant, paramètre restreint), fenêtres en gros texte aux couleurs du thème, libellés TalkBack sans émojis, annonces vocales et vibrations (réglables), boutons de lecture géants (option), animations coupées si le téléphone le demande.
