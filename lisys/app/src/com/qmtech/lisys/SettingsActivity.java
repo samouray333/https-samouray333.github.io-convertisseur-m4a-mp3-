@@ -185,10 +185,6 @@ public class SettingsActivity extends Activity {
         action(Tr.t("Rapport de la dernière lecture (dépannage)"), new Runnable() { public void run() { MainActivity.showReport(a); } });
 
         // ---------------------------------------------------------------- divers
-        section("Lisys Pro");
-        action(Features.keyInstalled(this) ? Tr.t("Lisys Pro : ✅ activé") : Tr.t("Lisys Pro (essai : ") + Features.trialDaysLeft(this) + Tr.t(" jours restants)"),
-                new Runnable() { public void run() { startActivity(new Intent(a, ProActivity.class)); } });
-
         section(Tr.t("Divers"));
         action(Tr.t("Vider la liste des documents"), new Runnable() { public void run() { MainActivity.confirmClear(a); } });
         action(Tr.t("Politique de confidentialité"), new Runnable() {

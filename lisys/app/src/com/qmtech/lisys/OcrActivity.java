@@ -68,7 +68,6 @@ public class OcrActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        if (!Features.require(this, Tr.t("La lecture des photos"))) { finish(); return; }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         pal = Ui.palette(this);
         Ui.systemBars(this, pal);

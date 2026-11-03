@@ -840,7 +840,6 @@ public class ReaderActivity extends Activity implements ReaderService.Listener {
     }
 
     private void exportAudio() {
-        if (!Features.require(this, Tr.t("La création de fichiers audio"))) return;
         if (ExportService.isRunning()) {
             Toast.makeText(this, Tr.t("Un export est déjà en cours (voir les notifications)."), Toast.LENGTH_LONG).show();
             return;

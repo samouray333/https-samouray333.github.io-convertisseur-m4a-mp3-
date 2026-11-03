@@ -215,7 +215,6 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------ bouton flottant
 
     private void showBubbleHelp() {
-        if (!Features.require(this, Tr.t("Le bouton flottant"))) return;
         if (ScreenReaderService.isEnabled(this)) {
             openSettings();
             return;

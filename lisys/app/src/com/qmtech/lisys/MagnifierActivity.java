@@ -70,7 +70,6 @@ public class MagnifierActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        if (!Features.require(this, Tr.t("La loupe"))) { finish(); return; }
         pal = Ui.palette(this);
         Ui.systemBars(this, pal);
         LinearLayout root = new LinearLayout(this);

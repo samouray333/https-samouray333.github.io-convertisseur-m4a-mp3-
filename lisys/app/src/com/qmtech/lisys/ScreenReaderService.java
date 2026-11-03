@@ -370,7 +370,6 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
 
     /** Appui sur la bulle : lit l'écran, ou arrête si on est déjà en train de le lire. */
     void readScreen() {
-        if (!Features.require(this, Tr.t("Le bouton flottant"))) return;
         if (reader == null) {
             Toast.makeText(this, Tr.t("Lisys démarre, réessaie dans une seconde."), Toast.LENGTH_SHORT).show();
             return;
@@ -596,7 +595,6 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     // ------------------------------------------------------------------ lecture au doigt
 
     private void startFingerMode() {
-        if (!Features.require(this, Tr.t("La lecture au doigt"))) return;
         if (reader == null || fingerRoot != null) return;
         final String app = currentAppLabel();
         collectAsync(new ItemsCallback() {
@@ -1051,7 +1049,7 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
     private long lastAnnounceAt;
 
     private void onNotification(AccessibilityEvent event) {
-        if (!Prefs.announce(this) || reader == null || !reader.isTtsReady() || !Features.isPro(this)) return;
+        if (!Prefs.announce(this) || reader == null || !reader.isTtsReady()) return;
         Parcelable data = event.getParcelableData();
         if (!(data instanceof android.app.Notification)) return;
         android.app.Notification n = (android.app.Notification) data;
