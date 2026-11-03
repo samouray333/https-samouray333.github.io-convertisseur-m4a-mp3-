@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.qmtech.calorys"
-    android:versionCode="14"
-    android:versionName="1.6.1">
+    android:versionCode="15"
+    android:versionName="1.6.2">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
 
@@ -54,8 +54,10 @@
             <!-- « Partager » un rapport de balance (PDF, capture) ou un export CSV vers Calorys. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="image/*" />
                 <data android:mimeType="text/csv" />
                 <data android:mimeType="text/comma-separated-values" />

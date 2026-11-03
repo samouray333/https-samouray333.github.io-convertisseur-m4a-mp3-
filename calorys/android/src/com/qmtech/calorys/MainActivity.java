@@ -272,11 +272,29 @@ public class MainActivity extends Activity {
     /* Fichier partagé vers Calorys (rapport de balance, export CSV) : gardé jusqu'à ce que l'appli web le réclame. */
     private volatile String sharedJson = null;
 
+    @SuppressWarnings("deprecation")
     private void takeShare(Intent i) {
-        if (i == null || !Intent.ACTION_SEND.equals(i.getAction())) return;
-        final Uri u = i.getParcelableExtra(Intent.EXTRA_STREAM);
-        final String type = i.getType();
-        if (u == null) return;
+        if (i == null || !(Intent.ACTION_SEND.equals(i.getAction()) || Intent.ACTION_SEND_MULTIPLE.equals(i.getAction()))) return;
+        Uri first = null;
+        if (Intent.ACTION_SEND.equals(i.getAction())) first = i.getParcelableExtra(Intent.EXTRA_STREAM);
+        else {
+            java.util.ArrayList<Uri> l = i.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (l != null && !l.isEmpty()) first = l.get(0);
+        }
+        if (first == null && i.getClipData() != null && i.getClipData().getItemCount() > 0) first = i.getClipData().getItemAt(0).getUri();
+        // Une fois pris, le partage est oublié : rouvrir l'appli ne relit pas l'ancien rapport.
+        setIntent(new Intent(Intent.ACTION_MAIN));
+        final Uri u = first;
+        if (u == null) {
+            Toast.makeText(this, "Aucun fichier reçu : partage le rapport en PDF ou en image", Toast.LENGTH_LONG).show();
+            return;
+        }
+        String t = i.getType();
+        if (t == null || t.equals("application/octet-stream") || t.endsWith("/*")) {
+            String r = getContentResolver().getType(u);
+            if (r != null) t = r;
+        }
+        final String type = t;
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -288,14 +306,17 @@ public class MainActivity extends Activity {
                     try { while ((n = in.read(buf)) > 0) { bo.write(buf, 0, n); if (bo.size() > 15 * 1024 * 1024) throw new Exception("trop lourd"); } }
                     finally { in.close(); }
                     String name = u.getLastPathSegment() == null ? "fichier" : u.getLastPathSegment();
+                    try (android.database.Cursor c = getContentResolver().query(u, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                        if (c != null && c.moveToFirst() && c.getString(0) != null) name = c.getString(0);
+                    } catch (Exception e) { /* nom facultatif */ }
                     JSONObject o = new JSONObject();
                     o.put("name", name);
                     o.put("mime", type == null ? "" : type);
                     o.put("b64", Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP));
                     sharedJson = o.toString();
                     runOnUiThread(new Runnable() { @Override public void run() { web.evaluateJavascript("window.__calorysShared && window.__calorysShared()", null); } });
-                } catch (Exception e) {
-                    runOnUiThread(new Runnable() { @Override public void run() { Toast.makeText(MainActivity.this, "Fichier partagé illisible", Toast.LENGTH_LONG).show(); } });
+                } catch (final Exception e) {
+                    runOnUiThread(new Runnable() { @Override public void run() { Toast.makeText(MainActivity.this, "Fichier partagé illisible : " + e.getMessage(), Toast.LENGTH_LONG).show(); } });
                 }
             }
         }).start();

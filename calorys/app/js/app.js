@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.6.1';
+  const APP_VERSION = '1.6.2';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -935,13 +935,15 @@
         'date au format AAAA-MM-JJ, time au format HH:MM, app = nom de l\'application si indiqué. body_fat_pct = pourcentage de graisse corporelle (PBF), skeletal_muscle_kg = muscle squelettique en kg, ' +
         'body_water_pct = eau corporelle en %, visceral_fat = indice de graisse viscérale, bmr_kcal = métabolisme de base. Omet une valeur absente.' }, { inline_data: { mime_type: mime, data: b64 } }] }],
         generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: REPORT_SCHEMA } });
-    } catch (e) { throw new Error('Pas de réseau.'); }
+    } catch (e) { throw new Error(e && /Gemini/.test(e.message) ? e.message : 'Pas de connexion Internet : la lecture du rapport a besoin du réseau.'); }
     if (!r) throw new Error('Aucun modèle Gemini disponible actuellement.');
-    if (r.status === 429) throw new Error('Quota Gemini atteint pour aujourd\'hui.');
-    if (r.status === 400 || r.status === 403) throw new Error('Clé API refusée (' + r.status + '). ' + (await googleMsg(r)));
-    if (!r.ok) throw new Error('Lecture échouée (' + r.status + '). ' + (await googleMsg(r)));
+    if (!r.ok) throw await geminiError(r, 'Lecture du rapport échouée');
     let o;
-    try { const root = await r.json(); o = JSON.parse((((root.candidates || [])[0] || {}).content.parts[0].text || '').replace(/^```[a-z]*\n?|```$/g, '')); } catch (e) { throw new Error('Rapport illisible.'); }
+    try {
+      const gt = geminiText(await r.json());
+      if (gt.block) throw new Error(gt.block === 'vide' ? 'Gemini n\'a rien renvoyé.' : 'Rapport refusé par Gemini (' + gt.block + ').');
+      o = JSON.parse(gt.text);
+    } catch (e) { throw new Error(/Gemini/.test(e.message) ? e.message : 'Réponse de Gemini illisible. Réessaie, ou saisis la pesée à la main.'); }
     if (!(o.weight_kg > 20 && o.weight_kg < 400)) throw new Error('Aucun poids trouvé dans ce document.');
     const date = /^\d{4}-\d{2}-\d{2}$/.test(o.date || '') && o.date <= today() ? o.date : today();
     return Object.assign({ date, kg: Math.round(o.weight_kg * 100) / 100, app: (o.app || '').trim() },
@@ -966,7 +968,14 @@
         const res = await geminiReport(b64, mime);
         closeSheet(wait);
         openReportReview(res);
-      } catch (e) { closeSheet(wait); toast(e.message); }
+      } catch (e) { closeSheet(wait); openReportError(e.message, f); }
+  }
+  /* L'erreur reste affichée (un toast passe trop vite), avec « Réessayer » et la saisie manuelle. */
+  function openReportError(msg, f) {
+    openSheet(() => sheetHead('Lecture du rapport impossible', esc(f && f.name ? f.name : '')) + `<div class="form">
+      <p class="target-note">${icon('info')}<span>${esc(msg)}</span></p>
+      <p class="muted small">Si ça recommence, envoie-moi ce message. En attendant, tu peux taper la pesée à la main (Nouvelle pesée > Composition corporelle).</p></div>
+      <div class="sheet-actions"><button class="btn ghost" data-act="reportManual">Saisir à la main</button><button class="btn grow" data-act="reportRetry">Réessayer</button></div>`, { data: { f } });
   }
   /* Android : fichier partagé vers Calorys depuis une autre appli (Fit Profile, Fitdays…). */
   window.__calorysShared = () => {
@@ -976,6 +985,8 @@
     if (!S.profile.onboarded) { toast('Termine d\'abord la configuration de Calorys.'); return; }
     const bin = atob(o.b64), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    // Type inconnu (application/octet-stream) : un PDF commence toujours par « %PDF ».
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) o.mime = 'application/pdf';
     const f = new File([bytes], o.name || 'fichier', { type: o.mime || '' });
     if (/csv|comma|text/i.test(o.mime) || /\.csv$/i.test(o.name)) { f.text().then(t => importScaleCsv(t, o.name)); return; }
     if (!S.settings.geminiKey) { openGeminiKey(() => readReportFile(f)); return; }
@@ -1588,7 +1599,7 @@
   }
 
   /* ---------- Analyse photo (Gemini, en ligne, facultative) ---------- */
-  const GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
+  const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
   const GEMINI_PROMPT = `Tu es un nutritionniste qui estime le contenu d'une assiette à partir d'une photo.
 Règles:
 - Identifie chaque aliment distinct visible, séparément (pas "assiette composée"). Noms en français.
@@ -1602,34 +1613,65 @@ Règles:
     properties: { name: { type: 'STRING' }, grams: { type: 'NUMBER' }, kcal: { type: 'NUMBER' }, protein_g: { type: 'NUMBER' }, carbs_g: { type: 'NUMBER' },
       fat_g: { type: 'NUMBER' }, confidence: { type: 'NUMBER' }, note: { type: 'STRING' } },
     required: ['name', 'grams', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'confidence'] } } }, required: ['foods'] };
+  /* Essaie les modèles dans l'ordre : on passe au suivant si le modèle n'existe pas (ou plus), est saturé ou en
+     quota dépassé ; on s'arrête sur une vraie erreur (clé refusée, demande invalide). Délai maximum 90 s par essai. */
   async function geminiPost(body) {
-    const key = S.settings.geminiKey;
+    const key = S.settings.geminiKey, payload = JSON.stringify(body);
+    let last = null;
     for (const model of GEMINI_MODELS) {
-      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key),
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (r.status !== 404) return r;
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 90000) : null;
+      let r;
+      try {
+        r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key),
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, signal: ctl ? ctl.signal : undefined });
+      } catch (e) {
+        clearTimeout(timer);
+        if (e && e.name === 'AbortError') { last = { timeout: true }; continue; }
+        throw e;
+      }
+      clearTimeout(timer);
+      if (r.ok) return r;
+      const msg = await googleMsg(r.clone());
+      last = r;
+      if ([404, 429, 500, 502, 503, 504].includes(r.status)) continue;
+      if ((r.status === 400 || r.status === 403) && /model|not found|no longer|not available|not supported|unsupported|deprecat/i.test(msg) && !/api key/i.test(msg)) continue;
+      return r;
     }
-    return null;
+    if (last && last.timeout) throw new Error('Gemini ne répond pas (délai dépassé). Vérifie ta connexion et réessaie.');
+    return last;
   }
   async function googleMsg(r) { try { const j = await r.json(); return (j.error && j.error.message) || ''; } catch (e) { return ''; } }
+  /* Erreur HTTP de Gemini → message clair. */
+  async function geminiError(r, what) {
+    const msg = await googleMsg(r);
+    if (r.status === 429) return new Error('Quota Gemini atteint sur tous les modèles. Réessaie dans quelques minutes, ou demain.' + (msg ? ' (' + msg.slice(0, 160) + ')' : ''));
+    if ((r.status === 400 || r.status === 403) && /api key|api_key|permission|unregistered|referer/i.test(msg)) return new Error('Clé API refusée par Google (' + r.status + '). Vérifie-la dans Profil > Analyse photo (Gemini). ' + msg.slice(0, 200));
+    if (r.status >= 500) return new Error('Gemini est indisponible pour le moment (' + r.status + '). Réessaie dans un moment.');
+    return new Error(what + ' (erreur ' + r.status + '). ' + msg.slice(0, 240));
+  }
+  /* Texte de la réponse : on assemble les morceaux (hors « réflexion ») et on retire les balises de code. */
+  function geminiText(root) {
+    const c = (root.candidates || [])[0];
+    if (!c) return { block: (root.promptFeedback && root.promptFeedback.blockReason) || 'vide' };
+    const text = ((c.content || {}).parts || []).filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('').trim()
+      .replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim();
+    return { text, finish: c.finishReason || '' };
+  }
   async function geminiAnalyze(b64, mime, hint) {
     let r;
     try {
       r = await geminiPost({ system_instruction: { parts: [{ text: GEMINI_PROMPT }] },
         contents: [{ role: 'user', parts: [{ text: hint ? 'Analyse ce repas. Indice de l\'utilisateur : ' + hint : 'Analyse ce repas.' }, { inline_data: { mime_type: mime, data: b64 } }] }],
         generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: GEMINI_SCHEMA } });
-    } catch (e) { throw new Error('Pas de réseau. Saisis le repas à la main, tu pourras rescanner plus tard.'); }
+    } catch (e) { throw new Error(e && /Gemini/.test(e.message) ? e.message : 'Pas de réseau. Saisis le repas à la main, tu pourras rescanner plus tard.'); }
     if (!r) throw new Error('Aucun modèle Gemini disponible actuellement. Saisis le repas à la main.');
-    if (r.status === 429) throw new Error('Quota Gemini atteint pour aujourd\'hui. Saisie manuelle en attendant.');
-    if (r.status === 400 || r.status === 403) throw new Error('Clé API refusée (' + r.status + '). ' + (await googleMsg(r)) + ' Vérifie-la dans Profil.');
-    if (r.status >= 500) throw new Error('Gemini indisponible. Réessaie dans un moment.');
-    if (!r.ok) throw new Error('Analyse échouée (' + r.status + '). ' + (await googleMsg(r)));
+    if (!r.ok) throw await geminiError(r, 'Analyse échouée');
     let root;
     try { root = await r.json(); } catch (e) { throw new Error('Réponse de Gemini illisible.'); }
-    const c = (root.candidates || [])[0];
-    if (!c) throw new Error(root.promptFeedback && root.promptFeedback.blockReason ? 'Photo refusée par Gemini (' + root.promptFeedback.blockReason + '). Recadre sur l\'assiette seule.' : 'Aucun aliment reconnu sur cette photo.');
-    let text = ((c.content || {}).parts || [{}])[0].text || '';
-    text = text.trim().replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim();
+    const gt = geminiText(root);
+    if (gt.block) throw new Error(gt.block !== 'vide' ? 'Photo refusée par Gemini (' + gt.block + '). Recadre sur l\'assiette seule.' : 'Aucun aliment reconnu sur cette photo.');
+    const text = gt.text;
     let payload;
     try { payload = JSON.parse(text); } catch (e) { throw new Error('Réponse de Gemini illisible. Réessaie, ou saisis le repas à la main.'); }
     const foods = (payload.foods || []).map(f => ({ name: String(f.name || 'Aliment').trim(), grams: +f.grams || 0, kcal: +f.kcal || 0, p: +f.protein_g || 0,
@@ -2609,8 +2651,8 @@ Règles:
         const r = await geminiPost({ contents: [{ role: 'user', parts: [{ text: 'Réponds uniquement le mot OK.' }] }] });
         if (!r) toast('Aucun modèle Gemini disponible actuellement.');
         else if (r.ok) toast('Clé valide : l\'analyse photo est prête.');
-        else toast('Clé refusée (' + r.status + '). ' + (await googleMsg(r)));
-      } catch (e) { toast('Pas de réseau.'); }
+        else toast((await geminiError(r, 'Test échoué')).message);
+      } catch (e) { toast(e && /Gemini/.test(e.message) ? e.message : 'Pas de réseau.'); }
       S.settings.geminiKey = old;
     },
     aiDel: el => { const s = topSheet(); s.data.items.splice(+el.dataset.i, 1); s.refresh(); },
@@ -2632,6 +2674,8 @@ Règles:
     },
     reminders: () => openReminders(),
     scale: () => openScale(),
+    reportRetry: () => { const s = topSheet(), f = s.data.f; closeSheet(s); if (f) readReportFile(f); },
+    reportManual: () => { closeSheet(topSheet()); openWeight(); setTimeout(() => { const d = $('#sheets .sheet-wrap.open:last-of-type details'); if (d) d.open = true; }, 50); },
     scaleReport: () => { if (!S.settings.geminiKey) { openGeminiKey(() => pickReportFile()); return; } pickReportFile(); },
     saveReport: () => {
       const s = topSheet(), g = id => $('#' + id, s.el).value, kg = num(g('rr_kg')), date = g('rr_date') || today();
