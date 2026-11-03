@@ -4,7 +4,7 @@ Tout ce qu'il faut copier-coller dans la Play Console, dans l'ordre où elle le 
 
 - Package : `com.qmtech.lisys` (ne pourra plus changer)
 - Éditeur : QMTech
-- Fichier à envoyer : `release/Lisys-2.0.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
+- Fichier à envoyer : `release/Lisys-2.0.1.aab` (signé avec la clé d'envoi `lisys-release.jks`, alias `lisys`)
 - Politique de confidentialité : `https://samouray333.github.io/https-samouray333.github.io-convertisseur-m4a-mp3-/lisys/confidentialite.html`
   (la page doit être en ligne : fusionner la branche dans `main`, vérifier que GitHub Pages est activé, et remplacer `[ADRESSE E-MAIL DE CONTACT]` dans `confidentialite.html`)
 
@@ -159,7 +159,7 @@ Lisys est une appli de lecture à voix haute pour les personnes malvoyantes ou a
 ## 4. Tests obligatoires avant la publication
 
 Pour un compte développeur personnel récent, Google exige un **test fermé avec au moins 12 testeurs inscrits pendant 14 jours d'affilée** avant d'autoriser la publication pour tout le monde.
-1. Tests > Tests fermés > créer un canal, envoyer `Lisys-2.0.aab`.
+1. Tests > Tests fermés > créer un canal, envoyer `Lisys-2.0.1.aab`.
 2. Ajouter les adresses Gmail des testeurs (famille, amis, club…).
 3. Leur envoyer le lien d'inscription : ils installent Lisys depuis le Play Store et la gardent 14 jours.
 4. Ensuite : Production > demander l'accès, répondre aux questions sur le test, publier.

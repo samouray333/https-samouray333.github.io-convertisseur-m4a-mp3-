@@ -1136,7 +1136,8 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         if (text == null) return false;
         String t = text.toString().toLowerCase(java.util.Locale.ROOT);
         return t.contains("message vocal") || t.contains("messages vocaux") || t.contains("voice message")
-                || t.contains("mensaje de voz") || t.contains("nota de voz") || t.contains("audio") || t.contains("\uD83C\uDFA4")
+                || t.contains("mensaje de voz") || t.contains("nota de voz") || t.contains("audio")
+                || t.contains("enregistrement") || t.contains("vocal") || t.contains("message enregistré") || t.contains("\uD83C\uDFA4")
                 || t.contains("\uD83C\uDF99");
     }
 
@@ -1235,7 +1236,8 @@ public class ScreenReaderService extends AccessibilityService implements ReaderS
         pressPlay(0);
     }
 
-    private static final String[] PLAY_WORDS = {"lire", "écouter", "ecouter", "lecture", "play", "reproducir", "riproduci"};
+    private static final String[] PLAY_WORDS = {"lire", "écouter", "ecouter", "lecture", "play", "reproducir", "riproduci",
+            "lancer", "démarrer la lecture", "écouter le message", "play audio", "play voice"};
 
     /** Cherche le dernier bouton ▶ (vocal) visible de l'écran et appuie dessus ; réessaie quelques fois. */
     private void pressPlay(final int attempt) {
