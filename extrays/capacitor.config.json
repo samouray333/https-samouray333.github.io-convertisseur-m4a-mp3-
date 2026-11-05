@@ -1,0 +1,6 @@
+{
+  "appId": "com.echomatras.extrays",
+  "appName": "Extrays",
+  "webDir": "www",
+  "android": { "backgroundColor": "#0f1420" }
+}

@@ -1,0 +1,9 @@
+node_modules/
+www/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/capacitor-cordova-android-plugins/build/
+# clé de signature : à garder précieusement, jamais dans un dépôt public
+keystore/
