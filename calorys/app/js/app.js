@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.6.2';
+  const APP_VERSION = '1.6.3';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -188,6 +188,14 @@
     return null;
   }
   /* Alerte : la masse maigre baisse nettement (≥ 1 kg et plus de 40 % de la perte, ou sans perte de poids). */
+  /* Écart réel entre la dernière pesée et la précédente, et évolution de la tendance lissée sur la même période. */
+  const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + fr(Math.abs(Math.round(v * 10) / 10));
+  function weightChange() {
+    const n = S.weights.length;
+    if (n < 2) return null;
+    const last = S.weights[n - 1], prev = S.weights[n - 2], tr = E.smooth(S.weights);
+    return { last, prev, diff: last.kg - prev.kg, trend: tr[n - 1].kg, trendDiff: tr[n - 1].kg - tr[n - 2].kg };
+  }
   const hasCompData = () => S.weights.some(w => w.fat != null && w.date >= addDays(today(), -60));
   function leanAlert() {
     const t = E.leanTrend(S.weights, today());
@@ -494,7 +502,7 @@
       <input class="steps-input" inputmode="numeric" data-act="steps" value="${d.steps || ''}" placeholder="0" aria-label="Nombre de pas"></li></ul></section>`;
     const lastW = S.weights.length ? S.weights[S.weights.length - 1] : null;
     h += `<section class="card"><header class="meal-head"><span class="meal-ic weight">${icon('scale')}</span>
-      <div class="grow"><h3>Poids</h3><p class="muted">${lastW ? fr(lastW.kg) + ' kg le ' + pkey(lastW.date).toLocaleDateString('fr-FR') : 'Aucune pesée'}${S.weights.length > 2 ? ' · tendance ' + fr(E.smooth(S.weights).pop().kg) + ' kg' : ''} · objectif ${fr(S.profile.targetWeight)} kg</p></div>
+      <div class="grow"><h3>Poids</h3><p class="muted">${lastW ? fr(lastW.kg) + ' kg le ' + pkey(lastW.date).toLocaleDateString('fr-FR') : 'Aucune pesée'}${(() => { const c = weightChange(); return c ? ' (<b>' + sgn(c.diff) + ' kg</b> depuis le ' + pkey(c.prev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ')' + (S.weights.length > 2 ? ' · tendance lissée ' + fr(Math.round(c.trend * 10) / 10) + ' kg (' + sgn(c.trendDiff) + ')' : '') : ''; })()} · objectif ${fr(S.profile.targetWeight)} kg</p></div>
       <button class="add-btn" data-act="addWeight" aria-label="Ajouter une pesée">${icon('plus')}</button></header>
       ${(() => { const a = leanAlert(); return a ? `<p class="target-note">${icon('info')}<span>${esc(a.text)}</span></p>` : ''; })()}</section>`;
     h += `<p class="foot muted">Nutriments : ${esc(N.source)}</p>`;
@@ -1271,11 +1279,11 @@
     const trendWin = trendAll.filter(x => pkey(x.date).getTime() >= since);
     const tNow = trendAll.length ? trendAll[trendAll.length - 1].kg : cw;
     const waist = lastWaist();
-    h += `<section class="card"><header class="meal-head"><div class="grow"><h3>Poids</h3><p class="muted">${fr(cw)} kg (tendance ${fr(tNow)} kg) · IMC ${fr(b)} (${N.bmiLabel(b)})${first ? ' · ' + (tNow - first.kg > 0 ? '+' : '') + fr(tNow - first.kg) + ' kg depuis le début' : ''}${waist ? ' · taille ' + fr(waist) + ' cm' : ''}</p></div>
+    h += `<section class="card"><header class="meal-head"><div class="grow"><h3>Poids</h3><p class="muted">${fr(cw)} kg (tendance lissée ${fr(Math.round(tNow * 10) / 10)} kg) · IMC ${fr(b)} (${N.bmiLabel(b)})${first && S.weights.length > 1 ? ' · <b>' + sgn(S.weights[S.weights.length - 1].kg - first.kg) + ' kg</b> depuis le ' + pkey(first.date).toLocaleDateString('fr-FR') : ''}${waist ? ' · taille ' + fr(waist) + ' cm' : ''}</p></div>
       <button class="add-btn" data-act="addWeight" aria-label="Ajouter une pesée">${icon('plus')}</button></header>
       ${ws.length >= 1 ? C.line(ws.map(w => ({ x: pkey(w.date).getTime(), y: w.kg, title: pkey(w.date).toLocaleDateString('fr-FR') + ' : ' + fr(w.kg) + ' kg' })), S.profile.targetWeight,
         { label: 'Évolution du poids', trend: ws.length >= 3 ? trendWin.map(x => ({ x: pkey(x.date).getTime(), y: x.kg })) : null }) : '<p class="empty">Ajoute des pesées pour voir ta courbe.</p>'}
-      ${ws.length >= 3 ? '<p class="legend-line"><i class="lg-raw"></i>pesées <i class="lg-trend"></i>tendance lissée</p>' : ''}
+      ${ws.length >= 3 ? '<p class="legend-line"><i class="lg-raw"></i>pesées <i class="lg-trend"></i>tendance lissée</p><p class="muted small">La tendance lissée ne retient qu\'un quart de chaque nouvelle pesée : elle gomme l\'eau et la digestion (souvent ±1 kg d\'un jour à l\'autre). C\'est elle qui sert à ajuster ton objectif.</p>' : ''}
       ${S.weights.length ? `<details><summary>Toutes les pesées (${S.weights.length})</summary><ul class="entries">${S.weights.slice().reverse().map(w => `<li><div class="grow"><b>${fr(w.kg)} kg</b><span class="muted">${pkey(w.date).toLocaleDateString('fr-FR')}${w.waist ? ' · taille ' + fr(w.waist) + ' cm' : ''}${w.fat ? ' · ' + fr(w.fat) + ' % de masse grasse' : ''}${w.muscle ? ' · muscle ' + fr(w.muscle) + ' kg' : ''}${w.src ? ' · ' + esc(w.src) : ''}</span></div><button class="icon-btn" data-act="delWeight" data-date="${w.date}" aria-label="Supprimer">${icon('trash')}</button></li>`).join('')}</ul></details>` : ''}</section>`;
     h += bodyCard(since);
     const aW = avg(x => x.water);
@@ -2468,8 +2476,8 @@ Règles:
       Object.assign(rec, cleanBody(body));
       S.weights = S.weights.filter(w => w.date !== date).concat([rec]).sort((a, b) => a.date < b.date ? -1 : 1);
       save(); closeSheet(s); render();
-      const diff = S.weights.length > 1 ? kg - S.weights[S.weights.length - 2].kg : 0;
-      toast('Pesée enregistrée' + (diff ? ' (' + (diff > 0 ? '+' : '') + fr(diff) + ' kg)' : ''));
+      const c = weightChange();
+      toast('Pesée enregistrée' + (c && c.last.date === date ? ' : ' + sgn(c.diff) + ' kg depuis la précédente' : ''));
     },
     delWeight: el => {
       const w = S.weights.find(x => x.date === el.dataset.date);
@@ -2686,7 +2694,9 @@ Règles:
       S.weights = S.weights.filter(w => w.date !== date).concat([rec]).sort((a, b) => a.date < b.date ? -1 : 1);
       save(); closeSheet(s);
       for (const sh of sheets.slice()) if ($('#wKg', sh.el)) closeSheet(sh);
-      render(); toast('Pesée et composition enregistrées');
+      render();
+      const c = weightChange();
+      toast('Pesée enregistrée' + (c && c.last.date === date ? ' : ' + sgn(c.diff) + ' kg depuis la précédente' : '') + (rec.fat ? ', ' + fr(rec.fat) + ' % de masse grasse' : ''));
     },
     healthConnect: () => window.CalorysNative.healthRequest(),
     healthSync: () => { healthSync(false); toast('Synchronisation…'); },
