@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.6.4';
+  const APP_VERSION = '1.6.5';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -230,9 +230,9 @@
         <div class="wprog-l"><span><b>${sgn(done)} kg</b> depuis le ${pkey(W[0].date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span><span><b>${Math.round(pct)} %</b> · reste ${fr(Math.abs(Math.round((target - last.kg) * 10) / 10))} kg → ${fr(target)}</span></div></div>`;
     }
     const chips = [];
-    if (n > 2 && c) chips.push(`<span class="wchip">Tendance <b>${fr(Math.round(c.trend * 10) / 10)} kg</b> <em class="${Math.abs(c.trendDiff) < 0.05 ? '' : good(c.trendDiff) ? 'g' : 'b'}">${sgn(c.trendDiff)}</em></span>`);
-    if (last.fat != null) chips.push(`<span class="wchip">Masse grasse <b>${fr(last.fat)} %</b></span>`);
-    if (last.muscle != null) chips.push(`<span class="wchip">Muscle <b>${fr(last.muscle)} kg</b></span>`);
+    if (n > 2 && c) chips.push(`<span class="wchip" data-act="compGo" data-m="kg" role="button">Tendance <b>${fr(Math.round(c.trend * 10) / 10)} kg</b> <em class="${Math.abs(c.trendDiff) < 0.05 ? '' : good(c.trendDiff) ? 'g' : 'b'}">${sgn(c.trendDiff)}</em></span>`);
+    if (last.fat != null) chips.push(`<button class="wchip" data-act="compGo" data-m="fat">Masse grasse <b>${fr(last.fat)} %</b></button>`);
+    if (last.muscle != null) chips.push(`<button class="wchip" data-act="compGo" data-m="muscle">Muscle <b>${fr(last.muscle)} kg</b></button>`);
     if (p.height) chips.push(`<span class="wchip">IMC <b>${fr(N.bmi(last.kg, p.height))}</b></span>`);
     if (last.src) chips.push(`<span class="wchip src">${esc(last.src)}</span>`);
     const a = leanAlert();
@@ -1210,6 +1210,43 @@
   }
 
   /* Carte « Composition corporelle » (Analyse) : dernières mesures, évolution, masse grasse et masse maigre. */
+  /* Courbes de composition : une pastille par mesure disponible, la courbe choisie avec sa couleur. */
+  const METRICS = [
+    ['kg', 'Poids', 'kg', w => w.kg, 'var(--weight)', 'down'],
+    ['fat', 'Masse grasse', '%', w => w.fat, 'var(--carb)', 'down'],
+    ['fatkg', 'Graisse', 'kg', w => (w.fat != null ? w.kg * w.fat / 100 : null), 'var(--act)', 'down'],
+    ['lean', 'Masse maigre', 'kg', w => (w.fat != null ? w.kg * (1 - w.fat / 100) : null), 'var(--brand)', 'up'],
+    ['muscle', 'Muscle', 'kg', w => w.muscle, 'var(--prot)', 'up'],
+    ['water', 'Eau', '%', w => w.water, 'var(--water)', 'up'],
+    ['visc', 'Graisse viscérale', '', w => w.visc, 'var(--warn)', 'down'],
+    ['bmr', 'Métabolisme', 'kcal', w => w.bmr, 'var(--fat)', 'up'],
+    ['bone', 'Os', 'kg', w => w.bone, 'var(--muted)', ''],
+    ['mage', 'Âge métabolique', 'ans', w => w.mage, 'var(--muted)', 'down']
+  ];
+  /* Fait défiler la rangée de pastilles jusqu'à la mesure choisie. */
+  function showChip() { const on = $('.mchip.on'); if (on) { const r = on.parentElement; r.scrollLeft = on.offsetLeft - (r.clientWidth - on.offsetWidth) / 2; } }
+  function metricExplorer(since) {
+    const avail = METRICS.filter(m => S.weights.some(w => m[3](w) != null));
+    if (!avail.length) return '';
+    const cur = avail.find(m => m[0] === ui.compMetric) || avail.find(m => m[0] === 'fat') || avail[0];
+    const [key, label, unit, get, color, better] = cur;
+    let pts = S.weights.filter(w => get(w) != null).map(w => ({ date: w.date, v: get(w) }));
+    const inRange = pts.filter(x => pkey(x.date).getTime() >= since);
+    const shown = inRange.length >= 2 ? inRange : pts.slice(-30);
+    const r1 = v => Math.round(v * 10) / 10, last = shown[shown.length - 1], first = shown[0];
+    const d = shown.length > 1 ? last.v - first.v : 0;
+    const tone = Math.abs(d) < 0.05 || !better ? '' : (better === 'down' ? d < 0 : d > 0) ? 'good' : 'bad';
+    const vals = shown.map(x => x.v);
+    const chart = shown.length >= 2
+      ? C.line(shown.map(x => ({ x: pkey(x.date).getTime(), y: r1(x.v), title: pkey(x.date).toLocaleDateString('fr-FR') + ' : ' + fr(r1(x.v)) + (unit ? ' ' + unit : '') })), key === 'kg' ? S.profile.targetWeight : null, { label })
+      : '<p class="empty">Il faut au moins deux mesures pour tracer la courbe.</p>';
+    const du = unit === '%' ? 'pt' : unit;
+    return `<div class="mexp" style="--mcol:${color}">
+      <div class="mchips">${avail.map(m => `<button class="mchip ${m === cur ? 'on' : ''}" data-act="compMetric" data-m="${m[0]}" style="--mc:${m[4]}">${m[1]}</button>`).join('')}</div>
+      <div class="mhead"><div><span class="muted small">${label}${inRange.length >= 2 ? '' : ' · toutes les mesures'}</span><div class="mval">${fr(r1(last.v))}<small>${unit}</small></div></div>
+        ${shown.length > 1 ? `<div class="mside"><span class="wdelta ${tone}">${d < -0.04 ? '▼' : d > 0.04 ? '▲' : '='} ${sgn(d)}${du ? ' ' + du : ''}</span><small class="muted">depuis le ${pkey(first.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · min ${fr(r1(Math.min(...vals)))} · max ${fr(r1(Math.max(...vals)))}</small></div>` : ''}</div>
+      ${chart}</div>`;
+  }
   function bodyCard(since) {
     const list = S.weights.filter(w => w.fat != null || w.muscle != null);
     if (!list.length) return '';
@@ -1218,12 +1255,12 @@
     const diff = (a, b, u) => (a != null && b != null && list.length > 1 ? `<span class="muted small">${a - b > 0 ? '+' : ''}${fr(a - b)} ${u}</span>` : '');
     const cell = (l, v, u, d) => (v != null ? `<div><span class="muted">${l}</span><b>${fr(v)} ${u}</b>${d || ''}</div>` : '');
     const lean = last.fat != null ? last.kg - fatKg(last) : null, leanFirst = first.fat != null ? first.kg - fatKg(first) : null;
-    const pts = list.filter(w => w.fat != null && pkey(w.date).getTime() >= since);
+    const explorer = metricExplorer(since);
     return `<section class="card"><h3>Composition corporelle</h3><p class="muted">Dernière mesure le ${pkey(last.date).toLocaleDateString('fr-FR')}${last.src ? ' · ' + esc(last.src) : ''}${list.length > 1 ? ' · évolution depuis le ' + pkey(first.date).toLocaleDateString('fr-FR') : ''}</p>
       <div class="stats-grid">${cell('Masse grasse', last.fat, '%', diff(last.fat, first.fat, 'pt'))}${cell('Graisse', fatKg(last) != null ? Math.round(fatKg(last) * 10) / 10 : null, 'kg', diff(fatKg(last), fatKg(first), 'kg'))}
         ${cell('Masse maigre', lean != null ? Math.round(lean * 10) / 10 : null, 'kg', diff(lean, leanFirst, 'kg'))}${cell('Muscle squelettique', last.muscle, 'kg', diff(last.muscle, first.muscle, 'kg'))}
         ${cell('Eau', last.water, '%')}${cell('Graisse viscérale', last.visc, '')}${cell('Métabolisme de base', last.bmr, 'kcal')}${cell('Âge métabolique', last.mage, 'ans')}</div>
-      ${pts.length >= 2 ? C.line(pts.map(w => ({ x: pkey(w.date).getTime(), y: w.fat, title: pkey(w.date).toLocaleDateString('fr-FR') + ' : ' + fr(w.fat) + ' %' })), null, { label: 'Masse grasse (%)' }) : ''}
+      ${explorer}
       ${(() => { const a = leanAlert(); return a ? `<p class="target-note">${icon('info')}<span>${esc(a.text)}</span></p>` : ''; })()}
       ${goals().comp ? `<p class="muted small">Ton métabolisme (${kcal(goals().bmr)} kcal) et tes protéines (${goals().p} g) sont calculés sur ta masse maigre de ${fr(goals().comp.lbm)} kg.</p>` : ''}
       <p class="muted small">En perte de poids, l'idéal est de voir baisser la graisse en kilos tout en gardant la masse maigre. Les balances impédancemètres varient avec l'hydratation : pèse-toi le matin à jeun et regarde la tendance.</p></section>`;
@@ -2723,6 +2760,8 @@ Règles:
     },
     reminders: () => openReminders(),
     scale: () => openScale(),
+    compMetric: el => { ui.compMetric = el.dataset.m; const y = window.scrollY; render(); window.scrollTo(0, y); showChip(); },
+    compGo: el => { ui.compMetric = el.dataset.m; ui.tab = 'stats'; render(); setTimeout(() => { const c = $('.mexp'); if (c) c.scrollIntoView({ block: 'center' }); showChip(); }, 30); },
     reportRetry: () => { const s = topSheet(), f = s.data.f; closeSheet(s); if (f) readReportFile(f); },
     reportManual: () => { closeSheet(topSheet()); openWeight(); setTimeout(() => { const d = $('#sheets .sheet-wrap.open:last-of-type details'); if (d) d.open = true; }, 50); },
     scaleReport: () => { if (!S.settings.geminiKey) { openGeminiKey(() => pickReportFile()); return; } pickReportFile(); },

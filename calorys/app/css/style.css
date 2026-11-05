@@ -590,3 +590,20 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
 .wchip em { font-style: normal; font-weight: 700; }
 .wchip em.g { color: var(--ok); } .wchip em.b { color: var(--warn); }
 .wchip.src { background: color-mix(in srgb, var(--weight) 14%, transparent); color: var(--weight); font-weight: 600; }
+
+/* Courbes de composition (Analyse) */
+.mexp { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mchips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; margin: 0 -2px; }
+.mchips::-webkit-scrollbar { display: none; }
+.mchip { flex: none; padding: 7px 12px; border-radius: 99px; background: var(--card2); color: var(--muted); font-weight: 600; font-size: 13px; border: 1px solid transparent; }
+.mchip::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--mc); margin-right: 6px; vertical-align: 1px; }
+.mchip.on { background: color-mix(in srgb, var(--mc) 15%, var(--card)); color: var(--text); border-color: color-mix(in srgb, var(--mc) 45%, transparent); }
+.mhead { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.mval { font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1.05; color: var(--mcol); font-variant-numeric: tabular-nums; }
+.mval small { font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+.mside { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.mside small { font-size: 12px; }
+button.wchip, .wchip[role=button] { cursor: pointer; border: 0; font: inherit; font-size: 12.5px; }
+.mexp .chart .line { stroke: var(--mcol); }
+.mexp .chart .area { fill: var(--mcol); }
+.mexp .chart .dot { stroke: var(--mcol); }
