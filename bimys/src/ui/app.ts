@@ -144,6 +144,16 @@ export class App implements Ctx {
 
   setViewer(v: Viewer) {
     this.viewer = v;
+    this.applyGraphics();
+  }
+
+  applyGraphics() {
+    const v = this.viewer;
+    if (!v) return;
+    const q = this.settings.qualite ?? 'auto';
+    v.setQuality(q === 'auto' ? v.autoQuality() : q);
+    v.setEdges(this.settings.aretes ?? true);
+    v.setGridVisible(this.settings.grille ?? true);
   }
 
   async openFile() {
@@ -223,6 +233,12 @@ export class App implements Ctx {
       loader.close();
       this.loading = false;
     }
+  }
+
+  showElements(ids: number[]) {
+    if (!ids.length) return;
+    this.go('viewer');
+    (this.pages.get('viewer') as ViewerPage).showSet(ids);
   }
 
   showElement(id: number, isolate = false) {

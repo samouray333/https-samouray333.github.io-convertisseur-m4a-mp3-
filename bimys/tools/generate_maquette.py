@@ -501,16 +501,36 @@ class Builder:
                 d0 = [a[k] - prev[k] for k in range(3)]
                 cross = (d0[1] * d[2] - d0[2] * d[1], d0[2] * d[0] - d0[0] * d[2], d0[0] * d[1] - d0[1] * d[0])
                 if sum(abs(c) for c in cross) > 1e-9:
-                    fits.append(self.fitting(storey, a, kind, "BEND", f"Coude {label}", r * 1.25, style, label))
+                    n0 = math.sqrt(sum(c * c for c in d0))
+                    back = tuple(-c / n0 for c in d0)
+                    fits.append(self.fitting(storey, a, kind, "BEND", f"Coude {label}", r * 1.18, style, label, dirs=[back, tuple(u)]))
         sk = (system, material, label, kind)
         self.expected["pipes" if kind == "pipe" else "ducts"].setdefault("|".join(sk[:3]), 0.0)
         self.expected["pipes" if kind == "pipe" else "ducts"]["|".join(sk[:3])] += total
         self.assign(system, segs + fits)
         return segs, fits
 
-    def fitting(self, storey, p, kind, predefined, name, r, style, label):
+    def fitting(self, storey, p, kind, predefined, name, r, style, label, dirs=None, rect=None):
+        """Raccord à sertir ou à emboîter : un manchon par branche, orienté selon les tubes raccordés.
+        Coude : dirs = [vers le tronçon amont, vers le tronçon aval] ; té : 3 directions (défaut : x, -x, z)."""
         cls = "IfcPipeFitting" if kind == "pipe" else "IfcDuctFitting"
-        fit = self.product(cls, name, storey, (p[0], p[1], p[2] - r), [self.cyl_solid(r, 2 * r)], style, predefined=predefined)
+        dirs = dirs or [(1, 0, 0), (-1, 0, 0), (0, 0, 1)]
+        solids = []
+        for d in dirs:
+            L = math.sqrt(sum(c * c for c in d)) or 1.0
+            u = tuple(c / L for c in d)
+            if rect:
+                w, h = rect
+                ln = max(w, h) * 0.6
+                refx = (0, 0, 1) if abs(u[2]) < 0.9 else (1, 0, 0)
+                prof = self.f.createIfcRectangleProfileDef("AREA", None, self.f.createIfcAxis2Placement2D(self.pt((0, 0)), None), w * 1.08, h * 1.08)
+                start = tuple(-u[i] * h * 0.54 for i in range(3))
+                solids.append(self.f.createIfcExtrudedAreaSolid(prof, self.ax3(start, u, refx), self.dirn((0, 0, 1)), ln + h * 0.54))
+            else:
+                ln = max(2.4 * r, 0.025)
+                start = tuple(-u[i] * r for i in range(3))
+                solids.append(self.cyl_solid(r, ln + r, origin=start, axis=u))
+        fit = self.product(cls, name, storey, (p[0], p[1], p[2]), solids, style, predefined=predefined)
         self.pset(fit, "Bimys_Reseau", {"Désignation": label})
         self.count(cls + ":" + predefined)
         return fit

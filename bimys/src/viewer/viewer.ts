@@ -3,6 +3,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import { LOT_BY_ID } from '../core/lots';
 import type { GeoBucket, LotId } from '../core/types';
@@ -15,7 +20,9 @@ interface BucketRT {
   data: GeoBucket;
   mesh: THREE.Mesh;
   geom: THREE.BufferGeometry;
-  mat: THREE.MeshLambertMaterial;
+  mat: THREE.MeshLambertMaterial | THREE.MeshStandardMaterial;
+  /** arêtes de l'élément (lignes), avec leurs plages par élément */
+  edges: { lines: THREE.LineSegments; ranges: Int32Array } | null;
   /** index courant (éléments visibles) : débuts et ids, pour retrouver l'élément touché */
   visStarts: Int32Array;
   visIds: Int32Array;
@@ -35,6 +42,11 @@ export const VIEW_DIRS: Record<ViewName, [number, number, number]> = {
   ouest: [-1, 0.05, 0],
   iso: [1, 0.9, 1],
 };
+
+export type Quality = 'haute' | 'standard';
+
+const PIPE_LOTS = new Set(['chauffage', 'ecs', 'ef', 'froid']);
+const EDGE_LOTS = new Set(['archi', 'equipements', 'autres']);
 
 export interface CameraState {
   position: [number, number, number];
@@ -92,6 +104,17 @@ export class Viewer {
   private ro: ResizeObserver;
   private lowPower: boolean;
   // cube de navigation
+  quality: Quality;
+  private composer: EffectComposer | null = null;
+  private renderPass: RenderPass | null = null;
+  private gtao: GTAOPass | null = null;
+  private envMap: THREE.Texture | null = null;
+  private lights: { hemi: THREE.HemisphereLight; dir: THREE.DirectionalLight; dir2: THREE.DirectionalLight } | null = null;
+  private edgesOn = true;
+  private edgeColor = new THREE.Color(0x2b3a40);
+  private grid: THREE.Group | null = null;
+  private gridOn = true;
+  private planStyleOn = false;
   private cubeRenderer: CSS3DRenderer | null = null;
   private cubeScene = new THREE.Scene();
   private cubeCamera = new THREE.PerspectiveCamera(50, 1, 1, 1000);
@@ -99,10 +122,13 @@ export class Viewer {
   constructor(container: HTMLElement) {
     this.container = container;
     this.lowPower = matchMedia('(pointer: coarse)').matches;
+    this.quality = this.lowPower ? 'standard' : 'haute';
     // lève une exception si WebGL est indisponible : l'appelant affiche un repli
     this.renderer = new THREE.WebGLRenderer({ antialias: !this.lowPower, alpha: false, powerPreference: 'default', preserveDrawingBuffer: true, failIfMajorPerformanceCaveat: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.lowPower ? 1.75 : 2));
     this.renderer.localClippingEnabled = false;
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     this.renderer.domElement.className = 'viewer-canvas';
     container.appendChild(this.renderer.domElement);
     this.persp = new THREE.PerspectiveCamera(45, 1, 0.05, 5000);
@@ -122,6 +148,7 @@ export class Viewer {
     dir.position.set(10, 20, 8);
     const dir2 = new THREE.DirectionalLight(0xffffff, 0.5);
     dir2.position.set(-10, 6, -12);
+    this.lights = { hemi, dir, dir2 };
     this.scene.add(hemi, dir, dir2, this.markers, this.measureGroup);
     this.measureLabel = document.createElement('div');
     this.measureLabel.className = 'measure-label';
@@ -141,17 +168,154 @@ export class Viewer {
       if (this.disposed) return;
       if (this.needsRender && this.container.offsetParent !== null) {
         this.needsRender = false;
-        this.renderer.render(this.scene, this.camera);
+        this.renderFrame();
         this.updateMeasureLabel();
         this.renderCube();
       }
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
+    this.applyQuality();
   }
 
+  // ------------------------------------------------------------ qualité de rendu
+  /** Haute (PC) : matériaux physiques, éclairage d'environnement, occlusion ambiante. Standard (téléphone) : léger. */
+  autoQuality(): Quality {
+    return this.lowPower ? 'standard' : 'haute';
+  }
+
+  setQuality(q: Quality) {
+    if (q === this.quality && (q === 'standard' || this.composer)) return;
+    this.quality = q;
+    this.applyQuality();
+    for (const b of this.buckets) {
+      const old = b.mat;
+      b.mat = this.makeMaterial(b.data.lot);
+      if (!this.planMats.has(b)) b.mesh.material = b.mat;
+      else this.planMats.set(b, b.mat);
+      old.dispose();
+    }
+    this.applyMaterials();
+  }
+
+  private applyQuality() {
+    const high = this.quality === 'haute';
+    if (high && !this.envMap) {
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.envMap = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      pm.dispose();
+    }
+    this.scene.environment = high ? this.envMap : null;
+    (this.scene as any).environmentIntensity = 0.55;
+    if (this.lights) {
+      this.lights.hemi.intensity = high ? 0.9 : 1.6;
+      this.lights.dir.intensity = high ? 1.6 : 1.4;
+      this.lights.dir2.intensity = high ? 0.35 : 0.5;
+    }
+    if (high && !this.composer) {
+      const w = this.container.clientWidth || 1;
+      const h = this.container.clientHeight || 1;
+      this.composer = new EffectComposer(this.renderer);
+      this.renderPass = new RenderPass(this.scene, this.camera);
+      this.gtao = new GTAOPass(this.scene, this.camera, w, h);
+      this.gtao.blendIntensity = 0.85;
+      this.composer.addPass(this.renderPass);
+      this.composer.addPass(this.gtao);
+      this.composer.addPass(new OutputPass());
+      this.composer.setPixelRatio(this.renderer.getPixelRatio());
+      this.composer.setSize(w, h);
+    }
+    this.requestRender();
+  }
+
+  private makeMaterial(lot: string): THREE.MeshLambertMaterial | THREE.MeshStandardMaterial {
+    if (this.quality === 'standard') return new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
+    const pipe = PIPE_LOTS.has(lot);
+    return new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: pipe ? 0.42 : lot === 'equipements' ? 0.5 : 0.82, metalness: pipe ? 0.25 : lot === 'equipements' ? 0.12 : 0.0 });
+  }
+
+  /** l'occlusion ambiante est coupée en transparence et en plan (rendu plus lisible) */
+  private renderFrame() {
+    const useAO = this.quality === 'haute' && this.composer && !this.archiTransparent && !this.planStyleOn;
+    if (useAO && this.composer && this.renderPass && this.gtao) {
+      this.renderPass.camera = this.camera;
+      this.gtao.camera = this.camera;
+      (this.gtao as any).gtaoMaterial && ((this.gtao as any).gtaoMaterial.needsUpdate = false);
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  setEdges(on: boolean) {
+    this.edgesOn = on;
+    for (const b of this.buckets) if (b.edges) b.edges.lines.visible = on && b.mesh.visible;
+    this.requestRender();
+  }
+
+  get edgesVisible(): boolean {
+    return this.edgesOn;
+  }
+
+  /** fond dégradé (plus clair en haut) ; la couleur des arêtes suit le thème */
   setBackground(color: string) {
-    this.scene.background = new THREE.Color(color);
+    const base = new THREE.Color(color);
+    const hsl = { h: 0, s: 0, l: 0 };
+    base.getHSL(hsl);
+    const dark = hsl.l < 0.4;
+    const top = base.clone().offsetHSL(0, -0.02, dark ? 0.06 : 0.07);
+    const bottom = base.clone().offsetHSL(0, 0.0, dark ? -0.04 : -0.05);
+    const c = document.createElement('canvas');
+    c.width = 4;
+    c.height = 256;
+    const g = c.getContext('2d')!;
+    const grad = g.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, `#${top.getHexString()}`);
+    grad.addColorStop(1, `#${bottom.getHexString()}`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 4, 256);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    (this.scene.background as THREE.Texture | null)?.dispose?.();
+    this.scene.background = tex;
+    this.edgeColor.set(dark ? 0xc8d6db : 0x24343a);
+    for (const b of this.buckets) if (b.edges) (b.edges.lines.material as THREE.LineBasicMaterial).color.copy(this.edgeColor);
+    if (this.grid) this.buildGrid();
+    this.requestRender();
+  }
+
+  /** grille au sol discrète sous la maquette */
+  private buildGrid() {
+    if (this.grid) {
+      this.scene.remove(this.grid);
+      this.grid.traverse((o) => {
+        const m = o as THREE.Mesh;
+        m.geometry?.dispose();
+        (m.material as THREE.Material)?.dispose?.();
+      });
+    }
+    const size = this.modelBox.getSize(new THREE.Vector3());
+    const c = this.modelBox.getCenter(new THREE.Vector3());
+    const ext = Math.ceil(Math.max(size.x, size.z) * 1.8 + 6);
+    const step = ext > 120 ? 5 : ext > 50 ? 2 : 1;
+    const dark = this.edgeColor.r > 0.5;
+    const grid = new THREE.GridHelper(ext, Math.round(ext / step), dark ? 0x5a6e75 : 0x9fb0b6, dark ? 0x34444a : 0xc9d4d8);
+    const gm = grid.material as THREE.LineBasicMaterial;
+    gm.transparent = true;
+    gm.opacity = 0.55;
+    gm.depthWrite = false;
+    const group = new THREE.Group();
+    group.add(grid);
+    group.position.set(Math.round(c.x), this.modelBox.min.y - 0.02, Math.round(c.z));
+    group.renderOrder = -1;
+    group.visible = this.gridOn;
+    this.grid = group;
+    this.scene.add(group);
+  }
+
+  setGridVisible(v: boolean) {
+    this.gridOn = v;
+    if (this.grid) this.grid.visible = v;
     this.requestRender();
   }
 
@@ -163,6 +327,7 @@ export class Viewer {
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    this.composer?.setSize(w, h);
     this.persp.aspect = w / h;
     this.persp.updateProjectionMatrix();
     this.updateOrthoFrustum();
@@ -182,7 +347,13 @@ export class Viewer {
       (b.geom as any).disposeBoundsTree?.();
       b.geom.dispose();
       b.mat.dispose();
+      if (b.edges) {
+        this.scene.remove(b.edges.lines);
+        b.edges.lines.geometry.dispose();
+        (b.edges.lines.material as THREE.Material).dispose();
+      }
     }
+    this.edgeJob++;
     this.buckets = [];
     this.elementRanges.clear();
     this.hidden.clear();
@@ -206,10 +377,10 @@ export class Viewer {
       geom.setIndex(new THREE.BufferAttribute(data.indices.slice(), 1));
       geom.computeBoundingBox();
       geom.computeBoundingSphere();
-      const mat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
+      const mat = this.makeMaterial(data.lot);
       const mesh = new THREE.Mesh(geom, mat);
       mesh.matrixAutoUpdate = false;
-      const rt: BucketRT = { data, mesh, geom, mat, visStarts: new Int32Array(0), visIds: new Int32Array(0), bvhDirty: true };
+      const rt: BucketRT = { data, mesh, geom, mat, edges: null, visStarts: new Int32Array(0), visIds: new Int32Array(0), bvhDirty: true };
       for (let i = 0; i < data.ranges.length; i += 3) {
         const id = data.ranges[i];
         if (!this.elementRanges.has(id)) this.elementRanges.set(id, []);
@@ -228,7 +399,83 @@ export class Viewer {
     this.ortho.far = size * 20 + 100;
     for (const b of this.buckets) this.rebuildIndex(b);
     this.applyMaterials();
+    this.buildGrid();
+    if (this.gtao) {
+      const r = Math.max(0.25, Math.min(1.2, size / 40));
+      this.gtao.updateGtaoMaterial({ radius: r, distanceExponent: 1.5, thickness: 1.0, scale: 1.0, samples: 16 });
+      this.gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    }
     this.setView('iso');
+    // les arêtes sont calculées juste après le premier affichage pour ne pas retarder l'ouverture
+    const job = ++this.edgeJob;
+    setTimeout(() => {
+      if (job === this.edgeJob) this.buildEdges();
+    }, 30);
+  }
+
+  private edgeJob = 0;
+
+  /** arêtes vives (angle > 30°) des murs, dalles, menuiseries et équipements, par élément */
+  private buildEdges() {
+    const tmp = new THREE.BufferGeometry();
+    for (const b of this.buckets) {
+      if (!EDGE_LOTS.has(b.data.lot) || b.data.indices.length > 1_800_000) continue;
+      const P = b.data.positions, I = b.data.indices, r = b.data.ranges;
+      const chunks: Float32Array[] = [];
+      const ranges: number[] = [];
+      let nv = 0;
+      for (let i = 0; i < r.length; i += 3) {
+        const start = r[i + 1], count = r[i + 2];
+        const pos = new Float32Array(count * 3);
+        for (let k = 0; k < count; k++) {
+          const v = I[start + k] * 3;
+          pos[k * 3] = P[v];
+          pos[k * 3 + 1] = P[v + 1];
+          pos[k * 3 + 2] = P[v + 2];
+        }
+        tmp.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        const eg = new THREE.EdgesGeometry(tmp, 30);
+        const ep = eg.getAttribute('position').array as Float32Array;
+        eg.dispose();
+        if (!ep.length) continue;
+        ranges.push(r[i], nv, ep.length / 3);
+        chunks.push(ep);
+        nv += ep.length / 3;
+      }
+      if (!nv) continue;
+      const all = new Float32Array(nv * 3);
+      let o = 0;
+      for (const c of chunks) {
+        all.set(c, o);
+        o += c.length;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(all, 3));
+      const mat = new THREE.LineBasicMaterial({ color: this.edgeColor, transparent: true, opacity: b.data.lot === 'archi' ? 0.42 : 0.3, depthWrite: false });
+      const lines = new THREE.LineSegments(g, mat);
+      lines.matrixAutoUpdate = false;
+      lines.renderOrder = 3;
+      b.edges = { lines, ranges: Int32Array.from(ranges) };
+      this.rebuildEdgeIndex(b);
+      lines.visible = this.edgesOn && b.mesh.visible;
+      this.scene.add(lines);
+    }
+    tmp.dispose();
+    this.requestRender();
+  }
+
+  private rebuildEdgeIndex(b: BucketRT) {
+    if (!b.edges) return;
+    const r = b.edges.ranges;
+    let total = 0;
+    for (let i = 0; i < r.length; i += 3) if (this.isVisible(r[i])) total += r[i + 2];
+    const idx = new Uint32Array(total);
+    let o = 0;
+    for (let i = 0; i < r.length; i += 3) {
+      if (!this.isVisible(r[i])) continue;
+      for (let k = 0; k < r[i + 2]; k++) idx[o++] = r[i + 1] + k;
+    }
+    b.edges.lines.geometry.setIndex(new THREE.BufferAttribute(idx, 1));
   }
 
   get bounds(): THREE.Box3 {
@@ -242,13 +489,19 @@ export class Viewer {
   // ------------------------------------------------------------ apparence
   setLotVisible(lot: LotId, v: boolean) {
     this.lotVisible[lot] = v;
-    for (const b of this.buckets) if (b.data.lot === lot) b.mesh.visible = v;
+    for (const b of this.buckets) if (b.data.lot === lot) {
+      b.mesh.visible = v;
+      if (b.edges) b.edges.lines.visible = v && this.edgesOn;
+    }
     this.requestRender();
   }
 
   setLotVisibility(map: Record<string, boolean>) {
     this.lotVisible = { ...map };
-    for (const b of this.buckets) b.mesh.visible = map[b.data.lot] !== false;
+    for (const b of this.buckets) {
+      b.mesh.visible = map[b.data.lot] !== false;
+      if (b.edges) b.edges.lines.visible = b.mesh.visible && this.edgesOn;
+    }
     this.requestRender();
   }
 
@@ -276,12 +529,17 @@ export class Viewer {
       mat.transparent = opacity < 0.99;
       mat.opacity = opacity;
       mat.depthWrite = opacity >= 0.99;
-      mat.polygonOffset = lot === 'archi';
-      mat.polygonOffsetFactor = 1;
+      // décalage de profondeur : les arêtes restent nettes sans scintillement
+      mat.polygonOffset = !mat.transparent;
+      mat.polygonOffsetFactor = lot === 'archi' ? 1.5 : 1;
       mat.polygonOffsetUnits = 1;
       b.mesh.renderOrder = mat.transparent ? 2 : lot === 'archi' ? 0 : 1;
       mat.needsUpdate = true;
       b.mesh.visible = this.lotVisible[lot] !== undefined ? this.lotVisible[lot] : LOT_BY_ID[lot]?.visible !== false;
+      if (b.edges) {
+        b.edges.lines.visible = b.mesh.visible && this.edgesOn;
+        (b.edges.lines.material as THREE.LineBasicMaterial).opacity = lot === 'archi' ? (this.archiTransparent ? 0.28 : 0.42) : 0.3;
+      }
     }
     this.requestRender();
   }
@@ -322,7 +580,10 @@ export class Viewer {
   }
 
   private refreshVisibility() {
-    for (const b of this.buckets) this.rebuildIndex(b);
+    for (const b of this.buckets) {
+      this.rebuildIndex(b);
+      this.rebuildEdgeIndex(b);
+    }
     this.requestRender();
   }
 
@@ -647,6 +908,7 @@ export class Viewer {
       b.mesh.material = m;
     }
     this.planMats.clear();
+    this.planStyleOn = on;
     if (on) {
       for (const b of this.buckets) {
         if (b.data.lot !== 'archi') continue;
@@ -960,7 +1222,7 @@ export class Viewer {
   }
 
   screenshot(): string {
-    this.renderer.render(this.scene, this.camera);
+    this.renderFrame();
     return this.renderer.domElement.toDataURL('image/png');
   }
 }

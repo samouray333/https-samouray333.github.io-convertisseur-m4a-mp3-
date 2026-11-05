@@ -1,21 +1,21 @@
-# Bimys 1.2.1 (QMTech)
+# Bimys 1.3.0 (QMTech)
 
 Visionneuse BIM pédagogique spécialisée génie thermique pour les Bac Pro **ICCER** et **MEE** : ouverture de maquettes IFC, exploration des réseaux, métrés, déperditions, maintenance et défis élèves. Application 100 % hors ligne (aucun serveur, aucun compte, aucune clé API), interface entièrement en français.
 
-- Package Android : `com.qmtech.bimys`, versionCode 4, versionName 1.2.1
+- Package Android : `com.qmtech.bimys`, versionCode 5, versionName 1.3.0
 - Windows : installeur NSIS (installation par utilisateur, sans droits administrateur, raccourcis menu Démarrer et bureau, désinstallation depuis « Applications et fonctionnalités ») et version portable
 - Rendu WebGL standard (aucune dépendance CUDA ou carte Nvidia)
 - Interface 100 % en français, y compris les propriétés IFC normalisées (noms de Pset, propriétés, quantités et valeurs traduits, nom IFC d'origine affiché en petit) et les textes internes de Chromium sous Windows
 
 ## Télécharger
 
-Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.2.1`** du dépôt :
+Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.3.0`** du dépôt :
 
 | Fichier | Usage |
 | --- | --- |
-| `Bimys-1.2.1.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
-| `Bimys-Setup-1.2.1.exe` | Installeur Windows 10/11 (64 bits) |
-| `Bimys-Portable-1.2.1.exe` | Version portable Windows, sans installation |
+| `Bimys-1.3.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
+| `Bimys-Setup-1.3.0.exe` | Installeur Windows 10/11 (64 bits) |
+| `Bimys-Portable-1.3.0.exe` | Version portable Windows, sans installation |
 
 ## Bibliothèque de maquettes (7 bâtiments complets)
 
@@ -38,13 +38,19 @@ Régénération : `npm run maquette` (maisons R+1) et `npm run batiments` (les 5
 | Module | Contenu |
 | --- | --- |
 | Vue 3D | orbite, zoom, pan, vues dessus / face / iso, coupe horizontale par niveau + plan de coupe libre, mesure de distance, lots colorés (architecture en transparence, chauffage, ECS, eau froide, ventilation, équipements, électrique), isoler / masquer / tout afficher, arborescence Projet > Bâtiment > Niveaux > Pièces > Éléments synchronisée, propriétés avec types IFC traduits |
-| Métré | longueurs par système, matériau et diamètre (cuivre `int x ext`, PER / multicouche `ext x épaisseur`), gaines par section, raccords, vannes et accessoires, chutes réglables, export CSV et PDF |
+| Métré | longueurs par réseau, matériau et diamètre (cuivre `int x ext`, PER / multicouche `ext x épaisseur`), filtres par niveau et par réseau, chutes réglables, conditionnement (barres, couronnes, rouleaux) et quantités à commander, colliers estimés, contenance en eau des tubes, surface développée des gaines, raccords et accessoires, bouton « voir en 3D » sur chaque ligne, bon de commande PDF, export CSV et PDF |
 | Équipements | nomenclature (générateurs, émetteurs, circulateurs, vases, soupapes, ventilation, régulation, sanitaires), export CSV et PDF |
 | Déperditions | méthode par parois (U × S × b × ΔT + ponts thermiques forfaitaires + 0,34 × Qv × ΔT, parois pré-remplies depuis les limites d'espaces IFC) ou volumique (G × V × ΔT), Te de base modifiable (−10 °C par défaut, Saône-et-Loire), Ti par pièce, comparaison avec les émetteurs (sous-dimensionné / correct / surdimensionné, écart en %), correction de puissance selon le régime d'eau, export PDF |
 | Cohérence | émetteurs sans robinet thermostatique, pièces humides sans extraction, éléments sans système, pièces chauffées sans émetteur |
 | Maintenance | fiches équipements, check-lists (`src/data/maintenance.json`), contrôle d'étanchéité selon la charge en t éq. CO2, carnet d'interventions (photo, mesures, pièces), repères 3D (rouge : en retard, orange : en cours), rapport PDF avec signature au doigt ou à la souris |
 | Énergie | consommations annuelles, ratio kWh/m².an, gains estimés (chaudière, PAC, isolation, fenêtres, régulation) avec hypothèses affichées, export PDF |
 | Défis | questions générées depuis la maquette, correction avec tolérance, score, PDF du résultat, mode prof protégé par code (1234 au départ, modifiable) pour les corrigés et l'historique |
+
+### Nouveautés 1.3
+
+- Rendu 3D : matériaux réalistes avec éclairage d'ambiance, ombrage d'ambiance (haute qualité), arêtes des objets, fond dégradé, grille au sol. Réglage dans Paramètres > Affichage (qualité automatique, haute ou standard ; arêtes et grille activables)
+- Maquettes : coudes, tés et réductions modélisés avec leurs emboîtures
+- Métré professionnel : synthèse par réseau, graphique des longueurs, tableaux groupés, conditionnement, quantités à commander, colliers, contenance en eau, surface de tôle, bon de commande
 
 ### Version Windows (1.1)
 

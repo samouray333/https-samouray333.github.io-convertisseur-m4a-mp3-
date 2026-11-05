@@ -17,6 +17,9 @@ export interface Ctx {
   loadBytes(name: string, data: ArrayBuffer, path?: string): Promise<void>;
   /** sélectionne un élément dans la vue 3D (et l'arborescence) */
   showElement(id: number, isolate?: boolean): void;
+  /** isole et sélectionne un ensemble d'objets dans la vue 3D */
+  showElements(ids: number[]): void;
+  applyGraphics(): void;
   exportFile(name: string, data: Uint8Array | string, mime: string, title?: string): Promise<void>;
   saveSettings(s: Settings): Promise<void>;
   setMaint(c: MaintConfig): void;

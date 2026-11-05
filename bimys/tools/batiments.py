@@ -428,7 +428,11 @@ class Bat(Builder):
             self.qto(seg, "Qto_DuctSegmentBaseQuantities", {"Length": round(L, 4)})
             segs.append(seg)
             if i > 0:
-                self.assign(system, [self.fitting(skey, a, "duct", "BEND", f"Coude {label}", max(w_mm, h_mm) / 2000.0, "Galva", label)])
+                pa = pts[i - 1]
+                d0 = [a[k] - pa[k] for k in range(3)]
+                n0 = math.sqrt(sum(v * v for v in d0)) or 1.0
+                back = tuple(-v / n0 for v in d0)
+                self.assign(system, [self.fitting(skey, a, "duct", "BEND", f"Coude {label}", max(w_mm, h_mm) / 2000.0, "Galva", label, dirs=[back, tuple(u)], rect=(w_mm / 1000.0, h_mm / 1000.0))])
         self.assign(system, segs)
         return segs
 
@@ -1043,7 +1047,7 @@ def bureaux():
                                 psets=("AéroCalor", "Cassette 600x600", round(pu / 1000.0, 1), {"Puissance calorifique (W)": float(pu), "Puissance frigorifique (W)": float(round(max(1700, pu * 2.2), -2)), "Détendeur électronique": True}))
                     for k, (lab, outer, zl) in enumerate((("10x12", 12, zz), ("6x8", 8, zz - 0.06))):
                         b.pipe(skey, [(ux + 0.05 * k, cy0 + 0.3 + 0.15 * k, zl), (ux + 0.05 * k, cyr, zl), (ux + 0.05 * k, cyr, r["h"] - 0.15)], lab, "Cuivre frigorifique", outer, 1.0, "FRIGO", "Gaz" if k == 0 else "Liquide", "Cuivre")
-                    b.assign("FRIGO", [b.fitting(skey, (ux, cy0 + 0.3, zz), "pipe", "JUNCTION", "Raccord de dérivation (Refnet)", 0.02, "Cuivre", "22x24")])
+                    b.assign("FRIGO", [b.fitting(skey, (ux, cy0 + 0.3, zz), "pipe", "JUNCTION", "Raccord de dérivation (Refnet)", 0.016, "Cuivre", "22x24", dirs=[(1, 0, 0), (-1, 0, 0), (0, 1, 0)])])
                 q = 25 * max(1, int(b.area(r) / 10))
                 b.air_terminal(r, f"Diffuseur air neuf {n}", "Soufflage", q, (cxr + 1.0, cyr), "CTA", kind="soufflage", dia=160)
                 b.duct(skey, [(cxr + 1.0, cyr, r["h"]), (cxr + 1.0, cyr, zz), (cxr + 1.0, cy1 - 0.4, zz)], 160, "Conduit galva rigide", "CTA", "Piquage soufflage")

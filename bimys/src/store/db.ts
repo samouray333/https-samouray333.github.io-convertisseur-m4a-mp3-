@@ -18,6 +18,9 @@ export interface Settings {
   seuilSur: number;
   couleurs: 'lot' | 'ifc';
   nbQuestions: number;
+  qualite: 'auto' | 'haute' | 'standard';
+  aretes: boolean;
+  grille: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,6 +37,9 @@ export const DEFAULT_SETTINGS: Settings = {
   seuilSur: 30,
   couleurs: 'lot',
   nbQuestions: 10,
+  qualite: 'auto',
+  aretes: true,
+  grille: true,
 };
 
 export interface RecentFile {

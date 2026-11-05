@@ -267,3 +267,34 @@ describe('bibliothèque de bâtiments', () => {
     expect(fluidInfo(drv)!.teqCO2).toBeCloseTo(38.63, 2); // 18,5 × 2088 / 1000
   });
 });
+
+describe('métré : quantités de commande, contenance, filtres', () => {
+  it('contenance, conditionnement et quantité à commander vérifiés à la main', async () => {
+    const r = computeMetre(await loadSample(GAZ), 10);
+    const c = r.tubes.find((t) => t.designation === '14x16')!;
+    // contenance = π × 0,014² / 4 × 34,5 m × 1000 = 5,31 L
+    expect(c.volumeL).toBeCloseTo(5.31, 2);
+    // 34,5 m + 10 % = 37,95 m en barres de 4 m : 10 barres
+    expect(c.conditionnement.libelle).toBe('Barre de 4 m');
+    expect(c.aCommander).toBe(10);
+    const mc = r.tubes.find((t) => t.designation === '16x2')!;
+    expect(mc.conditionnement.libelle).toBe('Couronne de 100 m');
+    expect(mc.dInt).toBeCloseTo(0.012, 6);
+    expect(c.ids).toHaveLength(10);
+    // gaine souple Ø80 : surface développée = π × 0,08 × longueur × 1,1
+    const g = r.gaines.find((x) => x.designation === 'Ø80')!;
+    expect(g.surfaceM2).toBeCloseTo(Math.PI * 0.08 * g.longueur * 1.1, 1);
+    const ch = r.systemes.find((x) => x.systeme === 'Chauffage')!;
+    expect(ch.volumeL).toBeGreaterThan(10);
+  });
+  it('filtre par niveau et par réseau', async () => {
+    const m = await loadSample(GAZ);
+    const r1 = m.data.storeys.find((s) => s.name === 'R+1')!;
+    const r = computeMetre(m, { chutesPct: 0, storeyId: r1.id });
+    expect(r.tubes.some((t) => t.designation === '14x16')).toBe(false); // boucle 14x16 au RDC uniquement
+    expect(r.tubes.some((t) => t.designation === '16x2')).toBe(true);
+    const v = computeMetre(m, { systeme: 'Ventilation VMC simple flux' });
+    expect(v.tubes).toHaveLength(0);
+    expect(v.gaines.length).toBe(3);
+  });
+});

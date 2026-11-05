@@ -918,6 +918,17 @@ export class ViewerPage implements Page {
     this.updateStatus();
   }
 
+  /** isole un ensemble (ex. une ligne du métré), le sélectionne et le cadre */
+  showSet(ids: number[]) {
+    if (!this.viewer) return;
+    this.setGhost(true);
+    this.viewer.isolate(ids);
+    this.viewer.setSelection(ids.filter((id) => this.viewer!.hasGeometry(id)));
+    this.viewer.fitIds(ids);
+    this.onSelect(ids[ids.length - 1], true);
+    toast(`${ids.length} objet${ids.length > 1 ? 's' : ''} isolé${ids.length > 1 ? 's' : ''}. Touche A pour tout réafficher.`);
+  }
+
   // ------------------------------------------------------------ sélection et propriétés
   selectElement(id: number | null, fit: boolean, isolate = false, additive = false) {
     this.viewer?.select(id, false, additive);

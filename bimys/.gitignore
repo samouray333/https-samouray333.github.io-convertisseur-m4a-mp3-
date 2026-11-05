@@ -14,3 +14,4 @@ android/app/src/main/assets/public
 
 # Clé de signature Android : NE PAS publier sur un dépôt public (voir README)
 keystore/
+__pycache__/

@@ -87,6 +87,9 @@ export class SettingsPage implements Page {
         <div class="grid">
           <label class="field">Thème<select data-s="theme"><option value="auto">Automatique (système)</option><option value="clair">Clair</option><option value="sombre">Sombre</option></select></label>
           <label class="field">Couleurs 3D<select data-s="couleurs"><option value="lot">Par lot (code couleur)</option><option value="ifc">Couleurs du fichier IFC</option></select></label>
+          <label class="field">Qualité graphique<select data-s="qualite"><option value="auto">Automatique (selon l'appareil)</option><option value="haute">Haute (ombrage d'ambiance, éclairage réaliste)</option><option value="standard">Standard (plus rapide, tablettes et vieux PC)</option></select></label>
+          <label class="field">Arêtes des objets<select data-b="aretes"><option value="1">Affichées</option><option value="0">Masquées</option></select></label>
+          <label class="field">Grille au sol<select data-b="grille"><option value="1">Affichée</option><option value="0">Masquée</option></select></label>
         </div>
       </div>
       <div class="card"><h2>${icon('lock')} Mode prof</h2>
@@ -108,11 +111,21 @@ export class SettingsPage implements Page {
     const q = <T extends HTMLElement>(sel: string) => this.inner.querySelector(sel) as T;
     q<HTMLSelectElement>('[data-s=theme]').value = s.theme;
     q<HTMLSelectElement>('[data-s=couleurs]').value = s.couleurs;
+    q<HTMLSelectElement>('[data-s=qualite]').value = s.qualite;
+    q<HTMLSelectElement>('[data-b=aretes]').value = s.aretes ? '1' : '0';
+    q<HTMLSelectElement>('[data-b=grille]').value = s.grille ? '1' : '0';
+    this.inner.querySelectorAll<HTMLSelectElement>('[data-b]').forEach((x) => {
+      x.addEventListener('change', async () => {
+        await save({ [x.dataset.b!]: x.value === '1' } as any);
+        this.ctx.applyGraphics();
+      });
+    });
     const save = (patch: Partial<Settings>) => this.ctx.saveSettings({ ...this.ctx.settings, ...patch });
     this.inner.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-s]').forEach((x) => {
       x.addEventListener('change', async () => {
         await save({ [x.dataset.s!]: x.value } as any);
         if (x.dataset.s === 'couleurs') this.ctx.viewer?.setColorMode(x.value as any);
+        if (x.dataset.s === 'qualite') this.ctx.applyGraphics();
       });
     });
     this.inner.querySelectorAll<HTMLInputElement>('[data-n]').forEach((x) => {

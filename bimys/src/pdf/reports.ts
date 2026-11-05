@@ -26,33 +26,79 @@ function src(m: Model): string {
   return `Maquette : ${m.data.fileName}${m.data.projectName ? ` (${m.data.projectName})` : ''}`;
 }
 
-export async function metrePdf(m: Model, r: MetreResult, s: Settings): Promise<Uint8Array> {
-  const rep = await Report.create('Métré des réseaux', src(m), s);
-  rep.para(`Longueurs issues de la maquette IFC (quantités Qto ou longueur d'axe des segments). Majoration pour chutes : ${fmt(r.chutesPct, 0)} %.`);
+export interface MetrePdfOptions {
+  commande?: boolean;
+  filtre?: string;
+  lignesCommande?: { ref: string; cond: string; qte: number; unite: string; longueur: number }[];
+}
+
+const GROUP_STYLE = { fontStyle: 'bold', fillColor: [226, 236, 239], textColor: [15, 76, 92] } as const;
+
+function grouped<T extends { systeme: string }>(rows: T[], cols: number, line: (r: T) => any[], total: (rs: T[]) => any[]): any[] {
+  const body: any[] = [];
+  let sys = '';
+  for (const r of rows) {
+    if (r.systeme !== sys) {
+      sys = r.systeme;
+      const rs = rows.filter((x) => x.systeme === sys);
+      body.push([{ content: sys, colSpan: cols, styles: GROUP_STYLE }, ...total(rs).map((c) => ({ content: c, styles: { ...GROUP_STYLE, halign: 'right' } }))]);
+    }
+    body.push(line(r));
+  }
+  return body;
+}
+
+export async function metrePdf(m: Model, r: MetreResult, s: Settings, o: MetrePdfOptions = {}): Promise<Uint8Array> {
+  const titre = o.commande ? 'Bon de commande' : 'Métré des réseaux';
+  const rep = await Report.create(titre, `${src(m)}${o.filtre ? ` · ${o.filtre}` : ''}`, s, !o.commande);
+  const R = { halign: 'right' } as const;
+  if (o.commande) {
+    rep.para(`Quantités à commander, chutes de ${fmt(r.chutesPct, 0)} % incluses${o.filtre ? `, filtre : ${o.filtre}` : ''}. Conditionnements usuels du commerce ; colliers estimés en pose horizontale.`);
+    const body: any[] = (o.lignesCommande ?? []).map((x) => [x.ref, x.cond, fmt(x.longueur, 2), { content: `${x.qte} ${x.unite}`, styles: { fontStyle: 'bold' } }]);
+    const fit = new Map<string, number>();
+    for (const x of [...r.raccords, ...r.accessoires]) fit.set(`${x.categorie}${x.designation ? ' ' + x.designation : ''}`, (fit.get(`${x.categorie}${x.designation ? ' ' + x.designation : ''}`) ?? 0) + x.nb);
+    for (const [k, n] of [...fit].sort((a, b) => a[0].localeCompare(b[0], 'fr', { numeric: true }))) body.push([k, "À l'unité", '', { content: String(n), styles: { fontStyle: 'bold' } }]);
+    for (const t of r.tubes) body.push([`Collier ${t.materiau.toLowerCase()} ${t.designation} (estimation)`, "À l'unité", '', { content: String(t.colliers), styles: { fontStyle: 'bold' } }]);
+    rep.table(['Article', 'Conditionnement', 'Longueur nécessaire (m)', 'Quantité'], body, { columnStyles: { 2: R, 3: { ...R, cellWidth: 32 } } });
+    rep.para('Prix et références fabricant à compléter. Document établi à partir de la maquette numérique : vérifier les quantités sur plan avant commande.', 8, [110, 110, 110]);
+    return rep.output();
+  }
+  rep.para(`Longueurs d'axe issues de la maquette IFC (quantités Qto ou profondeur d'extrusion des segments). Majoration pour chutes : ${fmt(r.chutesPct, 0)} %.${o.filtre ? ` Filtre : ${o.filtre}.` : ''}`);
+  if (r.systemes.length) {
+    rep.h2('Synthèse par réseau');
+    rep.table(
+      ['Réseau', 'Tubes (m)', 'Gaines (m)', 'Contenance (L)', 'Tôle (m²)', 'Raccords', 'Accessoires'],
+      r.systemes.map((x) => [x.systeme, x.tubesM ? fmt(x.tubesM, 1) : '', x.gainesM ? fmt(x.gainesM, 1) : '', x.volumeL ? fmt(x.volumeL, 1) : '', x.surfaceM2 ? fmt(x.surfaceM2, 1) : '', String(x.raccords || ''), String(x.accessoires || '')]),
+      { columnStyles: { 1: R, 2: R, 3: R, 4: R, 5: R, 6: R } },
+    );
+  }
   if (r.tubes.length) {
     rep.h2('Tubes');
     rep.table(
-      ['Système', 'Matériau', 'Diamètre', 'Tronçons', 'Longueur (m)', `Avec chutes (m)`],
-      r.tubes.map((t) => [t.systeme, t.materiau, t.designation, String(t.nb), fmt(t.longueur, 2), fmt(t.longueurChutes, 2)]),
-      { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right', fontStyle: 'bold' } } },
+      ['Matériau', 'Diamètre', 'Ø int.', 'Tronçons', 'Longueur (m)', `+ ${fmt(r.chutesPct, 0)} %`, 'Conditionnement', 'À commander', 'Colliers', 'Contenance (L)'],
+      grouped(r.tubes, 4, (t) => [t.materiau, { content: t.designation, styles: { fontStyle: 'bold' } }, t.dInt ? fmt(t.dInt * 1000, 1) : '', String(t.nb), fmt(t.longueur, 2), fmt(t.longueurChutes, 2), t.conditionnement.libelle, String(t.aCommander), String(t.colliers), fmt(t.volumeL, 2)],
+        (rs) => [fmt(rs.reduce((a, x) => a + x.longueur, 0), 2), fmt(rs.reduce((a, x) => a + x.longueurChutes, 0), 2), '', '', '', fmt(rs.reduce((a, x) => a + x.volumeL, 0), 1)]),
+      { columnStyles: { 2: R, 3: R, 4: R, 5: { ...R, fontStyle: 'bold' }, 7: { ...R, fontStyle: 'bold' }, 8: R, 9: R } },
     );
   }
   if (r.gaines.length) {
     rep.h2('Gaines de ventilation');
     rep.table(
-      ['Système', 'Matériau', 'Section', 'Tronçons', 'Longueur (m)', 'Avec chutes (m)'],
-      r.gaines.map((t) => [t.systeme, t.materiau, t.designation, String(t.nb), fmt(t.longueur, 2), fmt(t.longueurChutes, 2)]),
-      { columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right', fontStyle: 'bold' } } },
+      ['Matériau', 'Section', 'Tronçons', 'Longueur (m)', `+ ${fmt(r.chutesPct, 0)} %`, 'Surface développée (m²)', 'Conditionnement', 'À commander', 'Supports'],
+      grouped(r.gaines, 3, (t) => [t.materiau, { content: t.designation, styles: { fontStyle: 'bold' } }, String(t.nb), fmt(t.longueur, 2), fmt(t.longueurChutes, 2), fmt(t.surfaceM2, 2), t.conditionnement.libelle, String(t.aCommander), String(t.colliers)],
+        (rs) => [fmt(rs.reduce((a, x) => a + x.longueur, 0), 2), fmt(rs.reduce((a, x) => a + x.longueurChutes, 0), 2), fmt(rs.reduce((a, x) => a + x.surfaceM2, 0), 1), '', '', '']),
+      { columnStyles: { 2: R, 3: R, 4: { ...R, fontStyle: 'bold' }, 5: R, 7: { ...R, fontStyle: 'bold' }, 8: R } },
     );
   }
   if (r.raccords.length) {
     rep.h2('Raccords');
-    rep.table(['Système', 'Type', 'Diamètre', 'Quantité'], r.raccords.map((x) => [x.systeme, x.categorie, x.designation, String(x.nb)]), { columnStyles: { 3: { halign: 'right' } } });
+    rep.table(['Réseau', 'Type', 'Diamètre', 'Quantité'], r.raccords.map((x) => [x.systeme, x.categorie, x.designation, String(x.nb)]), { columnStyles: { 3: R } });
   }
   if (r.accessoires.length) {
     rep.h2('Vannes et accessoires');
-    rep.table(['Système', 'Type', 'Quantité'], r.accessoires.map((x) => [x.systeme, x.categorie, String(x.nb)]), { columnStyles: { 2: { halign: 'right' } } });
+    rep.table(['Réseau', 'Type', 'Quantité'], r.accessoires.map((x) => [x.systeme, x.categorie, String(x.nb)]), { columnStyles: { 2: R } });
   }
+  rep.para("Contenance = π × Ø int² / 4 × longueur (volume d'eau des tubes). Surface développée des gaines = périmètre × longueur, chutes comprises. Colliers et supports : estimation en pose horizontale.", 8, [110, 110, 110]);
   return rep.output();
 }
 
