@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.6.3';
+  const APP_VERSION = '1.6.4';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -195,6 +195,51 @@
     if (n < 2) return null;
     const last = S.weights[n - 1], prev = S.weights[n - 2], tr = E.smooth(S.weights);
     return { last, prev, diff: last.kg - prev.kg, trend: tr[n - 1].kg, trendDiff: tr[n - 1].kg - tr[n - 2].kg };
+  }
+  /* Carte Poids du journal : gros chiffre, écart en pastille, mini-courbe, progression vers l'objectif, composition. */
+  function weightCardHtml() {
+    const W = S.weights, n = W.length, p = S.profile;
+    const head = `<header class="meal-head"><span class="meal-ic weight">${icon('scale')}</span><div class="grow"><h3>Poids</h3><p class="muted">${n ? 'Pesée du ' + pkey(W[n - 1].date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Aucune pesée pour l\'instant'}</p></div>
+      <button class="add-btn" data-act="addWeight" aria-label="Ajouter une pesée">${icon('plus')}</button></header>`;
+    if (!n) return `<section class="card wcard">${head}<p class="muted small">Pèse-toi le matin à jeun, ou importe les pesées de ta balance (Profil > Balance connectée).</p></section>`;
+    const last = W[n - 1], c = weightChange(), gain = p.goal === 'gain';
+    const good = d => (gain ? d > 0 : d < 0);
+    const pill = c ? `<span class="wdelta ${Math.abs(c.diff) < 0.05 ? 'flat' : good(c.diff) ? 'good' : 'bad'}">${c.diff < -0.04 ? '▼' : c.diff > 0.04 ? '▲' : '='} ${sgn(c.diff)} kg</span><small class="wsince">depuis le ${pkey(c.prev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</small>` : '';
+    // Mini-courbe : 14 dernières pesées (points) et tendance lissée (trait).
+    const pts = W.slice(-14), tr = E.smooth(W).slice(-14);
+    let spark = '';
+    if (pts.length >= 2) {
+      const xs = pts.map(w => pkey(w.date).getTime()), ys = pts.map(w => w.kg).concat(tr.map(t => t.kg));
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), lo = Math.min(...ys) - 0.3, hi = Math.max(...ys) + 0.3;
+      const X = t => 4 + (x1 > x0 ? (t - x0) / (x1 - x0) : 1) * 112, Y = v => 40 - (v - lo) / (hi - lo) * 34;
+      // Trait plein : les pesées ; pointillés : la tendance lissée.
+      const raw = pts.map((w, i) => (i ? 'L' : 'M') + X(xs[i]).toFixed(1) + ' ' + Y(w.kg).toFixed(1)).join(' ');
+      const trend = tr.map((t, i) => (i ? 'L' : 'M') + X(pkey(t.date).getTime()).toFixed(1) + ' ' + Y(t.kg).toFixed(1)).join(' ');
+      spark = `<svg class="wspark" viewBox="0 0 120 44" aria-hidden="true"><defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--weight)" stop-opacity=".30"/><stop offset="1" stop-color="var(--weight)" stop-opacity="0"/></linearGradient></defs>
+        <path d="${raw} L${X(x1).toFixed(1)} 44 L${X(x0).toFixed(1)} 44 Z" fill="url(#wg)"/>
+        <path d="${trend}" fill="none" stroke="var(--muted)" stroke-width="1.3" stroke-dasharray="3 3" opacity=".7"/>
+        <path d="${raw}" fill="none" stroke="var(--weight)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        ${pts.map((w, i) => `<circle cx="${X(xs[i]).toFixed(1)}" cy="${Y(w.kg).toFixed(1)}" r="${i === pts.length - 1 ? 3.4 : 1.8}" class="${i === pts.length - 1 ? 'last' : ''}"/>`).join('')}</svg>`;
+    }
+    // Progression : de la première pesée vers l'objectif.
+    const start = W[0].kg, target = p.targetWeight, total = target - start, done = last.kg - start;
+    let prog = '';
+    if (target && Math.abs(total) >= 0.5 && p.goal !== 'maintain') {
+      const pct = Math.max(0, Math.min(100, done / total * 100));
+      prog = `<div class="wprog"><div class="wbar"><i style="width:${pct.toFixed(1)}%"></i></div>
+        <div class="wprog-l"><span><b>${sgn(done)} kg</b> depuis le ${pkey(W[0].date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span><span><b>${Math.round(pct)} %</b> · reste ${fr(Math.abs(Math.round((target - last.kg) * 10) / 10))} kg → ${fr(target)}</span></div></div>`;
+    }
+    const chips = [];
+    if (n > 2 && c) chips.push(`<span class="wchip">Tendance <b>${fr(Math.round(c.trend * 10) / 10)} kg</b> <em class="${Math.abs(c.trendDiff) < 0.05 ? '' : good(c.trendDiff) ? 'g' : 'b'}">${sgn(c.trendDiff)}</em></span>`);
+    if (last.fat != null) chips.push(`<span class="wchip">Masse grasse <b>${fr(last.fat)} %</b></span>`);
+    if (last.muscle != null) chips.push(`<span class="wchip">Muscle <b>${fr(last.muscle)} kg</b></span>`);
+    if (p.height) chips.push(`<span class="wchip">IMC <b>${fr(N.bmi(last.kg, p.height))}</b></span>`);
+    if (last.src) chips.push(`<span class="wchip src">${esc(last.src)}</span>`);
+    const a = leanAlert();
+    return `<section class="card wcard">${head}
+      <div class="wmain"><div><div class="wbig">${last.kg.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<span>kg</span></div><div class="wpill">${pill}</div></div>${spark}</div>
+      ${prog}${chips.length ? `<div class="wchips">${chips.join('')}</div>` : ''}
+      ${a ? `<p class="target-note">${icon('info')}<span>${esc(a.text)}</span></p>` : ''}</section>`;
   }
   const hasCompData = () => S.weights.some(w => w.fat != null && w.date >= addDays(today(), -60));
   function leanAlert() {
@@ -500,11 +545,7 @@
       <ul class="entries">${(d.acts || []).map(a => `<li data-act="editActivity" data-id="${a.id}"><div class="grow"><b>${esc(a.name)}</b><span class="muted">${a.min ? a.min + ' min' : 'saisie manuelle'}${a.rpe ? ' · RPE ' + a.rpe + '/10' : ''}${a.sweat ? ' · ≈ ' + fr(a.sweat / 1000, 1) + ' L de sueur' : ''}${actSteps(a) ? ' · ≈ ' + actSteps(a).toLocaleString('fr-FR') + ' pas' : ''}</span></div><span class="kc">${kcal(a.kcal)}</span></li>`).join('')}
       <li class="steps"><div class="grow"><b>Pas</b><span class="muted">${stepsLine(d, w)}</span></div>
       <input class="steps-input" inputmode="numeric" data-act="steps" value="${d.steps || ''}" placeholder="0" aria-label="Nombre de pas"></li></ul></section>`;
-    const lastW = S.weights.length ? S.weights[S.weights.length - 1] : null;
-    h += `<section class="card"><header class="meal-head"><span class="meal-ic weight">${icon('scale')}</span>
-      <div class="grow"><h3>Poids</h3><p class="muted">${lastW ? fr(lastW.kg) + ' kg le ' + pkey(lastW.date).toLocaleDateString('fr-FR') : 'Aucune pesée'}${(() => { const c = weightChange(); return c ? ' (<b>' + sgn(c.diff) + ' kg</b> depuis le ' + pkey(c.prev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ')' + (S.weights.length > 2 ? ' · tendance lissée ' + fr(Math.round(c.trend * 10) / 10) + ' kg (' + sgn(c.trendDiff) + ')' : '') : ''; })()} · objectif ${fr(S.profile.targetWeight)} kg</p></div>
-      <button class="add-btn" data-act="addWeight" aria-label="Ajouter une pesée">${icon('plus')}</button></header>
-      ${(() => { const a = leanAlert(); return a ? `<p class="target-note">${icon('info')}<span>${esc(a.text)}</span></p>` : ''; })()}</section>`;
+    h += weightCardHtml();
     h += `<p class="foot muted">Nutriments : ${esc(N.source)}</p>`;
     return h;
   }

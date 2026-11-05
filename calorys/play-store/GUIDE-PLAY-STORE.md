@@ -4,7 +4,7 @@ Tout est prêt dans ce dossier. Il reste les clics dans la Play Console, dans l'
 
 | Fichier | À quoi il sert |
 |---|---|
-| `Calorys-1.6.3.aab` (dans `release/`) | L'appli à envoyer (Android App Bundle signé avec ta clé d'importation) |
+| `Calorys-1.6.4.aab` (dans `release/`) | L'appli à envoyer (Android App Bundle signé avec ta clé d'importation) |
 | `icone-512.png` | Icône de la fiche (512 × 512) |
 | `banniere-1024x500.png` | Bannière de la fiche (« Image de présentation ») |
 | `captures/01…08.png` | Captures d'écran téléphone (1080 × 2160) |
@@ -189,7 +189,7 @@ Un compte développeur personnel créé après novembre 2023 doit faire un **tes
 
 1. **Tester > Tests fermés > Créer un canal** (ou utiliser « Alpha »).
 2. **Testeurs** : crée une liste avec les adresses Gmail d'au moins 12 personnes (famille, amis, collègues avec un téléphone Android).
-3. **Créer une release** : importe `Calorys-1.6.3.aab`. Notes de version :
+3. **Créer une release** : importe `Calorys-1.6.4.aab`. Notes de version :
    ```
    Première version de Calorys sur le Play Store : compteur de calories, jeûne intermittent, programmes, eau, rappels (aussi vocaux) et balance connectée via Health Connect.
    ```

@@ -563,3 +563,30 @@ summary { cursor: pointer; color: var(--brand); font-weight: 600; font-size: 14p
 .wset p { margin: 0; }
 .wset .nxt { display: grid; gap: 4px; }
 .row-btns { display: flex; gap: 8px; } .row-btns .btn { margin: 0; }
+
+/* Carte Poids (journal) */
+.wcard { position: relative; overflow: hidden; }
+.wcard::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--weight), #c084fc); }
+.wmain { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.wbig { font-size: 44px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; font-variant-numeric: tabular-nums; }
+.wbig span { font-size: 17px; font-weight: 600; letter-spacing: 0; color: var(--muted); margin-left: 4px; }
+.wpill { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.wdelta { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 99px; font-weight: 700; font-size: 14px; background: var(--card2); white-space: nowrap; }
+.wsince { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.wdelta.good { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.wdelta.bad { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.wspark { width: 48%; max-width: 200px; height: 78px; flex: none; }
+.wspark circle { fill: var(--card); stroke: var(--weight); stroke-width: 1.4; }
+.wspark circle.last { fill: var(--weight); }
+.wprog { margin-top: 14px; }
+.wbar { height: 10px; border-radius: 99px; background: var(--card2); overflow: hidden; }
+.wbar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--weight), #c084fc); min-width: 10px; transition: width .6s ease; }
+.wprog-l { display: flex; justify-content: space-between; gap: 4px 8px; flex-wrap: wrap; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+.wprog-l span { white-space: nowrap; }
+.wprog-l b { color: var(--text); }
+.wchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.wchip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 99px; background: var(--card2); font-size: 12.5px; color: var(--muted); }
+.wchip b { color: var(--text); }
+.wchip em { font-style: normal; font-weight: 700; }
+.wchip em.g { color: var(--ok); } .wchip em.b { color: var(--warn); }
+.wchip.src { background: color-mix(in srgb, var(--weight) 14%, transparent); color: var(--weight); font-weight: 600; }
