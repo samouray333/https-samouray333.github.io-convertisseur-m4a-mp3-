@@ -10,7 +10,7 @@ async function api(method, path, body) {
   const r = await fetch('/api/' + path, { method, headers: { 'X-Token': TOKEN, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   let j = null;
   try { j = await r.json(); } catch (e) {}
-  if (!r.ok) throw new Error((j && j.error) || ('Erreur ' + r.status));
+  if (!r.ok) { const e = new Error((j && j.error) || ('Erreur ' + r.status)); e.status = r.status; e.data = j; throw e; }
   return j;
 }
 
@@ -90,6 +90,25 @@ function toast(msg, kind, title) {
   setTimeout(() => t.remove(), kind === 'err' ? 6000 : 3500);
 }
 const fail = e => toast(e.message || String(e), 'err');
+function toastAction(msg, label, fn, title) {
+  const b = h('button', { class: 'btn small primary', style: 'margin-top:8px' }, label);
+  const t = h('div', { class: 'toast' }, title ? h('b', {}, title) : null, h('div', {}, msg), b);
+  b.onclick = () => { t.remove(); fn(); };
+  $('#toasts').append(t);
+  setTimeout(() => t.remove(), 9000);
+}
+// Android : propose le lien copié en revenant dans l'appli (comme la surveillance du presse-papiers d'IDM)
+let lastClip = (() => { try { return localStorage.getItem('ty-clip') || ''; } catch (e) { return ''; } })();
+function checkClipboard() {
+  if (!A || document.hidden || !S.version) return;
+  let t = ''; try { t = (A.getClipboard() || '').trim(); } catch (e) { return; }
+  if (!t || t === lastClip || !/^(https?|ftp):\/\/\S+$/i.test(t)) return;
+  lastClip = t; try { localStorage.setItem('ty-clip', t); } catch (e) {}
+  if ([...S.dls.values()].some(d => d.url === t) || $('.modal')) return;
+  let name = t; try { name = decodeURIComponent(new URL(t).pathname.split('/').pop()) || new URL(t).hostname; } catch (e) {}
+  toastAction(name, 'Télécharger', () => openAdd({ url: t }), 'Lien copié détecté');
+}
+document.addEventListener('visibilitychange', () => setTimeout(checkClipboard, 400));
 
 // ---------- état ----------
 const S = { version: '', platform: '', settings: {}, categories: [], queues: [], dls: new Map() };
@@ -395,7 +414,8 @@ function rowMenu(d, x, y) {
     null,
     ['Retélécharger', 'refresh', () => act('restart', [d.id])],
     !done ? ['Actualiser l\'adresse…', 'link', () => openRefresh(d)] : false,
-    ['Copier l\'adresse', 'copy', () => shell.copy(d.url)],
+    ['Copier l\'adresse', 'copy', () => shell.copy(ids.length > 1 ? ids.map(i => (S.dls.get(i) || {}).url).filter(Boolean).join('\n') : d.url)],
+    ids.length > 1 ? ['Exporter ces adresses (.txt)', 'download', () => saveExport('export.txt?ids=' + ids.join(','), 'telechargys-adresses.txt')] : false,
     !done ? ['Monter dans la file', 'up', () => api('POST', `downloads/${d.id}/move`, { dir: -1 }).catch(fail)] : false,
     !done ? ['Descendre dans la file', 'down', () => api('POST', `downloads/${d.id}/move`, { dir: 1 }).catch(fail)] : false,
     ['Propriétés…', 'info', () => openProps(d)], null,
@@ -509,6 +529,7 @@ async function load() {
   V.rows.clear();
   document.body.classList.toggle('android', S.platform === 'android');
   applyTheme(); renderSideNow(); renderList(); updateStatus(); connect();
+  setTimeout(checkClipboard, 800);
 }
 
 // ---------- interactions globales ----------

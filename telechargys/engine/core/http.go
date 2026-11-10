@@ -164,12 +164,19 @@ func (m *Manager) Probe(ctx context.Context, r AddReq) (*ProbeInfo, error) {
 	}
 	p.FileName = pickName(resp, r.URL)
 	ext := extFromMime(p.MimeType)
-	if looksHLS(r.URL) || looksHLS(p.FinalURL) || ext == "m3u8" {
+	ct := strings.ToLower(p.MimeType)
+	if looksStream(r.URL) || looksStream(p.FinalURL) || ext == "m3u8" || strings.Contains(ct, "dash+xml") {
 		p.Kind = "hls"
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-		pl, err := parseM3U8(string(body), p.FinalURL)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		pl, err := parseStream(body, p.FinalURL, r.URL, "")
 		if err != nil {
 			return nil, err
+		}
+		if pl.DRM {
+			return nil, errors.New("flux protégé par DRM : non pris en charge")
+		}
+		if pl.Live && len(pl.Variants) == 0 {
+			return nil, errors.New("flux en direct : seules les vidéos complètes sont prises en charge")
 		}
 		p.Variants = pl.Variants
 		p.Size = -1

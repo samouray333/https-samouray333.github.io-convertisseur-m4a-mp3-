@@ -242,7 +242,7 @@ func copyPublic(c, d *Download) {
 	c.MaxConn, c.SpeedLimit, c.Headers, c.Referer, c.UserAgent, c.Cookies = d.MaxConn, d.SpeedLimit, d.Headers, d.Referer, d.UserAgent, d.Cookies
 	c.Username, c.Password, c.Checksum, c.Description, c.Error, c.ETag, c.LastMod = d.Username, d.Password, d.Checksum, d.Description, d.Error, d.ETag, d.LastMod
 	c.MimeType, c.AddedAt, c.CompletedAt, c.ElapsedMs, c.Conns, c.Order = d.MimeType, d.AddedAt, d.CompletedAt, d.ElapsedMs, d.Conns, d.Order
-	c.NameLocked, c.CatAuto = d.NameLocked, d.CatAuto
+	c.NameLocked, c.CatAuto, c.ErrorAt, c.AutoRetries, c.ViaQueue = d.NameLocked, d.CatAuto, d.ErrorAt, d.AutoRetries, d.ViaQueue
 }
 
 // ---------- boucle : progression, sauvegarde, planification ----------
@@ -309,6 +309,7 @@ func (m *Manager) loop() {
 		}
 		if n%40 == 0 { // toutes les 20 s
 			m.checkSchedules()
+			m.checkAutoRetry(time.Now())
 		}
 		var data []byte
 		if (m.dirty || active) && n%6 == 0 {
@@ -444,6 +445,7 @@ type AddReq struct {
 	AudioURL    string            `json:"audioUrl"`
 	Quality     string            `json:"quality"`
 	Size        int64             `json:"size"`
+	AllowDup    bool              `json:"allowDup"` // ajouter même si l'adresse est déjà dans la liste
 }
 
 func (m *Manager) Add(r AddReq) (*Download, error) {
@@ -455,6 +457,14 @@ func (m *Manager) Add(r AddReq) (*Download, error) {
 		return nil, fmt.Errorf("adresse invalide")
 	}
 	m.mu.Lock()
+	if !r.AllowDup {
+		for _, o := range m.dls {
+			if o.URL == r.URL && (r.VariantURL == "" || o.HLS == nil || o.HLS.MediaURL == r.VariantURL) {
+				m.mu.Unlock()
+				return nil, ErrDuplicate{ID: o.ID, Status: o.Status}
+			}
+		}
+	}
 	d := &Download{ID: newID(), URL: r.URL, Kind: "http", Status: StQueued, Size: -1, AddedAt: time.Now().UnixMilli(),
 		Headers: r.Headers, Referer: r.Referer, UserAgent: r.UserAgent, Cookies: r.Cookies, Username: r.Username, Password: r.Password,
 		MaxConn: r.MaxConn, SpeedLimit: r.SpeedLimit, Description: r.Description}
@@ -463,7 +473,7 @@ func (m *Manager) Add(r AddReq) (*Download, error) {
 	}
 	if isFTP(r.URL) {
 		d.Kind = "ftp"
-	} else if looksHLS(r.URL) || r.VariantURL != "" {
+	} else if looksStream(r.URL) || r.VariantURL != "" {
 		d.Kind = "hls"
 		d.HLS = &HLSState{MediaURL: r.VariantURL, AudioURL: r.AudioURL, Quality: r.Quality}
 	}
@@ -475,7 +485,7 @@ func (m *Manager) Add(r AddReq) (*Download, error) {
 	}
 	if d.Kind == "hls" {
 		base := strings.TrimSuffix(name, filepath.Ext(name))
-		if e := extOf(name); e == "m3u8" || e == "" || !d.NameLocked {
+		if e := extOf(name); e == "m3u8" || e == "mpd" || e == "" || !d.NameLocked {
 			name = base + ".mp4"
 		}
 	}
@@ -518,6 +528,10 @@ func (m *Manager) Add(r AddReq) (*Download, error) {
 func (m *Manager) Start(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if d := m.dls[id]; d != nil {
+		d.AutoRetries = 0
+		d.ViaQueue = false
+	}
 	return m.startLocked(id)
 }
 
@@ -545,6 +559,7 @@ func (m *Manager) startLocked(id string) error {
 	done := d.doneCh
 	d.Status = StDownloading
 	d.Error = ""
+	d.ErrorAt = 0
 	d.Speed = 0
 	d.startedAt = time.Now()
 	d.limiter = NewLimiter(d.SpeedLimit)
@@ -569,10 +584,12 @@ func (m *Manager) startLocked(id string) error {
 			if err != nil {
 				d.Status = StError
 				d.Error = err.Error()
+				d.ErrorAt = time.Now().UnixMilli()
 				note = map[string]any{"kind": "error", "id": d.ID, "title": "Échec du téléchargement", "body": d.FileName + " : " + d.Error}
 			} else {
 				d.Status = StCompleted
 				d.CompletedAt = time.Now().UnixMilli()
+				d.AutoRetries, d.ErrorAt = 0, 0
 				if d.Size < 0 || d.Kind == "hls" {
 					d.Size = d.Downloaded
 				}
@@ -905,6 +922,7 @@ func (m *Manager) pump() {
 			if active >= max {
 				break
 			}
+			d.ViaQueue = true
 			m.startLocked(d.ID)
 			active++
 		}
@@ -1151,3 +1169,38 @@ func (m *Manager) Get(id string) *Download {
 	}
 	return nil
 }
+
+// checkAutoRetry relance les téléchargements en erreur (coupure réseau, serveur saturé...) après le délai réglé (verrou tenu).
+func (m *Manager) checkAutoRetry(now time.Time) {
+	if m.S.AutoRetryMin <= 0 || m.blocked {
+		return
+	}
+	for _, d := range m.dls {
+		if d.Status != StError || d.ErrorAt == 0 || d.AutoRetries >= 5 || !retryable(d.Error) {
+			continue
+		}
+		if now.Sub(time.UnixMilli(d.ErrorAt)) >= time.Duration(m.S.AutoRetryMin)*time.Minute {
+			d.AutoRetries++
+			d.ViaQueue = true
+			m.startLocked(d.ID)
+		}
+	}
+}
+
+// retryable : erreurs passagères (les erreurs définitives ne sont pas relancées).
+func retryable(e string) bool {
+	for _, k := range []string{"404", "401", "DRM", "direct", "empreinte", "disque plein", "introuvable dans", "non pris en charge", "invalide"} {
+		if strings.Contains(e, k) {
+			return false
+		}
+	}
+	return true
+}
+
+// ErrDuplicate : l'adresse est déjà dans la liste.
+type ErrDuplicate struct {
+	ID     string
+	Status string
+}
+
+func (e ErrDuplicate) Error() string { return "Ce lien est déjà dans la liste" }

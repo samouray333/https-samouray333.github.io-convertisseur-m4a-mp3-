@@ -389,3 +389,61 @@ func TestHLS(t *testing.T) {
 	}
 	t.Logf("HLS chiffré -> MP4 : %s", strings.ReplaceAll(strings.TrimSpace(s), "\n", " | "))
 }
+
+func TestDuplicateAndAutoRetry(t *testing.T) {
+	data := randData(1 << 20)
+	var maxSeen int32
+	var reqs int64
+	fails := int64(1)
+	inner := fileServer(data, &srvOpts{}, &maxSeen, &reqs)
+	defer inner.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt64(&fails, -1) >= 0 {
+			w.WriteHeader(503)
+			return
+		}
+		resp, err := http.Get(inner.URL + r.URL.Path)
+		if err != nil {
+			w.WriteHeader(502)
+			return
+		}
+		defer resp.Body.Close()
+		w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
+		w.WriteHeader(200)
+		buf := make([]byte, 32768)
+		for {
+			n, e := resp.Body.Read(buf)
+			w.Write(buf[:n])
+			if e != nil {
+				break
+			}
+		}
+	}))
+	defer srv.Close()
+	m := newTestManager(t)
+	m.S.Retries = 0
+	d, err := m.Add(AddReq{URL: srv.URL + "/a.bin", Start: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Add(AddReq{URL: srv.URL + "/a.bin"}); err == nil {
+		t.Fatal("doublon accepté")
+	}
+	if _, err := m.Add(AddReq{URL: srv.URL + "/a.bin", AllowDup: true}); err != nil {
+		t.Fatal("doublon forcé refusé :", err)
+	}
+	waitStatus(t, m, d.ID, StError, 10*time.Second)
+	m.mu.Lock()
+	m.checkAutoRetry(time.Now()) // trop tôt : rien
+	m.mu.Unlock()
+	if m.Get(d.ID).Status != StError {
+		t.Fatal("relancé trop tôt")
+	}
+	m.mu.Lock()
+	m.checkAutoRetry(time.Now().Add(6 * time.Minute))
+	m.mu.Unlock()
+	r := waitStatus(t, m, d.ID, StCompleted, 20*time.Second)
+	if r.AutoRetries != 0 {
+		t.Fatal("compteur non remis à zéro")
+	}
+}

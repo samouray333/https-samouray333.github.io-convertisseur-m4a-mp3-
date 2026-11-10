@@ -215,6 +215,13 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			d, err := m.Add(it)
 			if err != nil {
 				if len(items) == 1 {
+					var dup ErrDuplicate
+					if errors.As(err, &dup) {
+						w.Header().Set("Content-Type", "application/json; charset=utf-8")
+						w.WriteHeader(409)
+						json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "duplicate": dup.ID, "status": dup.Status})
+						return
+					}
 					fail(w, 400, err)
 					return
 				}
@@ -415,6 +422,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		in.AddReq.Start = true
+		in.AddReq.AllowDup = true
 		if _, err := m.Add(in.AddReq); err != nil {
 			fail(w, 400, err)
 			return
@@ -483,6 +491,20 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			cw.Write([]string{d.FileName, d.URL, d.Dir, strconv.FormatInt(d.Size, 10), d.Status, d.Category, time.UnixMilli(d.AddedAt).Format("02/01/2006 15:04"), done})
 		}
 		cw.Flush()
+	case p[0] == "export.txt":
+		want := map[string]bool{}
+		for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+			if id != "" {
+				want[id] = true
+			}
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="telechargys-adresses.txt"`)
+		for _, d := range m.List() {
+			if len(want) == 0 || want[d.ID] {
+				fmt.Fprintln(w, d.URL)
+			}
+		}
 	case p[0] == "export":
 		st := m.State()
 		w.Header().Set("Content-Disposition", `attachment; filename="telechargys-sauvegarde.json"`)
@@ -589,6 +611,7 @@ func (m *Manager) AddSimple(ctx context.Context, rawURL, referer, cookies, ua st
 		return nil
 	}
 	req.Start = true
+	req.AllowDup = true
 	_, err := m.Add(req)
 	return err
 }

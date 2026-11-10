@@ -16,6 +16,14 @@ Même moteur et même interface sur les deux plateformes, 100 % local : pas de s
 | Téléchargement par lot (motif `[001-120]`, liste collée, fichier .txt) | oui | oui |
 | Aspirateur de site (profondeur, même site, filtre par type) | oui | oui |
 | Flux vidéo HLS (.m3u8) : choix de la qualité, déchiffrement AES-128, conversion en MP4 sans réencodage | oui | oui |
+| Flux vidéo DASH (.mpd) : choix de la qualité, vidéo et son fusionnés en un seul MP4 sans réencodage | oui | oui |
+| Bouton « Télécharger cette vidéo » posé sur les vidéos des pages | extension | navigateur intégré |
+| Fenêtre de progression par téléchargement (segments, vitesse) et fenêtre « Téléchargement terminé » | oui | notification |
+| Doublons : « Ce lien est déjà dans la liste », avec choix de retélécharger ou d'afficher l'existant | oui | oui |
+| Relance automatique des téléchargements en erreur (délai réglable, 5 essais) | oui | oui |
+| Sites exclus de la capture, Alt + clic pour laisser le navigateur télécharger | extension | sans objet |
+| Export / import de listes d'adresses (.txt) | oui | oui |
+| Lien copié détecté au retour dans l'appli | surveillance continue | oui |
 | FTP (reprise incluse) | oui | oui |
 | Actualiser l'adresse d'un lien expiré en gardant la progression | oui | oui |
 | Identifiants par site, cookies, Referer, User-Agent, proxy HTTP / SOCKS5 | oui | oui |
@@ -32,8 +40,8 @@ Même moteur et même interface sur les deux plateformes, 100 % local : pas de s
 ### Limites assumées
 
 - **Pas de YouTube, Netflix, Prime Video, Disney+** ni d'autres flux protégés par DRM : c'est interdit par leurs conditions et techniquement verrouillé. Les flux en direct ne sont pas pris en charge non plus.
-- **DASH (.mpd)** n'est pas géré dans cette version (HLS oui).
-- Flux HLS en MP4 fragmenté avec piste audio séparée : la vidéo et l'audio sont enregistrés dans deux fichiers (`nom.mp4` et `nom.audio.m4a`). Les flux MPEG-TS classiques, même avec audio séparé, donnent un seul MP4.
+- Vidéo et son séparés dans des codecs que le MP4 n'accepte pas sans réencodage (VP9, AV1, Opus, souvent en WebM) : les deux pistes sont enregistrées côte à côte (`nom.webm` et `nom.audio.webm`). Les flux H.264 / H.265 + AAC (la grande majorité) donnent un seul MP4.
+- DASH : seule la période principale d'un manifeste à plusieurs périodes est téléchargée (les autres sont en général des publicités).
 - Extension navigateur : à charger en « mode développeur » (elle n'est pas publiée sur les boutiques). Sur Firefox, un module non signé doit être rechargé à chaque démarrage du navigateur.
 - Android : pas d'intégration dans Chrome mobile (Android ne le permet pas), d'où le navigateur intégré et le partage. Android 15 limite ce type de service d'arrière-plan à 6 heures par jour : au-delà, l'appli met proprement en pause.
 - Serveur sans reprise (pas d'en-tête Range) : une seule connexion, et une pause fait repartir de zéro (l'appli l'indique).

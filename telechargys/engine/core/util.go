@@ -176,7 +176,7 @@ var mimeExt = map[string]string{
 	"application/gzip": "gz", "application/x-tar": "tar", "application/vnd.android.package-archive": "apk", "application/x-msdownload": "exe",
 	"application/x-msi": "msi", "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "text/html": "html", "text/plain": "txt",
 	"application/json": "json", "application/epub+zip": "epub", "application/x-iso9660-image": "iso",
-	"application/vnd.apple.mpegurl": "m3u8", "application/x-mpegurl": "m3u8",
+	"application/vnd.apple.mpegurl": "m3u8", "application/x-mpegurl": "m3u8", "application/dash+xml": "mpd",
 }
 
 func extFromMime(ct string) string {

@@ -47,8 +47,9 @@ type hlsPlaylist struct {
 	MapURL   string
 	MapLn    int64
 	MapSt    int64
-	Live     bool
-	DRM      bool
+	Live      bool
+	DRM       bool
+	Container string // ts, mp4 ou webm
 }
 
 func attrs(line string) map[string]string {
@@ -219,6 +220,10 @@ func parseM3U8(body, base string) (*hlsPlaylist, error) {
 		v.Label = lbl
 	}
 	sort.SliceStable(pl.Variants, func(i, j int) bool { return pl.Variants[i].Bandwidth > pl.Variants[j].Bandwidth })
+	pl.Container = "ts"
+	if pl.MapURL != "" {
+		pl.Container = "mp4"
+	}
 	return pl, nil
 }
 
@@ -243,9 +248,18 @@ func (m *Manager) fetchSmall(ctx context.Context, d *Download, u string, from, l
 }
 
 func (m *Manager) loadPlaylist(ctx context.Context, d *Download, u string) (*hlsPlaylist, error) {
-	b, final, err := m.fetchSmall(ctx, d, u, 0, -1)
+	src, frag, _ := strings.Cut(u, "#")
+	b, final, err := m.fetchSmall(ctx, d, src, 0, -1)
 	if err != nil {
 		return nil, friendlyErr(err)
+	}
+	return parseStream(b, final, src, frag)
+}
+
+// parseStream reconnaît une playlist HLS ou un manifeste DASH.
+func parseStream(b []byte, final, src, frag string) (*hlsPlaylist, error) {
+	if isMPD(b) {
+		return parseMPD(b, final, src, frag)
 	}
 	return parseM3U8(string(b), final)
 }
@@ -434,28 +448,54 @@ func (m *Manager) runHLS(ctx context.Context, d *Download) error {
 		d.FileName = filepath.Base(uniquePath(filepath.Join(d.Dir, nameBase+ext), nil))
 		return filepath.Join(d.Dir, d.FileName)
 	}
-	fmp4 := pl.MapURL != ""
 	var outErr error
-	if fmp4 {
-		// MP4 fragmenté : en-tête + fragments = fichier MP4 lisible tel quel
+	if pl.Container != "ts" {
+		// MP4 fragmenté / WebM : en-tête + fragments = fichier lisible tel quel
+		ext := "." + pl.Container
+		var parts []string
 		for ti, t := range tracks {
-			ext := ".mp4"
-			var out string
-			if ti == 0 {
-				out = setName(ext)
-			} else {
-				out = uniquePath(filepath.Join(d.Dir, nameBase+".audio.m4a"), nil)
+			var init []byte
+			if t.pl.MapURL != "" {
+				b, _, err := m.fetchSmall(ctx, d, t.pl.MapURL, t.pl.MapSt, t.pl.MapLn)
+				if err != nil {
+					if ctx.Err() != nil {
+						return nil
+					}
+					return friendlyErr(err)
+				}
+				init = b
 			}
-			init, _, err := m.fetchSmall(ctx, d, t.pl.MapURL, t.pl.MapSt, t.pl.MapLn)
-			if err != nil {
-				return friendlyErr(err)
-			}
-			if outErr = concatSegs(ctx, t, out, init); outErr != nil {
+			tmp := filepath.Join(base, fmt.Sprintf("piste%d.%s", ti, t.pl.Container))
+			if outErr = concatSegs(ctx, t, tmp, init); outErr != nil {
 				break
+			}
+			parts = append(parts, tmp)
+		}
+		if outErr == nil && len(parts) == 1 {
+			outErr = moveFile(parts[0], setName(ext))
+		} else if outErr == nil {
+			merged := false
+			if pl.Container == "mp4" && tracks[1].pl.Container == "mp4" {
+				out := setName(".mp4")
+				if err := mergeMP4(ctx, parts, out); err == nil {
+					merged = true
+				} else {
+					os.Remove(out)
+				}
+			}
+			if !merged && ctx.Err() == nil {
+				// codecs non fusionnables (VP9, Opus...) : vidéo et son côte à côte
+				if outErr = moveFile(parts[0], setName(ext)); outErr == nil {
+					aext := ".audio.m4a"
+					if tracks[1].pl.Container == "webm" {
+						aext = ".audio.webm"
+					}
+					outErr = moveFile(parts[1], uniquePath(filepath.Join(d.Dir, nameBase+aext), nil))
+				}
 			}
 		}
 		m.mu.Lock()
-		d.HLS.Container = "mp4"
+		d.HLS.Container = pl.Container
 		m.mu.Unlock()
 	} else {
 		done := false

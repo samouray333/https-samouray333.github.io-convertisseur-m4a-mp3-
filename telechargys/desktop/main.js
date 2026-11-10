@@ -172,8 +172,40 @@ function listen() {
   });
   req.on('error', () => { if (!quitting) setTimeout(listen, 1500); });
 }
+// fenêtres de progression et de fin (comme IDM)
+const progWins = new Map(), lastStatus = new Map();
+function miniWin(id, view, w, hgt) {
+  const bw = new BrowserWindow({
+    width: w, height: hgt, resizable: view !== 'done', minimizable: true, maximizable: false, show: false, icon: asset('icon.png'),
+    autoHideMenuBar: true, backgroundColor: '#ffffff', title: 'Telechargys',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  bw.setMenu(null);
+  console.log('[fenêtre]', view, id);
+  bw.loadURL(`${base}/progress.html?view=${view}&id=${id}&token=${token}`);
+  bw.once('ready-to-show', () => bw.showInactive ? bw.show() : bw.show());
+  bw.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  return bw;
+}
+function onDownload(d) {
+  const prev = lastStatus.get(d.id);
+  lastStatus.set(d.id, d.status);
+  const pw = progWins.get(d.id);
+  if (d.status === 'downloading' && prev !== 'downloading' && prev !== 'merging' && !d.viaQueue && settings.showProgressWin && !pw && progWins.size < 6 && prev !== undefined) {
+    const bw = miniWin(d.id, 'progress', 520, 500);
+    progWins.set(d.id, bw);
+    bw.on('closed', () => progWins.delete(d.id));
+  }
+  if (d.status === 'completed' && prev && prev !== 'completed') {
+    if (pw && !pw.isDestroyed()) pw.close();
+    if (settings.showDoneWin && !d.viaQueue) miniWin(d.id, 'done', 520, 340);
+  }
+}
 function onEvent(ev) {
   const d = ev.data;
+  if (ev.type === 'download') return onDownload(d);
+  if (ev.type === 'removed') { const pw = progWins.get(d); if (pw && !pw.isDestroyed()) pw.close(); lastStatus.delete(d); return; }
+  if (ev.type === 'notify' && d.kind === 'done' && settings.showDoneWin) return;
   if (ev.type === 'notify' && settings.notifyDone && Notification.isSupported() && !(win && win.isFocused())) {
     const n = new Notification({ title: d.title, body: d.body, icon: asset('icon.png') });
     n.on('click', () => { if (d.kind === 'done' && d.path) shell.showItemInFolder(d.path); else showWin(); });
@@ -214,6 +246,7 @@ ipcMain.handle('chooseFolder', async (e, cur) => {
 ipcMain.handle('readClipboard', () => clipboard.readText());
 ipcMain.handle('copy', (e, t) => { clipboard.writeText(String(t)); lastClip = String(t).trim(); });
 ipcMain.handle('applySettings', (e, s) => applySettings(s));
+ipcMain.handle('resizeProgress', (e, big) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setSize(w.getSize()[0], big ? 500 : 360); });
 
 app.on('second-instance', (e, argv) => { showWin(); urlsIn(argv).forEach(addUrl); });
 app.on('window-all-closed', () => {});
@@ -222,6 +255,7 @@ app.on('before-quit', e => { if (!quitting) { e.preventDefault(); quit(); } });
 app.whenReady().then(async () => {
   try { await startEngine(); } catch (e) { dialog.showErrorBox('Telechargys', 'Impossible de démarrer le moteur de téléchargement.\n' + e.message); app.exit(1); return; }
   const st = await api('GET', 'state');
+  for (const d of st.downloads || []) lastStatus.set(d.id, d.status);
   createWindow(); buildMenu(); buildTray(); applySettings(st.settings); listen(); pollSummary();
   urlsIn(process.argv).forEach(addUrl);
   if (process.env.TY_SHOT) setTimeout(async () => { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.TY_SHOT, img.toPNG()); quit(); }, 4000);

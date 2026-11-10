@@ -74,7 +74,7 @@ async function openAdd(pre) {
       if (!nameEdited) name.value = p.fileName;
       if (!catEdited) cat.value = catFor(name.value);
       if (!dirEdited) dir.value = catDir(cat.value);
-      const type = p.kind === 'hls' ? 'Flux vidéo HLS' : p.kind === 'ftp' ? 'FTP' : (ext(p.fileName) || 'fichier').toUpperCase();
+      const type = p.kind === 'hls' ? 'Flux vidéo (' + (/\.mpd/i.test(p.url) || (p.mimeType || '').includes('dash') ? 'DASH' : 'HLS') + ')' : p.kind === 'ftp' ? 'FTP' : (ext(p.fileName) || 'fichier').toUpperCase();
       info.replaceChildren(h('span', {}, 'Taille : ', h('b', {}, p.size > 0 ? fmtSize(p.size) : 'inconnue')), h('span', {}, 'Type : ', h('b', {}, type)),
         h('span', {}, 'Reprise : ', h('b', {}, p.resumable ? 'oui' : 'non')), p.resumable && p.kind === 'http' ? h('span', {}, 'Accélération : ', h('b', {}, 'multi-connexions')) : '');
       if (p.variants && p.variants.length) {
@@ -95,7 +95,15 @@ async function openAdd(pre) {
     r.category = cat.value; r.dir = dir.value.trim(); r.queue = queue.value; r.start = start;
     if (probed && probed.size > 0) r.size = probed.size;
     if (probed && probed.variants && probed.variants.length) { const v = probed.variants[+quality.value || 0]; r.variantUrl = v.url; r.audioUrl = v.audioUrl; r.quality = v.label; }
-    await api('POST', 'downloads', r);
+    try { await api('POST', 'downloads', r); } catch (e) {
+      if (e.status !== 409) throw e;
+      const old = S.dls.get(e.data.duplicate);
+      const again = await askDuplicate(old);
+      if (again === 'show') { m.close(); setFilter('all'); select(e.data.duplicate); return false; }
+      if (again !== 'again') return false;
+      r.allowDup = true;
+      await api('POST', 'downloads', r);
+    }
     if (!start) toast('Ajouté à la file « ' + (S.queues.find(q => q.id === r.queue) || {}).name + ' ».');
   }
   const later = h('button', { class: 'btn' }, 'Plus tard');
@@ -108,6 +116,22 @@ async function openAdd(pre) {
   });
   later.onclick = async () => { try { if (await submit(false) !== false) m.close(); } catch (e) { fail(e); } };
   if (pre.url) probe();
+}
+
+// doublon : comme IDM, on demande quoi faire
+function askDuplicate(old) {
+  return new Promise(res => {
+    let done = false;
+    const end = v => { if (!done) { done = true; res(v); } };
+    const st = old ? (STATUS[old.status] || old.status).toLowerCase() : '';
+    const show = h('button', { class: 'btn' }, 'Voir l\'existant');
+    const dm = modal({
+      title: 'Lien déjà présent',
+      body: h('p', {}, old ? `« ${old.fileName} » est déjà dans la liste (${st}). Le télécharger à nouveau ?` : 'Ce lien est déjà dans la liste. Le télécharger à nouveau ?'),
+      ok: 'Télécharger à nouveau', onok: () => end('again'), extra: show, onclose: () => end('cancel'),
+    });
+    show.onclick = () => { end('show'); dm.close(); };
+  });
 }
 
 // ---------- actualiser l'adresse ----------
@@ -173,9 +197,10 @@ function openBatch(text) {
     ok: 'Ajouter à la file',
     onok: async () => {
       const u = urls(); if (!u.length) { toast('Aucune adresse à ajouter.', 'err'); return false; }
-      await api('POST', 'downloads', { items: u.map(x => ({ url: x, queue: queue.value })) });
+      const added = (await api('POST', 'downloads', { items: u.map(x => ({ url: x, queue: queue.value })) })) || [];
       if (start.checked) await api('POST', `queues/${queue.value}/start`, {}).catch(() => {});
-      toast(`${u.length} téléchargement${u.length > 1 ? 's' : ''} ajouté${u.length > 1 ? 's' : ''}.`);
+      const skip = u.length - added.length;
+      toast(`${added.length} téléchargement${added.length > 1 ? 's' : ''} ajouté${added.length > 1 ? 's' : ''}.` + (skip ? ` ${skip} déjà dans la liste.` : ''));
     },
   });
 }
@@ -287,6 +312,7 @@ function openSettings(tab) {
       chk('notifyDone', 'Notification quand un téléchargement est terminé'),
       shell.android ? null : chk('soundDone', 'Petit son à la fin d\'un téléchargement'),
       chk('autoResume', 'Reprendre automatiquement les téléchargements interrompus au lancement'),
+      shell.desktop ? [chk('showProgressWin', 'Ouvrir une fenêtre de progression pour chaque téléchargement'), chk('showDoneWin', 'Afficher la fenêtre « Téléchargement terminé »')] : null,
       shell.desktop ? [chk('clipboardWatch', 'Surveiller le presse-papiers (proposer les liens copiés)'), chk('startWithSystem', 'Lancer Telechargys au démarrage de Windows'), chk('minimizeToTray', 'Garder l\'application dans la zone de notification à la fermeture')] : null,
       shell.android ? chk('wifiOnly', 'Télécharger uniquement en Wi-Fi') : null,
     ]],
@@ -295,7 +321,8 @@ function openSettings(tab) {
       h('div', { class: 'rowf' }, F('Tentatives en cas d\'échec', num('retries', 0, 100)), F('Attente entre deux tentatives (s)', num('retryWaitSec', 1, 600)), F('Délai d\'inactivité (s)', num('timeoutSec', 5, 600))),
       F('Proxy', txt('proxy', 'http://hote:port ou socks5://hote:port'), 'Laisse vide pour une connexion directe.'),
       F('Navigateur simulé (User-Agent)', txt('userAgent')),
-      chk('hlsToMp4', 'Convertir les flux vidéo HLS en fichier MP4 (sans réencodage)'),
+      F('Relancer automatiquement les téléchargements en erreur', (() => { const x = Sel([['0', 'Jamais'], ['1', 'Après 1 minute'], ['5', 'Après 5 minutes'], ['15', 'Après 15 minutes'], ['60', 'Après 1 heure']], String(s.autoRetryMin || 0)); x.onchange = () => { s.autoRetryMin = +x.value; }; return x; })(), 'Utile pour les coupures réseau et les serveurs saturés (5 essais au maximum).'),
+      chk('hlsToMp4', 'Convertir les flux vidéo HLS / DASH en fichier MP4 (sans réencodage)'),
     ]],
     cats: ['Catégories', () => {
       const box = h('div', {});
@@ -320,6 +347,9 @@ function openSettings(tab) {
         ? h('div', { class: 'info' }, h('span', {}, 'Sur téléphone : utilise « Partager » depuis n\'importe quelle appli ou le navigateur intégré (menu), qui repère les vidéos et les fichiers des pages.'))
         : h('div', { class: 'info' }, h('span', { html: 'Pour capter les téléchargements de Chrome, Edge ou Firefox, installe l\'extension fournie dans le dossier <b>extension</b> (voir le menu Aide du programme). Elle se connecte toute seule et te demandera une autorisation ici.' })),
       F('Types de fichiers captés automatiquement', capExts, 'Extensions séparées par des espaces.'),
+      shell.android ? null : [
+        F('Sites exclus de la capture', h('textarea', { class: 'in', rows: 2, placeholder: 'exemple.com autre-site.fr', oninput: e => { s.captureExclude = e.target.value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean); } }, (s.captureExclude || []).join(' ')), 'Les téléchargements de ces sites restent dans le navigateur. Astuce : maintiens Alt en cliquant sur un lien pour ne pas le capter.'),
+        chk('videoButton', 'Afficher le bouton « Télécharger cette vidéo » sur les vidéos des pages')],
       shell.desktop ? F('Analyse après téléchargement (antivirus)', txt('antivirusCmd', '"C:\\Program Files\\Windows Defender\\MpCmdRun.exe" -Scan -ScanType 3 -File %f'), 'Commande lancée sur chaque fichier terminé ; %f est remplacé par le chemin du fichier.') : null,
     ]],
     data: ['Sauvegarde', () => [
@@ -327,7 +357,8 @@ function openSettings(tab) {
       h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px' },
         h('button', { class: 'btn', onclick: () => saveExport('export', 'telechargys-sauvegarde.json') }, 'Exporter une sauvegarde (JSON)'),
         h('button', { class: 'btn', onclick: () => impIn.click() }, 'Restaurer une sauvegarde…'),
-        h('button', { class: 'btn', onclick: () => saveExport('export.csv', 'telechargys-historique.csv') }, 'Exporter l\'historique (CSV)')),
+        h('button', { class: 'btn', onclick: () => saveExport('export.csv', 'telechargys-historique.csv') }, 'Exporter l\'historique (CSV)'),
+        h('button', { class: 'btn', onclick: () => saveExport('export.txt', 'telechargys-adresses.txt') }, 'Exporter les adresses (.txt)')),
       impIn,
       h('button', { class: 'btn danger', onclick: () => act('removeCompleted', []).then(() => toast('Liste nettoyée.')) }, 'Effacer les téléchargements terminés de la liste'),
       h('p', { class: 'hint', style: 'margin-top:18px' }, `Telechargys ${S.version} · QMTech`),

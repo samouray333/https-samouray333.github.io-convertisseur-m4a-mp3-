@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('tyShell', {
   readClipboard: () => ipcRenderer.invoke('readClipboard'),
   copy: t => ipcRenderer.invoke('copy', t),
   applySettings: s => ipcRenderer.invoke('applySettings', s),
+  resizeProgress: big => ipcRenderer.invoke('resizeProgress', big),
 });

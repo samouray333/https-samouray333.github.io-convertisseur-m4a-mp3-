@@ -4,6 +4,7 @@ const PORTS = Array.from({ length: 10 }, (_, i) => 47615 + i);
 let conn = null;      // { port, token }
 let appSettings = null;
 let media = {};       // tabId -> [{url, type, size, title}]
+let altAt = 0;        // dernier clic avec Alt (= laisser le navigateur télécharger)
 const SKIP_HOSTS = /(^|\.)(youtube\.com|googlevideo\.com|youtu\.be|netflix\.com|nflxvideo\.net|primevideo\.com|disneyplus\.com)$/i;
 
 async function store(k, v) { if (v === undefined) return (await api.storage.local.get(k))[k]; await api.storage.local.set({ [k]: v }); }
@@ -54,6 +55,13 @@ async function send(url, referer, fileName) {
   return call('capture', { url, referer: referer || '', cookies: await cookiesFor(url), userAgent: navigator.userAgent, fileName: fileName || '' });
 }
 
+function excluded(u) {
+  const list = (appSettings && appSettings.captureExclude) || [];
+  if (!u || !list.length) return false;
+  let host = ''; try { host = new URL(u).hostname.toLowerCase(); } catch (e) { return false; }
+  return list.some(x => host === x || host.endsWith('.' + x));
+}
+
 function extOf(u) { try { return (/\.([a-z0-9]{1,5})$/i.exec(new URL(u).pathname) || [])[1].toLowerCase(); } catch (e) { return ''; } }
 
 // ----- capture des téléchargements du navigateur -----
@@ -61,10 +69,12 @@ api.downloads.onCreated.addListener(async item => {
   try {
     if (item.state && item.state !== 'in_progress') return;
     if ((await store('enabled')) === false) return;
+    if (Date.now() - altAt < 4000) return; // Alt + clic : le navigateur garde la main
     const url = item.finalUrl || item.url;
     if (!/^https?:\/\//i.test(url)) return; // blob:, data: : laissés au navigateur
     if (!conn && !(await connect(false))) return;
     const exts = (appSettings && appSettings.captureExts) || [];
+    if (excluded(item.referrer) || excluded(url)) return;
     const e = extOf(url) || extOf(item.filename || '');
     if (!exts.includes(e)) return;
     const min = ((appSettings && appSettings.captureMinKB) || 0) * 1024;
@@ -114,7 +124,7 @@ api.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // ----- détection des vidéos et musiques des pages -----
-const MEDIA_EXT = ['mp4', 'webm', 'mkv', 'mov', 'm4v', 'flv', 'mp3', 'm4a', 'ogg', 'opus', 'flac', 'wav', 'aac', 'm3u8'];
+const MEDIA_EXT = ['mp4', 'webm', 'mkv', 'mov', 'm4v', 'flv', 'mp3', 'm4a', 'ogg', 'opus', 'flac', 'wav', 'aac', 'm3u8', 'mpd'];
 function refreshBadge(tabId) {
   const n = (media[tabId] || []).length;
   api.action.setBadgeBackgroundColor({ color: '#0e9f6e' });
@@ -122,7 +132,9 @@ function refreshBadge(tabId) {
   api.action.setTitle({ title: n ? `Telechargys : ${n} média${n > 1 ? 's' : ''} détecté${n > 1 ? 's' : ''}` : 'Telechargys', tabId }).catch(() => {});
 }
 api.webRequest.onResponseStarted.addListener(d => {
-  if (d.tabId < 0 || d.statusCode >= 400) return;
+  if (d.tabId < 0) return;
+  if (d.type === 'main_frame') { media[d.tabId] = []; refreshBadge(d.tabId); return; } // nouvelle page
+  if (d.statusCode >= 400) return;
   let host = '';
   try { const u = new URL(d.url); host = u.hostname; if (host === '127.0.0.1' && PORTS.includes(+u.port)) return; } catch (e) { return; }
   if (SKIP_HOSTS.test(host)) return;
@@ -130,20 +142,20 @@ api.webRequest.onResponseStarted.addListener(d => {
   const ct = hdr('content-type').toLowerCase().split(';')[0].trim();
   const e = extOf(d.url);
   const hls = e === 'm3u8' || ct.includes('mpegurl');
-  const isMedia = hls || ct.startsWith('video/') || ct.startsWith('audio/') || (MEDIA_EXT.includes(e) && d.type === 'media');
+  const dash = e === 'mpd' || ct.includes('dash+xml');
+  const isMedia = hls || dash || ct.startsWith('video/') || ct.startsWith('audio/') || (MEDIA_EXT.includes(e) && d.type === 'media');
   if (!isMedia || e === 'ts' || e === 'm4s' || ct === 'video/mp2t') return; // morceaux de flux ignorés
   let size = parseInt(hdr('content-length'), 10) || 0;
   const cr = /\/(\d+)$/.exec(hdr('content-range')); if (cr) size = parseInt(cr[1], 10);
-  if (!hls && size > 0 && size < 300 * 1024) return;
+  if (!hls && !dash && size > 0 && size < 300 * 1024) return;
   const list = media[d.tabId] = media[d.tabId] || [];
   const known = list.find(m => m.url === d.url);
   if (known) { if (size > known.size) known.size = size; return; }
-  list.unshift({ url: d.url, type: hls ? 'HLS' : (e || ct.split('/')[1] || 'média').toUpperCase(), size, referer: d.initiator || d.documentUrl || '' });
+  list.unshift({ url: d.url, type: hls ? 'HLS' : dash ? 'DASH' : (e || ct.split('/')[1] || 'média').toUpperCase(), size, referer: d.initiator || d.documentUrl || '' });
   if (list.length > 25) list.pop();
   refreshBadge(d.tabId);
 }, { urls: ['http://*/*', 'https://*/*'] }, ['responseHeaders']);
 api.tabs.onRemoved.addListener(id => { delete media[id]; });
-api.tabs.onUpdated.addListener((id, ch) => { if (ch.url) { media[id] = []; refreshBadge(id); } });
 
 // ----- messages de la fenêtre de l'extension -----
 api.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -156,7 +168,30 @@ api.runtime.onMessage.addListener((msg, sender, reply) => {
     if (msg.type === 'pair') return { connected: !!(await connect(true)) };
     if (msg.type === 'enable') { await store('enabled', msg.value); return {}; }
     if (msg.type === 'send') { await send(msg.url, msg.referer, msg.fileName); return { ok: true }; }
+    if (msg.type === 'altClick') { altAt = Date.now(); return {}; }
+    if (msg.type === 'videoButtonEnabled') {
+      if (!conn) await connect(false);
+      let host = ''; try { host = new URL(sender.tab.url).hostname; } catch (e) {}
+      return { enabled: !!conn && (appSettings ? appSettings.videoButton !== false : true) && !SKIP_HOSTS.test(host) && (await store('enabled')) !== false };
+    }
+    if (msg.type === 'videoButton') return videoButton(msg, sender.tab);
     return {};
   })().then(reply, e => reply({ error: e.message }));
   return true;
 });
+
+// bouton « Télécharger cette vidéo » : la source directe si elle existe, sinon le flux (HLS / DASH) repéré sur la page
+async function videoButton(msg, tab) {
+  const clean = (msg.title || tab.title || 'video').replace(/[<>:"/\\|?*]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90) || 'video';
+  const list = media[tab.id] || [];
+  let url = '', name = '';
+  const direct = /^https?:\/\//i.test(msg.src || '') ? msg.src : '';
+  const stream = list.find(m => m.type === 'HLS' || m.type === 'DASH');
+  if (direct && !/\.(m3u8|mpd)(\?|$)/i.test(direct)) { url = direct; name = clean + '.' + (extOf(direct) || 'mp4'); }
+  else if (stream) { url = stream.url; name = clean + '.mp4'; }
+  else if (direct) { url = direct; name = clean + '.mp4'; }
+  else if (list.length) { url = list[0].url; name = clean + '.' + (extOf(list[0].url) || 'mp4'); }
+  if (!url) throw new Error('Vidéo pas encore repérée : lance la lecture quelques secondes puis réessaie');
+  await send(url, msg.pageUrl || tab.url, name);
+  return { ok: true };
+}

@@ -19,8 +19,8 @@ android {
         applicationId = "com.qmtech.telechargys"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") + if (project.hasProperty("x86")) listOf("x86_64") else emptyList() } // -Px86 : pour tester sur émulateur
     }
     signingConfigs {

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 // États d'un téléchargement.
 const (
@@ -91,6 +91,9 @@ type Download struct {
 	HLS         *HLSState         `json:"hls,omitempty"`
 	Order       int64             `json:"order"`
 	NameLocked  bool              `json:"nameLocked,omitempty"`
+	ErrorAt     int64             `json:"errorAt,omitempty"`
+	AutoRetries int               `json:"autoRetries,omitempty"`
+	ViaQueue    bool              `json:"viaQueue,omitempty"` // lancé par une file (pas de fenêtre de progression)
 	CatAuto     bool              `json:"catAuto,omitempty"`
 
 	// exécution (non persisté)
@@ -165,6 +168,11 @@ type Settings struct {
 	StartWithSystem bool        `json:"startWithSystem"`
 	MinimizeToTray  bool        `json:"minimizeToTray"`
 	Logins          []SiteLogin `json:"logins"`
+	AutoRetryMin    int         `json:"autoRetryMin"`    // relance des échecs après N minutes (0 = jamais)
+	CaptureExclude  []string    `json:"captureExclude"`  // sites dont l'extension ne capte pas les téléchargements
+	ShowProgressWin bool        `json:"showProgressWin"` // ordinateur : fenêtre de progression par téléchargement
+	ShowDoneWin     bool        `json:"showDoneWin"`     // ordinateur : fenêtre « Téléchargement terminé »
+	VideoButton     bool        `json:"videoButton"`     // extension : bouton sur les vidéos
 }
 
 const defaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -174,16 +182,17 @@ func defaultSettings(dir string) Settings {
 		DownloadDir: dir, MaxConn: 8, Retries: 10, RetryWaitSec: 3, TimeoutSec: 30,
 		UserAgent: defaultUA, AutoResume: false, ShowAddDialog: true, ClipboardWatch: true,
 		CaptureExts: []string{"zip", "rar", "7z", "gz", "bz2", "xz", "tar", "iso", "img", "exe", "msi", "apk", "dmg", "deb", "rpm",
-			"mp3", "m4a", "flac", "wav", "ogg", "opus", "aac", "mp4", "mkv", "avi", "mov", "webm", "wmv", "flv", "m4v", "mpg", "mpeg", "ts", "m3u8",
+			"mp3", "m4a", "flac", "wav", "ogg", "opus", "aac", "mp4", "mkv", "avi", "mov", "webm", "wmv", "flv", "m4v", "mpg", "mpeg", "ts", "m3u8", "mpd",
 			"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "bin", "torrent"},
 		CaptureMinKB: 0, NotifyDone: true, SoundDone: true, Theme: "auto", OnDuplicate: "rename",
 		HLSToMP4: true, HLSConn: 6, MinimizeToTray: true,
+		AutoRetryMin: 5, ShowProgressWin: true, ShowDoneWin: true, VideoButton: true,
 	}
 }
 
 func defaultCategories() []Category {
 	return []Category{
-		{ID: "video", Name: "Vidéos", Dir: "Vidéos", Exts: []string{"mp4", "mkv", "avi", "mov", "webm", "wmv", "flv", "m4v", "mpg", "mpeg", "3gp", "ts", "m3u8"}},
+		{ID: "video", Name: "Vidéos", Dir: "Vidéos", Exts: []string{"mp4", "mkv", "avi", "mov", "webm", "wmv", "flv", "m4v", "mpg", "mpeg", "3gp", "ts", "m3u8", "mpd"}},
 		{ID: "music", Name: "Musique", Dir: "Musique", Exts: []string{"mp3", "m4a", "flac", "wav", "ogg", "opus", "aac", "wma", "aiff"}},
 		{ID: "archive", Name: "Archives", Dir: "Archives", Exts: []string{"zip", "rar", "7z", "gz", "bz2", "xz", "tar", "tgz", "iso", "img", "cab"}},
 		{ID: "program", Name: "Programmes", Dir: "Programmes", Exts: []string{"exe", "msi", "apk", "dmg", "deb", "rpm", "appimage", "bat", "jar", "xapk"}},

@@ -12,6 +12,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -33,10 +34,11 @@ class BrowserActivity : Activity() {
     private lateinit var mediaBtn: TextView
     private lateinit var progress: ProgressBar
     private val found = LinkedHashMap<String, String>() // adresse -> type
-    private val mediaExt = setOf("mp4", "webm", "mkv", "mov", "m4v", "m3u8", "mp3", "m4a", "ogg", "opus", "flac", "wav", "aac")
+    private val mediaExt = setOf("mp4", "webm", "mkv", "mov", "m4v", "m3u8", "mpd", "mp3", "m4a", "ogg", "opus", "flac", "wav", "aac")
+    @Volatile private var lastTouch = 0L
     private val skipHosts = Regex("""(^|\.)(youtube\.com|googlevideo\.com|youtu\.be|netflix\.com|nflxvideo\.net|primevideo\.com|disneyplus\.com)$""")
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -67,10 +69,16 @@ class BrowserActivity : Activity() {
             setSupportMultipleWindows(false)
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
+        web.addJavascriptInterface(VideoBridge(), "TYBrowser")
+        web.setOnTouchListener { _, _ -> lastTouch = System.currentTimeMillis(); false }
         web.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 found.clear(); refreshMedia()
                 if (!urlBox.hasFocus()) urlBox.setText(url)
+            }
+            override fun onPageFinished(view: WebView, url: String) {
+                val host = Uri.parse(url).host ?: ""
+                if (!skipHosts.containsMatchIn(host)) view.evaluateJavascript(OVERLAY_JS, null)
             }
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val s = request.url.scheme ?: ""
@@ -132,7 +140,7 @@ class BrowserActivity : Activity() {
         val s = u.toString()
         runOnUiThread {
             if (found.size < 30 && !found.containsKey(s)) {
-                found[s] = if (ext == "m3u8") "Flux vidéo (HLS)" else ext.uppercase()
+                found[s] = when (ext) { "m3u8" -> "Flux vidéo (HLS)"; "mpd" -> "Flux vidéo (DASH)"; else -> ext.uppercase() }
                 refreshMedia()
             }
         }
@@ -154,6 +162,27 @@ class BrowserActivity : Activity() {
                 send(u, if (u.substringBefore('?').endsWith(".m3u8") && title.isNotEmpty()) "$title.mp4" else "", web.settings.userAgentString)
             }
             .setNegativeButton("Fermer", null).show()
+    }
+
+    /** Appelé par le bouton posé sur les vidéos ; refusé sans appui récent de l'utilisateur (une page ne peut pas lancer de téléchargement toute seule). */
+    inner class VideoBridge {
+        @JavascriptInterface
+        fun video(src: String, title: String) {
+            if (System.currentTimeMillis() - lastTouch > 3000) return
+            runOnUiThread {
+                val clean = title.replace(Regex("""[<>:"/\\|?*]"""), " ").trim().take(80).ifEmpty { "video" }
+                val stream = found.keys.lastOrNull { val e = it.substringBefore('?').substringAfterLast('.').lowercase(); e == "m3u8" || e == "mpd" }
+                val direct = if (src.startsWith("http")) src else ""
+                val ext = direct.substringBefore('?').substringAfterLast('.', "").lowercase()
+                when {
+                    direct.isNotEmpty() && ext != "m3u8" && ext != "mpd" -> send(direct, "$clean.${if (ext in mediaExt) ext else "mp4"}", web.settings.userAgentString)
+                    stream != null -> send(stream, "$clean.mp4", web.settings.userAgentString)
+                    direct.isNotEmpty() -> send(direct, "$clean.mp4", web.settings.userAgentString)
+                    found.isNotEmpty() -> showMedia()
+                    else -> Files.toast(this@BrowserActivity, "Lance la lecture de la vidéo quelques secondes, puis réessaie")
+                }
+            }
+        }
     }
 
     private fun send(url: String, name: String, ua: String?) {
@@ -180,3 +209,22 @@ class BrowserActivity : Activity() {
         super.onDestroy()
     }
 }
+
+/** Bouton « Télécharger cette vidéo » posé en haut à droite de chaque vidéo de la page. */
+private const val OVERLAY_JS = """
+(function(){
+  if (window.__tyOverlay) return; window.__tyOverlay = true;
+  function deco(v){
+    if (v.__ty) return; var r = v.getBoundingClientRect(); if (r.width < 160 || r.height < 90) return; v.__ty = true;
+    var b = document.createElement('div');
+    b.textContent = '⬇ Télécharger';
+    b.style.cssText = 'position:absolute;z-index:2147483647;background:#0e9f6e;color:#fff;font:600 13px sans-serif;padding:7px 11px;border-radius:16px;box-shadow:0 2px 10px rgba(0,0,0,.4);';
+    document.body.appendChild(b);
+    function pos(){ var q = v.getBoundingClientRect(); if (!q.width) { b.style.display='none'; return; } b.style.display='block'; b.style.top = (q.top + window.scrollY + 8) + 'px'; b.style.left = (q.right + window.scrollX - b.offsetWidth - 8) + 'px'; }
+    pos(); setInterval(pos, 700); window.addEventListener('scroll', pos, {passive:true});
+    b.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); TYBrowser.video(v.currentSrc || v.src || '', document.title); b.textContent = 'Envoyé ✓'; setTimeout(function(){ b.textContent = '⬇ Télécharger'; }, 3000); }, true);
+  }
+  function scan(){ var vs = document.getElementsByTagName('video'); for (var i = 0; i < vs.length; i++) deco(vs[i]); }
+  scan(); setInterval(scan, 1500);
+})();
+"""
