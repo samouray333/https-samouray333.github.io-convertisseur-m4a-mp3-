@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<style>
+body{width:340px;margin:0;font:13px/1.4 system-ui,"Segoe UI",sans-serif;color:#16212b;background:#fff}
+header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #e2e7ec}
+header img{width:24px}header b{flex:1;font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%;background:#d64545}.dot.ok{background:#0e9f6e}
+main{padding:12px 14px}
+p{margin:0 0 10px}.mute{color:#667684;font-size:12px}
+button{font:inherit;border:1px solid #e2e7ec;background:#fff;border-radius:7px;padding:6px 12px;cursor:pointer}
+button.p{background:#0e9f6e;border-color:#0e9f6e;color:#fff;font-weight:600}
+label{display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer}
+input{accent-color:#0e9f6e;width:16px;height:16px}
+h4{margin:10px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#667684}
+.m{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #eef2f5}
+.m div{flex:1;min-width:0}.m span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{background:#e3f6ee;color:#0b7a6e;border-radius:5px;padding:1px 6px;font-size:11px;font-weight:700}
+@media (prefers-color-scheme:dark){body{background:#172027;color:#e6edf2}header,.m{border-color:#27343e}button{background:#1b262e;border-color:#27343e;color:#e6edf2}.tag{background:#143a30;color:#22c58b}}
+</style></head>
+<body>
+<header><img src="icons/48.png" alt=""><b>Telechargys</b><span id="dot" class="dot"></span></header>
+<main>
+  <div id="state"></div>
+  <label id="tog" hidden><input type="checkbox" id="enabled"> Capter les téléchargements du navigateur</label>
+  <div id="media"></div>
+</main>
+<script src="popup.js"></script>
+</body></html>

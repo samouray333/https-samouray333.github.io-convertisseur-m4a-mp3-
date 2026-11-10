@@ -1,0 +1,69 @@
+{
+  "name": "telechargys",
+  "productName": "Telechargys",
+  "version": "1.0.0",
+  "description": "Gestionnaire de téléchargements accéléré",
+  "author": "QMTech",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable --x64"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.qmtech.telechargys",
+    "productName": "Telechargys",
+    "copyright": "© QMTech",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**"
+    ],
+    "extraResources": [
+      {
+        "from": "engine-bin/win",
+        "to": "engine"
+      },
+      {
+        "from": "../extension",
+        "to": "extension"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "artifactName": "Telechargys-${version}-Installation.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Telechargys",
+      "installerLanguages": [
+        "fr_FR"
+      ],
+      "language": "1036",
+      "uninstallDisplayName": "Telechargys",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "Telechargys-${version}-Portable.exe"
+    },
+    "electronLanguages": [
+      "fr",
+      "en-US"
+    ],
+    "publish": null
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Telechargys : intégration navigateur",
+  "short_name": "Telechargys",
+  "version": "1.0.0",
+  "description": "Envoie les téléchargements et les vidéos détectées à l'application Telechargys.",
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "permissions": [
+    "downloads",
+    "contextMenus",
+    "storage",
+    "cookies",
+    "webRequest",
+    "scripting",
+    "activeTab",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Telechargys",
+    "default_icon": {
+      "16": "icons/16.png",
+      "48": "icons/48.png"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "telechargys@qmtech.app",
+      "strict_min_version": "115.0"
+    }
+  }
+}

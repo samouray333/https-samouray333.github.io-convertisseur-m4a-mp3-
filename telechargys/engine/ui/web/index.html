@@ -1,1 +1,67 @@
-<h1>ok</h1>
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<title>Telechargys</title>
+<link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand"><img src="icon.svg" alt=""><span>Telechargys</span></div>
+    <div class="tools" id="tools">
+      <button class="tb primary" data-act="add" title="Ajouter une adresse (Ctrl+N)"><i data-i="plus"></i><span>Ajouter</span></button>
+      <span class="sep"></span>
+      <button class="tb" data-act="resume" title="Reprendre la sélection"><i data-i="play"></i><span>Reprendre</span></button>
+      <button class="tb" data-act="pause" title="Mettre en pause la sélection"><i data-i="pause"></i><span>Pause</span></button>
+      <button class="tb" data-act="remove" title="Supprimer la sélection (Suppr)"><i data-i="trash"></i><span>Supprimer</span></button>
+      <span class="sep"></span>
+      <button class="tb" data-act="startAll" title="Tout démarrer"><i data-i="playAll"></i><span>Tout démarrer</span></button>
+      <button class="tb" data-act="pauseAll" title="Tout arrêter"><i data-i="stop"></i><span>Tout arrêter</span></button>
+      <span class="sep"></span>
+      <button class="tb" data-act="batch" title="Téléchargement par lot"><i data-i="batch"></i><span>Lot</span></button>
+      <button class="tb" data-act="grab" title="Aspirateur de site"><i data-i="spider"></i><span>Aspirateur</span></button>
+      <button class="tb" data-act="queues" title="Files d'attente et planificateur"><i data-i="clock"></i><span>Planificateur</span></button>
+      <button class="tb only-android" data-act="browser" title="Navigateur intégré"><i data-i="globe"></i><span>Navigateur</span></button>
+      <button class="tb" data-act="settings" title="Réglages"><i data-i="gear"></i><span>Réglages</span></button>
+    </div>
+    <div class="search"><i data-i="search"></i><input id="search" type="search" placeholder="Rechercher…" autocomplete="off"></div>
+    <button class="tb icon-only mobile-only" data-act="menu" title="Menu"><i data-i="menu"></i></button>
+  </header>
+  <div id="body">
+    <nav id="side"></nav>
+    <main id="main">
+      <div id="chips"></div>
+      <div id="listHead" class="row head">
+        <div data-sort="fileName">Nom</div><div data-sort="size">Taille</div><div data-sort="progress">Progression</div>
+        <div data-sort="speed">Vitesse</div><div data-sort="eta">Restant</div><div data-sort="status">État</div><div data-sort="addedAt">Ajouté</div>
+      </div>
+      <div id="list" tabindex="0"></div>
+      <div id="empty" hidden>
+        <img src="icon.svg" alt="">
+        <h2>Aucun téléchargement ici</h2>
+        <p>Colle une adresse avec <b>Ajouter</b>, ou dépose un lien dans cette fenêtre.</p>
+        <button class="btn primary" data-act="add">Ajouter une adresse</button>
+      </div>
+      <section id="detail" hidden></section>
+    </main>
+  </div>
+  <footer id="status">
+    <span id="stActive">Aucun téléchargement en cours</span>
+    <span class="grow"></span>
+    <button id="limitBtn" class="lim" title="Limiteur de débit global"><i data-i="gauge"></i><span id="limitTxt">Débit illimité</span></button>
+    <span id="stSpeed" class="speed">0 o/s</span>
+  </footer>
+  <button id="fab" class="mobile-only" data-act="add" aria-label="Ajouter"><i data-i="plus"></i></button>
+</div>
+<div id="modals"></div>
+<div id="toasts"></div>
+<div id="ctx" hidden></div>
+<div id="drop" hidden><div><i data-i="download"></i><p>Dépose le lien pour le télécharger</p></div></div>
+<script src="dialogs.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
