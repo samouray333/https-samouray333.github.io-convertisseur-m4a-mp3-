@@ -447,3 +447,29 @@ func TestDuplicateAndAutoRetry(t *testing.T) {
 		t.Fatal("compteur non remis à zéro")
 	}
 }
+
+func TestRefreshByRecapture(t *testing.T) {
+	data := randData(4 << 20)
+	var maxSeen int32
+	var reqs int64
+	srv := fileServer(data, &srvOpts{delay: 10 * time.Millisecond}, &maxSeen, &reqs)
+	defer srv.Close()
+	m := newTestManager(t)
+	d, _ := m.Add(AddReq{URL: srv.URL + "/vieux-lien?jeton=expire", Start: true})
+	time.Sleep(400 * time.Millisecond)
+	m.Pause(d.ID)
+	before := m.Get(d.ID).Downloaded
+	m.WaitRefresh(d.ID, true)
+	if err := m.AddSimple(t.Context(), srv.URL+"/nouveau-lien?jeton=frais", "", "a=b", ""); err != nil {
+		t.Fatal(err)
+	}
+	r := waitStatus(t, m, d.ID, StCompleted, 30*time.Second)
+	if r.URL != srv.URL+"/nouveau-lien?jeton=frais" || r.Cookies != "a=b" {
+		t.Fatalf("adresse non remplacée : %s", r.URL)
+	}
+	checkFile(t, r, data)
+	if len(m.List()) != 1 {
+		t.Fatal("un nouveau téléchargement a été créé au lieu d'actualiser")
+	}
+	t.Logf("repris à %d octets avec la nouvelle adresse", before)
+}

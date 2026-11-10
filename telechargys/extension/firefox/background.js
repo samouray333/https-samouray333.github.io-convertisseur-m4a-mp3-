@@ -90,6 +90,7 @@ api.downloads.onCreated.addListener(async item => {
 function buildMenus() {
   api.contextMenus.removeAll(() => {
     api.contextMenus.create({ id: 'ty-link', title: 'Télécharger avec Telechargys', contexts: ['link', 'image', 'video', 'audio'] });
+    api.contextMenus.create({ id: 'ty-sel', title: 'Télécharger les liens sélectionnés avec Telechargys', contexts: ['selection'] });
     api.contextMenus.create({ id: 'ty-all', title: 'Télécharger tous les fichiers liés de cette page', contexts: ['page'] });
   });
 }
@@ -103,25 +104,36 @@ function notify(tabId, text, bad) {
   setTimeout(() => refreshBadge(tabId), 2500);
 }
 
-api.contextMenus.onClicked.addListener(async (info, tab) => {
+const onMenu = async (info, tab) => {
   try {
     if (info.menuItemId === 'ty-link') {
       const url = info.linkUrl || info.srcUrl;
       if (!/^https?:\/\//i.test(url || '')) throw new Error('Lien non téléchargeable');
       await send(url, info.pageUrl);
       notify(tab.id, 'Envoyé à Telechargys');
-    } else if (info.menuItemId === 'ty-all') {
+    } else if (info.menuItemId === 'ty-all' || info.menuItemId === 'ty-sel') {
       if (!conn) await connect(false);
+      const sel = info.menuItemId === 'ty-sel';
       const exts = (appSettings && appSettings.captureExts) || [];
-      const [{ result }] = await api.scripting.executeScript({ target: { tabId: tab.id }, func: () => [...new Set([...document.querySelectorAll('a[href],img[src],video[src],audio[src],source[src]')].map(e => e.href || e.src))] });
-      const urls = (result || []).filter(u => /^https?:\/\//i.test(u) && exts.includes(((/\.([a-z0-9]{1,5})$/i.exec(new URL(u).pathname) || [])[1] || '').toLowerCase()));
-      if (!urls.length) throw new Error('Aucun fichier reconnu sur cette page');
-      const cookies = await cookiesFor(tab.url);
-      await call('downloads', { items: urls.map(u => ({ url: u, referer: tab.url, cookies, userAgent: navigator.userAgent })) });
-      notify(tab.id, urls.length + ' fichiers ajoutés à la file de Telechargys');
+      const results = await api.scripting.executeScript({ target: { tabId: tab.id, frameIds: [info.frameId || 0] }, args: [sel], func: onlySel => {
+        const s = getSelection();
+        const els = [...document.querySelectorAll('a[href],img[src],video[src],audio[src],source[src]')]
+          .filter(e => !onlySel || (s && s.rangeCount && s.containsNode(e, true)));
+        const urls = els.map(e => e.href || e.src);
+        if (onlySel && s) for (const m of String(s).matchAll(/(https?|ftp):\/\/[^\s<>"']+/gi)) urls.push(m[0]); // adresses écrites en clair
+        return [...new Set(urls)];
+      } });
+      const all = (results[0] && results[0].result) || [];
+      // sélection : tous les liens (l'utilisateur a choisi) ; page entière : seulement les fichiers reconnus
+      const urls = all.filter(u => /^(https?|ftp):\/\//i.test(u) && (sel || exts.includes(extOf(u))));
+      if (!urls.length) throw new Error(sel ? 'Aucun lien dans la sélection' : 'Aucun fichier reconnu sur cette page');
+      await call('capture', { url: urls[0], urls, referer: tab.url, cookies: await cookiesFor(tab.url), userAgent: navigator.userAgent });
+      notify(tab.id, urls.length + ' lien' + (urls.length > 1 ? 's' : '') + ' envoyé' + (urls.length > 1 ? 's' : '') + ' à Telechargys');
     }
   } catch (e) { notify(tab && tab.id, e.message, true); }
-});
+};
+api.contextMenus.onClicked.addListener(onMenu);
+globalThis.__tyMenu = onMenu; // utilisé par les tests automatiques
 
 // ----- détection des vidéos et musiques des pages -----
 const MEDIA_EXT = ['mp4', 'webm', 'mkv', 'mov', 'm4v', 'flv', 'mp3', 'm4a', 'ogg', 'opus', 'flac', 'wav', 'aac', 'm3u8', 'mpd'];

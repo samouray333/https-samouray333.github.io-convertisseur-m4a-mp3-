@@ -237,6 +237,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			URL        string `json:"url"`
 			Dir        int    `json:"dir"`
 			Algo       string `json:"algo"`
+			On         bool   `json:"on"`
 			UpdateReq
 		}
 		if err := body(r, &in); err != nil {
@@ -256,6 +257,9 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			res(m.Remove(id, in.DeleteFile))
 		case "refresh":
 			res(m.Refresh(id, in.URL))
+		case "refreshwait":
+			m.WaitRefresh(id, in.On)
+			ok()
 		case "update":
 			res(m.Update(id, in.UpdateReq))
 		case "move":
@@ -405,10 +409,26 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case p[0] == "capture" && r.Method == "POST":
 		var in struct {
 			AddReq
-			Silent bool `json:"silent"`
+			Silent bool     `json:"silent"`
+			URLs   []string `json:"urls"`
 		}
 		if err := body(r, &in); err != nil {
 			fail(w, 400, err)
+			return
+		}
+		if len(in.URLs) > 0 { // liens sélectionnés / tous les liens d'une page : fenêtre de choix
+			m.mu.Lock()
+			m.emit("captureBatch", map[string]any{"urls": in.URLs, "referer": in.Referer, "cookies": in.Cookies, "userAgent": in.UserAgent})
+			m.mu.Unlock()
+			writeJSON(w, map[string]string{"mode": "dialog"})
+			return
+		}
+		if id := m.takeRefresh(); id != "" { // lien expiré : le nouveau clic fournit la nouvelle adresse
+			if err := m.RefreshFrom(id, in.AddReq); err != nil {
+				fail(w, 400, err)
+				return
+			}
+			writeJSON(w, map[string]string{"mode": "refreshed"})
 			return
 		}
 		m.mu.Lock()
@@ -601,6 +621,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 // AddSimple : ajout direct depuis une coque (partage Android, ligne de commande).
 func (m *Manager) AddSimple(ctx context.Context, rawURL, referer, cookies, ua string) error {
 	req := AddReq{URL: rawURL, Referer: referer, Cookies: cookies, UserAgent: ua}
+	if id := m.takeRefresh(); id != "" {
+		return m.RefreshFrom(id, req)
+	}
 	m.mu.Lock()
 	dialog := m.S.ShowAddDialog
 	if dialog {

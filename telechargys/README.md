@@ -25,7 +25,8 @@ Même moteur et même interface sur les deux plateformes, 100 % local : pas de s
 | Export / import de listes d'adresses (.txt) | oui | oui |
 | Lien copié détecté au retour dans l'appli | surveillance continue | oui |
 | FTP (reprise incluse) | oui | oui |
-| Actualiser l'adresse d'un lien expiré en gardant la progression | oui | oui |
+| Actualiser l'adresse d'un lien expiré en gardant la progression, en collant le lien ou en recliquant dessus dans le navigateur | oui | oui (partage ou navigateur intégré) |
+| Clic droit : télécharger les liens sélectionnés ou tous les fichiers de la page, avec fenêtre de choix | extension | partage de plusieurs liens |
 | Identifiants par site, cookies, Referer, User-Agent, proxy HTTP / SOCKS5 | oui | oui |
 | Vérification d'intégrité MD5 / SHA-1 / SHA-256 | oui | oui |
 | Capture depuis le navigateur | extension Chrome / Edge / Brave / Opera / Firefox | « Partager », « Ouvrir avec » et navigateur intégré |
@@ -42,7 +43,7 @@ Même moteur et même interface sur les deux plateformes, 100 % local : pas de s
 - **Pas de YouTube, Netflix, Prime Video, Disney+** ni d'autres flux protégés par DRM : c'est interdit par leurs conditions et techniquement verrouillé. Les flux en direct ne sont pas pris en charge non plus.
 - Vidéo et son séparés dans des codecs que le MP4 n'accepte pas sans réencodage (VP9, AV1, Opus, souvent en WebM) : les deux pistes sont enregistrées côte à côte (`nom.webm` et `nom.audio.webm`). Les flux H.264 / H.265 + AAC (la grande majorité) donnent un seul MP4.
 - DASH : seule la période principale d'un manifeste à plusieurs périodes est téléchargée (les autres sont en général des publicités).
-- Extension navigateur : à charger en « mode développeur » (elle n'est pas publiée sur les boutiques). Sur Firefox, un module non signé doit être rechargé à chaque démarrage du navigateur.
+- Extension navigateur : en attendant sa publication sur les boutiques, elle se charge en « mode développeur ». Les paquets prêts à envoyer et les textes de la fiche sont décrits dans `extension/PUBLICATION.md`.
 - Android : pas d'intégration dans Chrome mobile (Android ne le permet pas), d'où le navigateur intégré et le partage. Android 15 limite ce type de service d'arrière-plan à 6 heures par jour : au-delà, l'appli met proprement en pause.
 - Serveur sans reprise (pas d'en-tête Range) : une seule connexion, et une pause fait repartir de zéro (l'appli l'indique).
 

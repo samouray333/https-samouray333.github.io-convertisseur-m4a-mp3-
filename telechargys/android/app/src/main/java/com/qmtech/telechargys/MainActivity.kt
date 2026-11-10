@@ -132,8 +132,9 @@ class MainActivity : Activity() {
             Intent.ACTION_VIEW -> intent.dataString
             else -> null
         } ?: return
-        val u = urlRe.find(text)?.value ?: return
-        pending += u
+        val urls = urlRe.findAll(text).map { it.value.trimEnd('.', ',', ')', ';') }.distinct().toList()
+        if (urls.isEmpty()) return
+        pending += urls
         flush()
         intent.action = Intent.ACTION_MAIN // ne pas rejouer le lien à la rotation
     }
@@ -143,7 +144,9 @@ class MainActivity : Activity() {
         if (!pageReady || !Engine.ready) return
         val list = ArrayList(pending)
         pending.clear()
-        for (u in list) web.evaluateJavascript("window.tyAddUrl&&tyAddUrl(${JSONObject.quote(u)});", null)
+        if (list.isEmpty()) return
+        val arr = org.json.JSONArray(list).toString()
+        web.evaluateJavascript("window.tyAddUrls&&tyAddUrls($arr);", null)
     }
 
     @Deprecated("API simple suffisante ici")

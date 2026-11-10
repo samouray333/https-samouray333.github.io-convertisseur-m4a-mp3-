@@ -27,6 +27,9 @@ echo "== APK Android =="
 (cd android && ./gradlew --no-daemon assembleRelease)
 
 mkdir -p livraison
+echo "== Paquets de l'extension (Chrome Web Store, Firefox) =="
+(cd extension && zip -qr ../livraison/Telechargys-extension-chrome.zip manifest.json background.js content.js popup.html popup.js icons)
+(cd extension/firefox && zip -qr ../../livraison/Telechargys-extension-firefox.zip .)
 cp desktop/dist/Telechargys-*-Installation.exe desktop/dist/Telechargys-*-Portable.exe livraison/
 cp android/app/build/outputs/apk/release/app-release.apk "livraison/Telechargys-$(grep versionName android/app/build.gradle.kts | cut -d'"' -f2).apk"
 ls -la livraison

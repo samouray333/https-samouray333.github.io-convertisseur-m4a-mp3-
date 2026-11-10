@@ -42,11 +42,11 @@ type hlsSeg struct {
 }
 
 type hlsPlaylist struct {
-	Variants []HLSVariant
-	Segs     []hlsSeg
-	MapURL   string
-	MapLn    int64
-	MapSt    int64
+	Variants  []HLSVariant
+	Segs      []hlsSeg
+	MapURL    string
+	MapLn     int64
+	MapSt     int64
 	Live      bool
 	DRM       bool
 	Container string // ts, mp4 ou webm

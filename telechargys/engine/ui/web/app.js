@@ -487,6 +487,13 @@ function onEvent(ev) {
       break;
     case 'queueDone': toast(`La file « ${d.name} » est terminée.`); break;
     case 'capture': openAdd(d); break;
+    case 'captureBatch': openBatch((d.urls || []).join('\n'), d); break;
+    case 'refreshed': {
+      const fm = $$('.modal').find(x => x.dataset.refresh === d.id);
+      if (fm) { delete fm.dataset.refresh; fm.close(); }
+      toast('Nouvelle adresse récupérée, le téléchargement reprend.', '', 'Lien actualisé');
+      break;
+    }
     case 'pair': openPair(d); break;
     case 'pairEnd': $$('.modal').forEach(m => m.dataset.pair === d && m.remove()); break;
     case 'reload': load(); break;
@@ -599,7 +606,17 @@ function initUI() {
   addEventListener('resize', () => { const d = S.dls.get($('#detail')._id); if (d) drawDetail(d); });
 }
 // appelé par les coques (lien reçu, presse-papiers...)
-window.tyAddUrl = (url, extra) => openAdd({ url, ...(extra || {}) });
+window.tyAddUrl = (url, extra) => {
+  const fm = $$('.modal').find(x => x.dataset.refresh); // fenêtre « Actualiser l'adresse » ouverte : ce lien la remplit
+  if (fm) {
+    const id = fm.dataset.refresh;
+    api('POST', `downloads/${id}/refresh`, { url }).then(() => api('POST', `downloads/${id}/start`, {}))
+      .then(() => { delete fm.dataset.refresh; fm.close(); toast('Le téléchargement reprend.', '', 'Lien actualisé'); }).catch(fail);
+    return;
+  }
+  openAdd({ url, ...(extra || {}) });
+};
+window.tyAddUrls = list => (list.length === 1 ? window.tyAddUrl(list[0]) : openBatch(list.join('\n')));
 // bouton Retour d'Android : ferme ce qui est ouvert, sinon laisse l'appli passer en arrière-plan
 window.tyBack = () => {
   const ms = $$('.modal');

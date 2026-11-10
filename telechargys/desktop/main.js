@@ -210,7 +210,7 @@ function onEvent(ev) {
     const n = new Notification({ title: d.title, body: d.body, icon: asset('icon.png') });
     n.on('click', () => { if (d.kind === 'done' && d.path) shell.showItemInFolder(d.path); else showWin(); });
     n.show();
-  } else if (ev.type === 'capture' || ev.type === 'pair') showWin();
+  } else if (ev.type === 'capture' || ev.type === 'captureBatch' || ev.type === 'pair' || ev.type === 'refreshed') showWin();
   else if (ev.type === 'queueDone') postAction(d.postAction);
   else if (ev.type === 'settings') applySettings(d);
 }

@@ -137,12 +137,19 @@ function askDuplicate(old) {
 // ---------- actualiser l'adresse ----------
 function openRefresh(d) {
   const u = I({ value: d.url, autofocus: true, spellcheck: false });
-  modal({
+  api('POST', `downloads/${d.id}/refreshwait`, { on: true }).catch(() => {});
+  const how = shell.android
+    ? 'ou retourne sur la page d\'origine et « Partage » à nouveau le lien vers Telechargys (ou ouvre-le dans le navigateur intégré).'
+    : 'ou retourne sur la page d\'origine dans ton navigateur et clique à nouveau sur le lien de téléchargement : Telechargys récupérera la nouvelle adresse tout seul.';
+  const m = modal({
     title: 'Actualiser l\'adresse',
-    body: [h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Quand un lien a expiré, colle ici la nouvelle adresse du même fichier : le téléchargement reprendra là où il s\'était arrêté.'), F('Nouvelle adresse', u)],
+    body: [h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Quand un lien a expiré, colle ici la nouvelle adresse du même fichier, ' + how + ' Le téléchargement reprendra là où il s\'était arrêté.'),
+      h('div', { class: 'info' }, h('span', { html: '<span class="spin"></span> En attente d\'un nouveau clic sur le lien…' })), F('Nouvelle adresse', u)],
     ok: 'Actualiser et reprendre',
     onok: async () => { await api('POST', `downloads/${d.id}/refresh`, { url: u.value.trim() }); await api('POST', `downloads/${d.id}/start`, {}); },
+    onclose: () => api('POST', `downloads/${d.id}/refreshwait`, { on: false }).catch(() => {}),
   });
+  m.dataset.refresh = d.id;
 }
 
 // ---------- propriétés ----------
@@ -177,7 +184,8 @@ function openLimit() {
 }
 
 // ---------- lot ----------
-function openBatch(text) {
+function openBatch(text, ctx) {
+  ctx = ctx || {};
   const pat = I({ placeholder: 'https://site.com/photo[001-120].jpg', spellcheck: false });
   const list = h('textarea', { class: 'in', rows: 8, placeholder: 'Une adresse par ligne…', spellcheck: false }, text || '');
   const cnt = h('div', { class: 'hint' });
@@ -189,7 +197,7 @@ function openBatch(text) {
   const gen = h('button', { class: 'btn', onclick: async () => { try { const r = await api('POST', 'batch', { pattern: pat.value }); list.value = (list.value.trim() ? list.value.trim() + '\n' : '') + r.urls.join('\n'); upd(); } catch (e) { fail(e); } } }, 'Générer');
   const imp = h('input', { type: 'file', accept: '.txt,text/plain', hidden: true, onchange: async () => { if (imp.files[0]) { list.value += '\n' + await imp.files[0].text(); upd(); } } });
   modal({
-    title: 'Téléchargement par lot', wide: true,
+    title: ctx.urls ? 'Liens envoyés par le navigateur' : 'Téléchargement par lot', wide: true,
     body: [F('Motif numéroté', h('div', { class: 'inbtn noenter' }, pat, gen), 'Exemples : [1-50], [001-120] (avec zéros), [a-f], [0-100:10] (de 10 en 10).'),
       F('Liste d\'adresses', list), cnt, imp,
       h('div', { class: 'rowf' }, F('File d\'attente', queue), h('div', {}, h('label', { class: 'check', style: 'margin-top:22px' }, start, 'Démarrer la file tout de suite')))],
@@ -197,7 +205,7 @@ function openBatch(text) {
     ok: 'Ajouter à la file',
     onok: async () => {
       const u = urls(); if (!u.length) { toast('Aucune adresse à ajouter.', 'err'); return false; }
-      const added = (await api('POST', 'downloads', { items: u.map(x => ({ url: x, queue: queue.value })) })) || [];
+      const added = (await api('POST', 'downloads', { items: u.map(x => ({ url: x, queue: queue.value, referer: ctx.referer || '', cookies: ctx.cookies || '', userAgent: ctx.userAgent || '' })) })) || [];
       if (start.checked) await api('POST', `queues/${queue.value}/start`, {}).catch(() => {});
       const skip = u.length - added.length;
       toast(`${added.length} téléchargement${added.length > 1 ? 's' : ''} ajouté${added.length > 1 ? 's' : ''}.` + (skip ? ` ${skip} déjà dans la liste.` : ''));

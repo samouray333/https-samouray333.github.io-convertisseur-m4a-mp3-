@@ -32,24 +32,26 @@ type persisted struct {
 
 // Manager : cœur de l'application.
 type Manager struct {
-	mu       sync.Mutex
-	dataDir  string
-	Platform string // windows, android, linux...
-	Token    string
-	S        Settings
-	Cats     []Category
-	Queues   []*Queue
-	dls      map[string]*Download
-	subs     map[chan Event]struct{}
-	dirty    bool
-	global   *Limiter
-	client   *http.Client
-	blocked  bool
-	autoP    map[string]bool // mis en pause automatiquement (réseau)
-	grabs    map[string]*GrabJob
-	pairs    map[string]*pairReq
-	orderSeq int64
-	stop     chan struct{}
+	mu         sync.Mutex
+	dataDir    string
+	Platform   string // windows, android, linux...
+	Token      string
+	S          Settings
+	Cats       []Category
+	Queues     []*Queue
+	dls        map[string]*Download
+	subs       map[chan Event]struct{}
+	dirty      bool
+	global     *Limiter
+	client     *http.Client
+	blocked    bool
+	autoP      map[string]bool // mis en pause automatiquement (réseau)
+	grabs      map[string]*GrabJob
+	pairs      map[string]*pairReq
+	refreshID  string    // téléchargement qui attend une nouvelle adresse (lien expiré)
+	refreshTil time.Time // fin de l'attente
+	orderSeq   int64
+	stop       chan struct{}
 	// OnEvent : rappel optionnel (utilisé par la coque Android).
 	OnEvent func(Event)
 }
@@ -1204,3 +1206,47 @@ type ErrDuplicate struct {
 }
 
 func (e ErrDuplicate) Error() string { return "Ce lien est déjà dans la liste" }
+
+// WaitRefresh : la fenêtre « Actualiser l'adresse » est ouverte ; le prochain lien capté remplacera l'adresse de ce téléchargement.
+func (m *Manager) WaitRefresh(id string, on bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if on {
+		m.refreshID, m.refreshTil = id, time.Now().Add(5*time.Minute)
+	} else if m.refreshID == id {
+		m.refreshID = ""
+	}
+}
+
+func (m *Manager) takeRefresh() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := m.refreshID
+	m.refreshID = ""
+	if id == "" || time.Now().After(m.refreshTil) || m.dls[id] == nil {
+		return ""
+	}
+	return id
+}
+
+// RefreshFrom remplace l'adresse (et les cookies, la page d'origine) puis reprend le téléchargement.
+func (m *Manager) RefreshFrom(id string, r AddReq) error {
+	if err := m.Refresh(id, r.URL); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	if d := m.dls[id]; d != nil {
+		if r.Cookies != "" {
+			d.Cookies = r.Cookies
+		}
+		if r.Referer != "" {
+			d.Referer = r.Referer
+		}
+		if r.UserAgent != "" {
+			d.UserAgent = r.UserAgent
+		}
+		m.emit("refreshed", map[string]string{"id": id, "url": r.URL})
+	}
+	m.mu.Unlock()
+	return m.Start(id)
+}
