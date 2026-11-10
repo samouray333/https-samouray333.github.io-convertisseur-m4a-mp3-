@@ -193,5 +193,25 @@ class MainActivity : Activity() {
             return "Téléchargements/Telechargys/" + f.name
         }
         @JavascriptInterface fun applySettings(json: String) {}
+        /** Installe l'APK de mise à jour (vérifiée par le moteur, et par Android qui exige la même signature). */
+        @JavascriptInterface fun installApk(path: String): String {
+            val f = File(path)
+            if (!f.exists() || !f.name.endsWith(".apk")) return "Fichier de mise à jour introuvable"
+            if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+                runOnUiThread {
+                    Files.toast(this@MainActivity, "Autorise Telechargys à installer des applis, puis relance la mise à jour")
+                    runCatching { startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
+                }
+                return "Autorisation « installer des applis inconnues » nécessaire : accorde-la puis relance la mise à jour."
+            }
+            runOnUiThread {
+                runCatching {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(this@MainActivity, "$packageName.files", f)
+                    startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+                }.onFailure { Files.toast(this@MainActivity, "Impossible de lancer l'installation") }
+            }
+            return ""
+        }
     }
 }

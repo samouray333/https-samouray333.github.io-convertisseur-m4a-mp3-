@@ -49,6 +49,9 @@ type Manager struct {
 	grabs      map[string]*GrabJob
 	pairs      map[string]*pairReq
 	refreshID  string    // téléchargement qui attend une nouvelle adresse (lien expiré)
+	upd         *UpdateInfo
+	updBusy     bool
+	updNotified string
 	refreshTil time.Time // fin de l'attente
 	orderSeq   int64
 	stop       chan struct{}
@@ -308,6 +311,9 @@ func (m *Manager) loop() {
 		}
 		if len(ps) > 0 {
 			m.emit("progress", ps)
+		}
+		if n == 40 || n%172800 == 40 { // 20 s après le lancement, puis une fois par jour
+			go m.autoCheckUpdate()
 		}
 		if n%40 == 0 { // toutes les 20 s
 			m.checkSchedules()

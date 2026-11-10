@@ -11,3 +11,5 @@ desktop/engine-bin/
 android/app/libs/
 keystore.properties
 livraison/
+windows/update-token.txt
+engine/cmd/telechargys-win/*.syso

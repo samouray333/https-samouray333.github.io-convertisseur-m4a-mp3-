@@ -177,6 +177,20 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch {
+	case p[0] == "show" && r.Method == "POST": // second lancement de l'appli : remettre la fenêtre au premier plan
+		m.mu.Lock()
+		m.emit("show", nil)
+		m.mu.Unlock()
+		ok()
+	case p[0] == "update" && len(p) == 1:
+		info, err := m.CheckUpdate(r.Context())
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		writeJSON(w, info)
+	case p[0] == "update" && len(p) == 2 && p[1] == "download" && r.Method == "POST":
+		res(m.DownloadUpdate())
 	case p[0] == "ping":
 		writeJSON(w, map[string]string{"app": "telechargys", "version": Version})
 	case p[0] == "state":
@@ -527,6 +541,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		}
 	case p[0] == "export":
 		st := m.State()
+		st.Settings.UpdateToken = "" // le jeton ne part jamais dans une sauvegarde
 		w.Header().Set("Content-Disposition", `attachment; filename="telechargys-sauvegarde.json"`)
 		writeJSON(w, st)
 	case p[0] == "import" && r.Method == "POST":
@@ -547,8 +562,11 @@ func (m *Manager) Import(st State) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if st.Settings.MaxConn > 0 {
-		dir := m.S.DownloadDir
+		dir, tok := m.S.DownloadDir, m.S.UpdateToken
 		m.S = st.Settings
+		if m.S.UpdateToken == "" {
+			m.S.UpdateToken = tok
+		}
 		if m.Platform == "android" || m.S.DownloadDir == "" {
 			m.S.DownloadDir = dir
 		}

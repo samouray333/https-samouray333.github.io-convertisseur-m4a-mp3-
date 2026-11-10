@@ -246,6 +246,14 @@ ipcMain.handle('chooseFolder', async (e, cur) => {
 ipcMain.handle('readClipboard', () => clipboard.readText());
 ipcMain.handle('copy', (e, t) => { clipboard.writeText(String(t)); lastClip = String(t).trim(); });
 ipcMain.handle('applySettings', (e, s) => applySettings(s));
+ipcMain.handle('closeWindow', e => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
+ipcMain.handle('openExtension', () => shell.openPath(app.isPackaged ? path.join(process.resourcesPath, 'extension') : path.join(__dirname, '..', 'extension')));
+ipcMain.handle('installUpdate', (e, p) => {
+  if (!/\.exe$/i.test(p || '')) return 'fichier de mise à jour inattendu';
+  try { spawn(p, ['/S', '/RELANCER'], { detached: true, stdio: 'ignore' }).unref(); } catch (err) { return 'impossible de lancer l\'installeur : ' + err.message; }
+  setTimeout(quit, 300);
+  return '';
+});
 ipcMain.handle('resizeProgress', (e, big) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setSize(w.getSize()[0], big ? 500 : 360); });
 
 app.on('second-instance', (e, argv) => { showWin(); urlsIn(argv).forEach(addUrl); });

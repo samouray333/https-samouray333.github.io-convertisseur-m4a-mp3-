@@ -8,4 +8,8 @@ contextBridge.exposeInMainWorld('tyShell', {
   copy: t => ipcRenderer.invoke('copy', t),
   applySettings: s => ipcRenderer.invoke('applySettings', s),
   resizeProgress: big => ipcRenderer.invoke('resizeProgress', big),
+  closeWindow: () => ipcRenderer.invoke('closeWindow'),
+  installUpdate: p => ipcRenderer.invoke('installUpdate', p),
+  openExtension: () => ipcRenderer.invoke('openExtension'),
+  cancelPost: () => {},
 });

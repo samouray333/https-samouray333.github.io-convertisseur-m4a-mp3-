@@ -4,6 +4,7 @@ const q = new URLSearchParams(location.search);
 const TOKEN = q.get('token'), ID = q.get('id'), VIEW = q.get('view') || 'progress';
 const E = window.tyShell;
 const $ = s => document.querySelector(s);
+const closeMe = () => { if (E && E.closeWindow) E.closeWindow(); else window.close(); };
 let d = null, details = true, hist = [];
 
 async function api(method, path, body) {
@@ -43,7 +44,7 @@ function render() {
       <div class="path">${esc(full())}</div>
       <label class="check"><input type="checkbox" id="never"> Ne plus afficher cette fenêtre</label>
       <div class="btns"><button class="btn primary" id="open">Ouvrir</button><button class="btn" id="folder">Ouvrir le dossier</button><button class="btn" id="close">Fermer</button></div>`;
-    const close = async () => { if ($('#never').checked) await api('PUT', 'settings', { showDoneWin: false }).catch(() => {}); window.close(); };
+    const close = async () => { if ($('#never').checked) await api('PUT', 'settings', { showDoneWin: false }).catch(() => {}); closeMe(); };
     $('#open').onclick = () => { E && E.openFile(full()); close(); };
     $('#folder').onclick = () => { E && E.showInFolder(full()); close(); };
     $('#close').onclick = close;
@@ -64,8 +65,8 @@ function render() {
       else await api('POST', `downloads/${ID}/start`, {});
     } catch (e) { $('#err').textContent = e.message; }
   };
-  $('#cancel').onclick = () => window.close();
-  addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
+  $('#cancel').onclick = () => closeMe();
+  addEventListener('keydown', e => { if (e.key === 'Escape') closeMe(); });
   update();
 }
 function update() {
@@ -116,14 +117,14 @@ async function start() {
   document.documentElement.dataset.theme = theme === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
   const st = await api('GET', 'state');
   d = st.downloads.find(x => x.id === ID);
-  if (!d) { window.close(); return; }
+  if (!d) { closeMe(); return; }
   render();
   if (VIEW === 'done') return;
   const es = new EventSource('/api/events?token=' + encodeURIComponent(TOKEN));
   es.onmessage = m => {
     const ev = JSON.parse(m.data);
     if (ev.type === 'download' && ev.data.id === ID) { d = ev.data; update(); }
-    else if (ev.type === 'removed' && ev.data === ID) window.close();
+    else if (ev.type === 'removed' && ev.data === ID) closeMe();
     else if (ev.type === 'progress') for (const p of ev.data) if (p.id === ID) {
       Object.assign(d, { downloaded: p.downloaded, speed: p.speed, size: p.size, segs: p.segs, status: p.status, elapsedMs: (d.elapsedMs || 0) + 500 });
       if (d.hls && p.hlsTotal) { d.hls.done = p.hlsDone; d.hls.total = p.hlsTotal; }

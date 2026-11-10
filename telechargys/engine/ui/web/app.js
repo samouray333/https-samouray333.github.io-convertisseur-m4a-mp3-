@@ -25,6 +25,7 @@ const shell = {
   openBrowser(u) { if (A) A.openBrowser(u || ''); },
   copy(t) { if (A && A.copy) A.copy(t); else if (E) E.copy(t); else navigator.clipboard && navigator.clipboard.writeText(t).catch(() => {}); toast('Copié dans le presse-papiers'); },
   apply(s) { if (E && E.applySettings) E.applySettings(s); if (A && A.applySettings) A.applySettings(JSON.stringify(s)); },
+  installUpdate(p) { if (E && E.installUpdate) return E.installUpdate(p); if (A && A.installApk) return A.installApk(p); return 'Installation automatique impossible ici'; },
 };
 
 // ---------- utilitaires ----------
@@ -486,6 +487,8 @@ function onEvent(ev) {
       if (d.kind === 'done' && S.settings.soundDone && !shell.android) beep();
       break;
     case 'queueDone': toast(`La file « ${d.name} » est terminée.`); break;
+    case 'updateAvailable': toastAction(`Telechargys ${d.latest} est disponible (tu as la ${d.current}).`, 'Voir la mise à jour', () => openUpdate(d), 'Mise à jour'); break;
+    case 'update': onUpdateEvent(d); break;
     case 'capture': openAdd(d); break;
     case 'captureBatch': openBatch((d.urls || []).join('\n'), d); break;
     case 'refreshed': {
@@ -630,3 +633,53 @@ window.applyTheme = applyTheme;
 
 initUI();
 load().catch(e => { document.body.innerHTML = '<p style="padding:30px;font-size:16px">Connexion au moteur impossible : ' + e.message + '</p>'; });
+
+// ---------- fin de file : compte à rebours avant extinction / veille (version ordinateur) ----------
+window.tyCountdown = (label, secs) => {
+  let n = secs;
+  const txt = h('p', {}, '');
+  const tick = () => { txt.textContent = `${label} dans ${n} seconde${n > 1 ? 's' : ''}.`; };
+  tick();
+  const t = setInterval(() => { n--; if (n <= 0) { clearInterval(t); m.close(); } else tick(); }, 1000);
+  const m = modal({ title: 'File terminée', body: txt, cancel: 'Annuler', onclose: () => { clearInterval(t); if (n > 0 && E && E.cancelPost) E.cancelPost(); } });
+};
+
+// ---------- mises à jour ----------
+let updModal = null;
+async function openUpdate(info) {
+  if (!info) {
+    try { info = await api('GET', 'update'); } catch (e) { fail(e); return; }
+    if (!info.available) { toast(`Tu as déjà la dernière version (${info.current}).`, '', 'Telechargys est à jour'); return; }
+  }
+  const bar = h('div', { class: 'bar', hidden: true }, h('i', { style: 'width:0%' }));
+  const st = h('div', { class: 'hint', style: 'margin:6px 0 0' });
+  const notes = h('div', { class: 'path', style: 'white-space:pre-wrap;max-height:220px;overflow:auto;margin-bottom:10px' }, info.notes || 'Pas de notes de version.');
+  updModal = modal({
+    title: `Telechargys ${info.latest}`,
+    body: [h('p', { style: 'margin:0 0 10px' }, `Version installée : ${info.current}. Nouvelle version : ${info.latest}` + (info.size ? ` (${fmtSize(info.size)}).` : '.')), notes, bar, st],
+    ok: 'Télécharger et installer',
+    onok: async () => {
+      bar.hidden = false; st.textContent = 'Téléchargement…';
+      await api('POST', 'update/download', {});
+      return false; // la fenêtre reste ouverte jusqu'à l'installation
+    },
+    onclose: () => { updModal = null; },
+  });
+  updModal._bar = bar; updModal._st = st;
+}
+async function onUpdateEvent(d) {
+  const m = updModal;
+  if (d.state === 'downloading' && m) {
+    const p = d.total > 0 ? d.done * 100 / d.total : 0;
+    m._bar.hidden = false; m._bar.firstChild.style.width = p.toFixed(1) + '%';
+    m._st.textContent = `Téléchargement : ${fmtSize(d.done)}` + (d.total > 0 ? ` sur ${fmtSize(d.total)}` : '');
+  } else if (d.state === 'error') {
+    if (m) { m._st.textContent = ''; m._bar.hidden = true; }
+    toast(d.error, 'err', 'Mise à jour impossible');
+  } else if (d.state === 'ready') {
+    if (m) { m._bar.firstChild.style.width = '100%'; m._st.textContent = 'Fichier vérifié (SHA-256). Installation…'; }
+    const err = await shell.installUpdate(d.path);
+    if (err) { toast(err, 'err', 'Mise à jour'); if (m) m._st.textContent = err; }
+  }
+}
+window.openUpdate = openUpdate;

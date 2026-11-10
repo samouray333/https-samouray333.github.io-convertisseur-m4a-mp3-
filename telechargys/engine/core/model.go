@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const Version = "1.2.0"
+const Version = "1.3.0"
 
 // États d'un téléchargement.
 const (
@@ -173,6 +173,8 @@ type Settings struct {
 	ShowProgressWin bool        `json:"showProgressWin"` // ordinateur : fenêtre de progression par téléchargement
 	ShowDoneWin     bool        `json:"showDoneWin"`     // ordinateur : fenêtre « Téléchargement terminé »
 	VideoButton     bool        `json:"videoButton"`     // extension : bouton sur les vidéos
+	AutoUpdate      bool        `json:"autoUpdate"`      // rechercher les mises à jour au démarrage
+	UpdateToken     string      `json:"updateToken"`     // jeton GitHub en lecture seule (dépôt privé)
 }
 
 const defaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -186,7 +188,7 @@ func defaultSettings(dir string) Settings {
 			"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "epub", "bin", "torrent"},
 		CaptureMinKB: 0, NotifyDone: true, SoundDone: true, Theme: "auto", OnDuplicate: "rename",
 		HLSToMP4: true, HLSConn: 6, MinimizeToTray: true,
-		AutoRetryMin: 5, ShowProgressWin: true, ShowDoneWin: true, VideoButton: true,
+		AutoRetryMin: 5, ShowProgressWin: true, ShowDoneWin: true, VideoButton: true, AutoUpdate: true,
 	}
 }
 

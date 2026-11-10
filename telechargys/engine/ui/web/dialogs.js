@@ -353,12 +353,20 @@ function openSettings(tab) {
     capture: [shell.android ? 'Capture' : 'Navigateur', () => [
       shell.android
         ? h('div', { class: 'info' }, h('span', {}, 'Sur téléphone : utilise « Partager » depuis n\'importe quelle appli ou le navigateur intégré (menu), qui repère les vidéos et les fichiers des pages.'))
-        : h('div', { class: 'info' }, h('span', { html: 'Pour capter les téléchargements de Chrome, Edge ou Firefox, installe l\'extension fournie dans le dossier <b>extension</b> (voir le menu Aide du programme). Elle se connecte toute seule et te demandera une autorisation ici.' })),
+        : h('div', { class: 'info' }, h('span', { html: 'Pour capter les téléchargements de Chrome, Edge ou Firefox, installe l\'extension Telechargys (lien d\'installation ou dossier <b>extension</b> ci-dessous). Elle se connecte toute seule et te demandera une autorisation ici.' })),
       F('Types de fichiers captés automatiquement', capExts, 'Extensions séparées par des espaces.'),
       shell.android ? null : [
         F('Sites exclus de la capture', h('textarea', { class: 'in', rows: 2, placeholder: 'exemple.com autre-site.fr', oninput: e => { s.captureExclude = e.target.value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean); } }, (s.captureExclude || []).join(' ')), 'Les téléchargements de ces sites restent dans le navigateur. Astuce : maintiens Alt en cliquant sur un lien pour ne pas le capter.'),
         chk('videoButton', 'Afficher le bouton « Télécharger cette vidéo » sur les vidéos des pages')],
+      E && E.openExtension ? h('button', { class: 'btn', style: 'margin-bottom:12px', onclick: () => E.openExtension() }, 'Ouvrir le dossier de l\'extension') : null,
       shell.desktop ? F('Analyse après téléchargement (antivirus)', txt('antivirusCmd', '"C:\\Program Files\\Windows Defender\\MpCmdRun.exe" -Scan -ScanType 3 -File %f'), 'Commande lancée sur chaque fichier terminé ; %f est remplacé par le chemin du fichier.') : null,
+    ]],
+    upd: ['Mises à jour', () => [
+      h('p', { class: 'hint', style: 'margin:0 0 10px' }, `Version installée : ${S.version}. Les nouvelles versions viennent de ton dépôt GitHub privé (onglet Releases).`),
+      chk('autoUpdate', 'Rechercher une nouvelle version au démarrage'),
+      F('Jeton d\'accès GitHub (lecture seule)', I({ type: 'password', value: s.updateToken || '', placeholder: 'github_pat_…', autocomplete: 'off', spellcheck: false, oninput: e => { s.updateToken = e.target.value.trim(); } }),
+        'Nécessaire car le dépôt est privé. Il reste sur cet appareil et n\'est jamais inclus dans les sauvegardes. Crée-le sur GitHub : Settings > Developer settings > Fine-grained tokens, accès au seul dépôt Telechargys, permission « Contents : Read-only ».'),
+      h('button', { class: 'btn', onclick: async () => { await api('PUT', 'settings', { updateToken: s.updateToken || '', autoUpdate: !!s.autoUpdate }).catch(() => {}); openUpdate(); } }, 'Rechercher maintenant'),
     ]],
     data: ['Sauvegarde', () => [
       h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'La sauvegarde contient les réglages, les catégories, les files et la liste des téléchargements (pas les fichiers eux-mêmes).'),
