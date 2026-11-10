@@ -708,6 +708,9 @@ func (m *Manager) Restart(id string) error {
 	}
 	os.Remove(m.partPath(d))
 	os.RemoveAll(m.partPath(d) + "s")
+	if d.Status == StCompleted {
+		os.Remove(filepath.Join(d.Dir, d.FileName)) // « Retélécharger » remplace le fichier existant
+	}
 	d.mu.Lock()
 	d.Segments = nil
 	if d.HLS != nil {

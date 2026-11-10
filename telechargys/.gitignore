@@ -9,3 +9,5 @@ build/
 local.properties
 desktop/engine-bin/
 android/app/libs/
+keystore.properties
+livraison/

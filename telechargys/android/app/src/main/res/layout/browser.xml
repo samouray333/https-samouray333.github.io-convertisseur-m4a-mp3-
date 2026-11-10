@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@color/bar">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="52dp" android:orientation="horizontal"
+        android:gravity="center_vertical" android:paddingStart="6dp" android:paddingEnd="6dp">
+        <TextView android:id="@+id/close" style="@style/BrowserBtn" android:text="✕" android:contentDescription="Fermer" />
+        <EditText android:id="@+id/url" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:background="@drawable/url_bg" android:paddingStart="14dp" android:paddingEnd="14dp" android:textSize="15sp"
+            android:singleLine="true" android:inputType="textUri" android:imeOptions="actionGo" android:selectAllOnFocus="true"
+            android:hint="Adresse ou recherche" android:textColor="@color/text" android:textColorHint="@color/mute" android:importantForAutofill="no" />
+        <TextView android:id="@+id/media" android:layout_width="wrap_content" android:layout_height="40dp" android:layout_marginStart="6dp"
+            android:background="@drawable/media_bg" android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
+            android:text="⬇ 0" android:textColor="#FFFFFF" android:textSize="15sp" android:textStyle="bold" android:alpha="0.45" />
+    </LinearLayout>
+    <ProgressBar android:id="@+id/progress" style="@android:style/Widget.DeviceDefault.ProgressBar.Horizontal"
+        android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progressTint="@color/accent" />
+    <WebView android:id="@+id/web" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="46dp" android:orientation="horizontal" android:gravity="center">
+        <TextView android:id="@+id/back" style="@style/BrowserBtn" android:layout_weight="1" android:text="←" android:contentDescription="Page précédente" />
+        <TextView android:id="@+id/fwd" style="@style/BrowserBtn" android:layout_weight="1" android:text="→" android:contentDescription="Page suivante" />
+        <TextView android:id="@+id/reload" style="@style/BrowserBtn" android:layout_weight="1" android:text="⟳" android:contentDescription="Actualiser" />
+        <TextView android:id="@+id/grab" style="@style/BrowserBtn" android:layout_weight="1" android:text="🔗" android:contentDescription="Télécharger cette adresse" />
+    </LinearLayout>
+</LinearLayout>

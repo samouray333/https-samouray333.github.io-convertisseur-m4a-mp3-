@@ -490,7 +490,8 @@ function openPair(p) {
 }
 function applyTheme() {
   const t = S.settings.theme || 'auto';
-  document.documentElement.dataset.theme = t === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : t;
+  const sysDark = typeof window.tySystemDark === 'boolean' ? window.tySystemDark : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = t === 'auto' ? (sysDark ? 'dark' : 'light') : t;
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
@@ -578,6 +579,16 @@ function initUI() {
 }
 // appelé par les coques (lien reçu, presse-papiers...)
 window.tyAddUrl = (url, extra) => openAdd({ url, ...(extra || {}) });
+// bouton Retour d'Android : ferme ce qui est ouvert, sinon laisse l'appli passer en arrière-plan
+window.tyBack = () => {
+  const ms = $$('.modal');
+  if (ms.length) { ms[ms.length - 1].close(); return true; }
+  if (!$('#ctx').hidden) { hideCtx(); return true; }
+  if (V.sel.size) { clearSel(); return true; }
+  if ($('#top').classList.contains('searching')) { $('#search').value = ''; V.search = ''; $('#top').classList.remove('searching'); renderList(); return true; }
+  return false;
+};
+window.applyTheme = applyTheme;
 
 initUI();
 load().catch(e => { document.body.innerHTML = '<p style="padding:30px;font-size:16px">Connexion au moteur impossible : ' + e.message + '</p>'; });
