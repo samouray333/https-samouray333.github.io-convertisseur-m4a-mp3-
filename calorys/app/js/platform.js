@@ -34,7 +34,8 @@
 
   async function load() {
     if (kind === 'windows') {
-      try { return JSON.parse(await Neutralino.filesystem.readFile(dataFile)); } catch (e) { /* premier lancement */ }
+      try { return JSON.parse(await Neutralino.filesystem.readFile(dataFile)); } catch (e) { /* premier lancement ou fichier abîmé */ }
+      try { return JSON.parse(await Neutralino.filesystem.readFile(dataFile + '.bak')); } catch (e) { /* pas de copie */ }
       const bak = lsGet(STORE_KEY);
       return bak ? JSON.parse(bak) : null;
     }
@@ -50,7 +51,7 @@
 
   function save(state) {
     const json = JSON.stringify(state);
-    lsSet(STORE_KEY, json);
+    const stored = lsSet(STORE_KEY, json);
     if (kind === 'android' && native.saveBackup) {
       pendingJson = json;
       clearTimeout(writeTimer);
@@ -61,6 +62,8 @@
       clearTimeout(writeTimer);
       writeTimer = setTimeout(flush, 500);
     }
+    // Sur Android et Windows, la copie de référence est le fichier : seul le navigateur dépend du localStorage.
+    return kind === 'web' ? stored : true;
   }
 
   async function flush() {
@@ -70,7 +73,9 @@
     if (kind === 'windows') {
       const tmp = dataFile + '.tmp';
       await Neutralino.filesystem.writeFile(tmp, json);
-      try { await Neutralino.filesystem.remove(dataFile); } catch (e) { /* absent */ }
+      // L'ancienne version devient data.json.bak : une coupure pendant l'écriture ne laisse jamais sans fichier.
+      try { await Neutralino.filesystem.remove(dataFile + '.bak'); } catch (e) { /* absent */ }
+      try { await Neutralino.filesystem.move(dataFile, dataFile + '.bak'); } catch (e) { /* premier enregistrement */ }
       await Neutralino.filesystem.move(tmp, dataFile);
     }
   }

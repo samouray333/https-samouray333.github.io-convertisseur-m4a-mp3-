@@ -4,7 +4,7 @@
   'use strict';
   const N = window.Nutrition, C = window.Charts, P = window.Platform, E = window.Engine, CAT = window.Catalog;
   const NV = window.NUTRAVYN || { cats: [], foods: [], recipes: [] };
-  const APP_VERSION = '1.6.5';
+  const APP_VERSION = '1.7.0';
   const $ = (s, r) => (r || document).querySelector(s);
 
   /* ---------- Icônes ---------- */
@@ -105,10 +105,10 @@
         adaptive: true, exercisePct: 50, waterAuto: true, waterGoal: 2000, glass: 250, stepsGoal: 8000 },
       days: {}, weights: [], foods: [], recipes: [], off: {}, favs: [], recents: [],
       fasting: { plan: '16:8', active: null, history: [] },
-      shopping: [], favRecipes: [], program: null,
+      shopping: [], favRecipes: [], program: null, measures: [], lifts: [],
       settings: { theme: 'auto', accent: 'emerald', vivid: true, game: true, geminiKey: '', seenBelt: 'white', seenBadges: [],
         reminders: { on: false, meals: true, breakfast: '08:00', lunch: '12:30', dinner: '19:30', water: true, weigh: false, weighAt: '07:30', fastEnd: true,
-          waterMode: 'interval', waterEvery: 2, waterFrom: '08:00', waterTo: '20:00', waterTimes: '10:30, 15:00, 17:30', waterOverProgram: false, preMeal: false, voice: false, voiceMode: 'title' },
+          waterMode: 'interval', waterEvery: 2, waterFrom: '08:00', waterTo: '20:00', waterTimes: '10:30, 15:00, 17:30', waterOverProgram: false, preMeal: false, voice: false, voiceMode: 'title', weekly: true },
         scale: { hc: false, last: 0, pick: 'first', apps: [] } }
     };
   }
@@ -122,6 +122,14 @@
     out.settings = Object.assign(defaults().settings, s.settings || {});
     out.settings.reminders = Object.assign(defaults().settings.reminders, (s.settings || {}).reminders || {});
     out.settings.scale = Object.assign(defaults().settings.scale, (s.settings || {}).scale || {});
+    const okDate = x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date);
+    out.measures = (Array.isArray(out.measures) ? out.measures : []).filter(okDate).sort((a, b) => (a.date < b.date ? -1 : 1));
+    out.lifts = (Array.isArray(out.lifts) ? out.lifts : []).filter(l => okDate(l) && l.kg > 0 && l.reps > 0).map(l => Object.assign(l, { name: String(l.name || '').slice(0, 60), id: String(l.id || '').replace(/[^a-z0-9]/gi, '') }));
+    // Données venues d'un fichier (sauvegarde, synchro) : on ne garde que des pesées bien formées.
+    out.weights = (Array.isArray(out.weights) ? out.weights : []).filter(w => w && /^\d{4}-\d{2}-\d{2}$/.test(w.date) && typeof w.kg === 'number' && w.kg > 20 && w.kg < 400)
+      .map(w => { if (w.src != null) w.src = String(w.src).slice(0, 40); return w; }).sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!out.days || typeof out.days !== 'object' || Array.isArray(out.days)) out.days = {};
+    for (const k of Object.keys(out.days)) if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) delete out.days[k];
     // v1.0 -> v1.1 : "ajouter les calories des activités" (tout ou rien) devient un pourcentage (50 % conseillé).
     const sp = (s.profile || {});
     if (sp.exercisePct == null && sp.addExercise === false) out.profile.exercisePct = 0;
@@ -136,9 +144,36 @@
   let saveTimer = null;
   function save() {
     goalsMemo = null; gameMemo = null; clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => { Sync.stamp(S); P.save(S); if (Sync.hosting) Sync.hostOffer(); }, 250);
+    saveTimer = setTimeout(() => {
+      Sync.stamp(S);
+      // Navigateur : si le stockage est plein, on le dit au lieu de perdre les données en silence.
+      if (P.save(S) === false && !ui.saveWarned) { ui.saveWarned = true; toast('Stockage du navigateur plein : fais une sauvegarde (Profil > Sauvegarder mes données).'); }
+      if (Sync.hosting) Sync.hostOffer();
+      pushWidget();
+    }, 250);
   }
 
+  /* Android : résumé du jour pour le widget d'écran d'accueil, et reprise des verres ajoutés depuis le widget. */
+  function pushWidget() {
+    if (!(window.CalorysNative && window.CalorysNative.setWidget) || !S.profile.onboarded) return;
+    try {
+      const keep = ui.date; ui.date = today(); goalsMemo = null;
+      const g = goals(), t = dayTotals(today()), F = S.fasting, p = prog();
+      ui.date = keep; goalsMemo = null;
+      let info = '';
+      if (!F.active && p && p.fasting) info = 'Repas de ' + p.fasting.eatStart + ' à ' + p.fasting.eatEnd;
+      window.CalorysNative.setWidget(JSON.stringify({ date: today(), left: Math.round(g.kcal - t.eaten + credited(t)), goal: Math.round(g.kcal), water: Math.round(t.water), waterGoal: Math.round(g.water),
+        glass: S.profile.glass, fastStart: F.active ? F.active.start : 0, fastGoalH: F.active ? parseInt(F.active.plan, 10) || 16 : 0, info }));
+    } catch (e) { /* le widget est facultatif */ }
+  }
+  function takeWidgetWater() {
+    if (!(window.CalorysNative && window.CalorysNative.takeWidgetWater) || !S.profile.onboarded) return;
+    let o = null;
+    try { o = JSON.parse(window.CalorysNative.takeWidgetWater() || 'null'); } catch (e) { /* ignore */ }
+    if (!o || !(o.ml > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(o.date) || o.date > today()) return;
+    const d = dayMut(o.date); d.water = (d.water || 0) + Math.min(6000, Math.round(o.ml));
+    save(); render();
+  }
   function emptyDay() { return { meals: { breakfast: [], lunch: [], dinner: [], snack: [] }, water: 0, acts: [], steps: 0 }; }
   function dayGet(k) { return S.days[k] || emptyDay(); }
   function dayMut(k) {
@@ -189,7 +224,7 @@
   }
   /* Alerte : la masse maigre baisse nettement (≥ 1 kg et plus de 40 % de la perte, ou sans perte de poids). */
   /* Écart réel entre la dernière pesée et la précédente, et évolution de la tendance lissée sur la même période. */
-  const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '±') + fr(Math.abs(Math.round(v * 10) / 10));
+  const sgn = v => { const r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '±') + fr(Math.abs(r)); };
   function weightChange() {
     const n = S.weights.length;
     if (n < 2) return null;
@@ -497,6 +532,7 @@
         <i class="belt-prog"><i style="width:${Math.round(gm.progress * 100)}%"></i></i></span>
         <span class="streak">${icon('flame')}<b>${gm.streak}</b></span></button>`;
     }
+    h += weekBanner();
     h += programCard();
     if (g.cut) h += cutCard(g);
     h += `<section class="card summary">
@@ -505,6 +541,7 @@
       <div class="sum-side"><b>${kcal(t.burned)}</b><span>brûlées${t.burned && S.profile.exercisePct < 100 ? ` (${S.profile.exercisePct} % rendues)` : ''}</span></div>
       <div class="macros">${macro('c', 'Glucides', 'carb')}${macro('p', 'Protéines', 'prot')}${macro('f', 'Lipides', 'fat')}</div>
       ${g.info.note ? `<p class="target-note">${icon('info')}<span>${esc(g.info.note)}</span></p>` : ''}
+      ${left >= 80 && t.count ? `<button class="sugg-btn" data-act="suggest">${icon('sparkle')}Que manger avec ce qu'il me reste ?</button>` : ''}
     </section>`;
     for (const m of MEALS) {
       const list = d.meals[m.id] || [];
@@ -588,6 +625,7 @@
           ${mode === 'log' ? `<button class="qa" data-act="photoAi">${icon('sparkle')}<span>Photo IA</span></button>` : ''}
           ${mode === 'log' ? `<button class="qa" data-act="quickAdd">${icon('bolt')}<span>Ajout rapide</span></button>` : ''}
           <button class="qa" data-act="newFood">${icon('edit')}<span>Créer un aliment</span></button>
+          <button class="qa" data-act="labelAi">${icon('report')}<span>Étiquette IA</span></button>
           ${mode === 'log' ? `<button class="qa" data-act="newRecipe">${icon('recipe')}<span>Recette</span></button>` : ''}
         </div><div class="results" id="results"></div>`;
       return h;
@@ -608,7 +646,7 @@
   function pimg(f, size, cls) {
     const u = N.productImage(f, size);
     if (!u) return '';
-    return `<img class="${cls || 'pimg'}" src="${u.src}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">`;
+    return `<img class="${cls || 'pimg'}" src="${esc(u.src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-rm>`;
   }
   function resultRow(f, s) {
     const plus = s.data.mode === 'log' ? `<button class="add-btn sm" data-act="quickLog" data-key="${esc(f.key)}" aria-label="Ajouter directement">${icon('plus')}</button>` : '';
@@ -1110,8 +1148,24 @@
   window.__calorysHealth = (kind, json) => {
     if (kind === 'perm') {
       const st = healthStatus();
+      if (st.steps && window.CalorysNative.healthSteps) window.CalorysNative.healthSteps(30);
       if (st.weight) { S.settings.scale.hc = true; save(); healthSync(false); } else toast('Autorisation refusée : active Calorys dans Health Connect.', { label: 'Ouvrir', fn: () => window.CalorysNative.healthSettings() });
       for (const sh of sheets) if (sh.opts.scale) sh.refresh();
+      return;
+    }
+    if (kind === 'steps') {
+      // Pas lus dans Health Connect : ils remplacent la valeur du jour, sauf si elle a été tapée à la main.
+      let d = {}, n = 0;
+      try { d = JSON.parse(json); } catch (e) { /* ignore */ }
+      for (const x of d.steps || []) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(x.d) || !(x.n > 0) || x.d > today()) continue;
+        const cur = S.days[x.d];
+        if (cur && cur.stepsSrc === 'manual') continue;
+        const v = Math.min(200000, Math.round(x.n));
+        if (cur && cur.steps === v) continue;
+        const day = dayMut(x.d); day.steps = v; day.stepsSrc = 'hc'; n++;
+      }
+      if (n) { save(); render(); }
       return;
     }
     if (kind !== 'data') return;
@@ -1127,7 +1181,9 @@
   function healthAuto() {
     if (!hasHealth() || !S.settings.scale.hc || Date.now() - (ui.healthAt || 0) < 60000) return;
     ui.healthAt = Date.now();
-    if (healthStatus().weight) healthSync(true);
+    const st = healthStatus();
+    if (st.weight) healthSync(true);
+    if (st.steps && window.CalorysNative.healthSteps) window.CalorysNative.healthSteps(7);
   }
 
   /* Import CSV : exports de Fitdays, Renpho, Withings, Zepp, Garmin, Excel… Colonnes reconnues : date, poids, masse grasse. */
@@ -1196,7 +1252,8 @@
           <div class="row-btns"><button class="btn grow" data-act="healthSync">Synchroniser maintenant</button><button class="btn ghost" data-act="healthPerms">Autorisations</button></div>
           <button class="btn ghost" data-act="healthOff">Déconnecter</button>`;
       return sheetHead('Balance connectée', 'Poids et masse grasse de ta balance') + `<div class="form">
-        <div class="wset"><p><b>Health Connect</b> (Android)</p>${hc}</div>
+        <div class="wset"><p><b>Health Connect</b> (Android)</p>${hc}
+          ${st && st.available && sc.hc ? `<p class="small ${st.steps ? 'muted' : 'warn-text'}">${st.steps ? 'Pas : importés automatiquement chaque jour (téléphone ou montre). Une valeur tapée à la main n\'est pas remplacée.' : 'Pas : pas encore autorisés.'}</p>${st.steps ? '' : '<button class="btn ghost" data-act="healthConnect">Importer aussi mes pas</button>'}` : ''}</div>
         <div class="wset"><p><b>Fichier CSV</b> (Android et PC)</p>
           <p class="small muted">Exporte tes pesées depuis l'appli de ta balance (souvent Profil > Exporter les données, ou par e-mail), puis importe le fichier. Colonnes reconnues : date, poids (kg ou lb), masse grasse (%).</p>
           <button class="btn ghost" data-act="scaleCsv">${icon('download')}Importer un fichier CSV</button></div>
@@ -1224,29 +1281,7 @@
     ['mage', 'Âge métabolique', 'ans', w => w.mage, 'var(--muted)', 'down']
   ];
   /* Fait défiler la rangée de pastilles jusqu'à la mesure choisie. */
-  function showChip() { const on = $('.mchip.on'); if (on) { const r = on.parentElement; r.scrollLeft = on.offsetLeft - (r.clientWidth - on.offsetWidth) / 2; } }
-  function metricExplorer(since) {
-    const avail = METRICS.filter(m => S.weights.some(w => m[3](w) != null));
-    if (!avail.length) return '';
-    const cur = avail.find(m => m[0] === ui.compMetric) || avail.find(m => m[0] === 'fat') || avail[0];
-    const [key, label, unit, get, color, better] = cur;
-    let pts = S.weights.filter(w => get(w) != null).map(w => ({ date: w.date, v: get(w) }));
-    const inRange = pts.filter(x => pkey(x.date).getTime() >= since);
-    const shown = inRange.length >= 2 ? inRange : pts.slice(-30);
-    const r1 = v => Math.round(v * 10) / 10, last = shown[shown.length - 1], first = shown[0];
-    const d = shown.length > 1 ? last.v - first.v : 0;
-    const tone = Math.abs(d) < 0.05 || !better ? '' : (better === 'down' ? d < 0 : d > 0) ? 'good' : 'bad';
-    const vals = shown.map(x => x.v);
-    const chart = shown.length >= 2
-      ? C.line(shown.map(x => ({ x: pkey(x.date).getTime(), y: r1(x.v), title: pkey(x.date).toLocaleDateString('fr-FR') + ' : ' + fr(r1(x.v)) + (unit ? ' ' + unit : '') })), key === 'kg' ? S.profile.targetWeight : null, { label })
-      : '<p class="empty">Il faut au moins deux mesures pour tracer la courbe.</p>';
-    const du = unit === '%' ? 'pt' : unit;
-    return `<div class="mexp" style="--mcol:${color}">
-      <div class="mchips">${avail.map(m => `<button class="mchip ${m === cur ? 'on' : ''}" data-act="compMetric" data-m="${m[0]}" style="--mc:${m[4]}">${m[1]}</button>`).join('')}</div>
-      <div class="mhead"><div><span class="muted small">${label}${inRange.length >= 2 ? '' : ' · toutes les mesures'}</span><div class="mval">${fr(r1(last.v))}<small>${unit}</small></div></div>
-        ${shown.length > 1 ? `<div class="mside"><span class="wdelta ${tone}">${d < -0.04 ? '▼' : d > 0.04 ? '▲' : '='} ${sgn(d)}${du ? ' ' + du : ''}</span><small class="muted">depuis le ${pkey(first.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · min ${fr(r1(Math.min(...vals)))} · max ${fr(r1(Math.max(...vals)))}</small></div>` : ''}</div>
-      ${chart}</div>`;
-  }
+  function showChips() { document.querySelectorAll('.mchip.on').forEach(on => { const r = on.parentElement; r.scrollLeft = on.offsetLeft - (r.clientWidth - on.offsetWidth) / 2; }); }
   function bodyCard(since) {
     const list = S.weights.filter(w => w.fat != null || w.muscle != null);
     if (!list.length) return '';
@@ -1330,7 +1365,8 @@
     const aK = avg(x => x.eaten), aP = avg(x => x.n.p), aC = avg(x => x.n.c), aF = avg(x => x.n.f);
     const fmtLabel = k => { const d = pkey(k); return R <= 7 ? d.toLocaleDateString('fr-FR', { weekday: 'short' }).slice(0, 3) : d.getDate() + '/' + (d.getMonth() + 1); };
     const data = tots.map(x => ({ label: fmtLabel(x.k), value: x.t.eaten, title: dayLabel(x.k) + ' : ' + kcal(x.t.eaten) + ' kcal' }));
-    let h = `<div class="topbar"><h1>Analyse</h1><div class="seg">${[7, 30, 90].map(r => `<button class="${R === r ? 'on' : ''}" data-act="range" data-r="${r}">${r} j</button>`).join('')}</div></div>`;
+    let h = `<div class="topbar"><h1>Analyse</h1><div class="seg">${[7, 30, 90].map(r => `<button class="${R === r ? 'on' : ''}" data-act="range" data-r="${r}">${r} j</button>`).join('')}</div></div>
+      <div class="stat-actions"><button class="chip" data-act="weekReview">${icon('report')}Bilan de la semaine</button><button class="chip" data-act="monthReport">${icon('download')}Rapport du mois</button><button class="chip" data-act="coach">${icon('sparkle')}Coach IA</button></div>`;
     h += `<section class="card"><h3>Calories</h3><p class="muted">Moyenne ${kcal(aK)} kcal / jour sur ${logged.length} jour(s) renseigné(s)</p>${C.bars(data, g.kcal, { label: 'Calories par jour' })}</section>`;
     const ad = g.adaptive;
     h += `<section class="card adaptive"><header class="meal-head"><span class="meal-ic act">${icon('target')}</span><div class="grow"><h3>Dépense réelle</h3>
@@ -1364,6 +1400,8 @@
       ${ws.length >= 3 ? '<p class="legend-line"><i class="lg-raw"></i>pesées <i class="lg-trend"></i>tendance lissée</p><p class="muted small">La tendance lissée ne retient qu\'un quart de chaque nouvelle pesée : elle gomme l\'eau et la digestion (souvent ±1 kg d\'un jour à l\'autre). C\'est elle qui sert à ajuster ton objectif.</p>' : ''}
       ${S.weights.length ? `<details><summary>Toutes les pesées (${S.weights.length})</summary><ul class="entries">${S.weights.slice().reverse().map(w => `<li><div class="grow"><b>${fr(w.kg)} kg</b><span class="muted">${pkey(w.date).toLocaleDateString('fr-FR')}${w.waist ? ' · taille ' + fr(w.waist) + ' cm' : ''}${w.fat ? ' · ' + fr(w.fat) + ' % de masse grasse' : ''}${w.muscle ? ' · muscle ' + fr(w.muscle) + ' kg' : ''}${w.src ? ' · ' + esc(w.src) : ''}</span></div><button class="icon-btn" data-act="delWeight" data-date="${w.date}" aria-label="Supprimer">${icon('trash')}</button></li>`).join('')}</ul></details>` : ''}</section>`;
     h += bodyCard(since);
+    h += measuresCard(since);
+    h += liftsCard(since);
     const aW = avg(x => x.water);
     const fasts = S.fasting.history.filter(x => x.end >= since);
     h += `<section class="card stats-grid">
@@ -1392,8 +1430,13 @@
         ${row('manageFoods', 'food', 'Mes aliments et recettes', (S.foods.length + Object.keys(S.off).length) + ' / ' + S.recipes.length)}
         ${row('catalog', 'box', 'Catalogue produits hors ligne', { ready: 'installé', downloading: Math.round(CAT.status().progress * 100) + ' %', error: 'erreur', none: 'non installé' }[CAT.status().state])}
         ${row('gemini', 'sparkle', 'Analyse photo (Gemini)', S.settings.geminiKey ? 'activée' : 'à configurer')}
-        ${row('programs', 'recipe', 'Programmes', S.program ? S.program.p.name : 'aucun')}
-        ${row('scale', 'scale', 'Balance connectée', scaleSummary())}
+        ${row('programs', 'recipe', 'Programmes', S.program ? esc(S.program.p.name) : 'aucun')}
+        ${row('scale', 'scale', P.kind === 'android' ? 'Balance connectée et pas' : 'Balance connectée', scaleSummary())}
+        ${row('coach', 'sparkle', 'Coach IA', S.settings.geminiKey ? '' : 'clé Gemini requise')}
+        ${row('weekReview', 'report', 'Bilan de la semaine')}
+        ${row('monthReport', 'download', 'Rapport du mois (PDF)')}
+        ${row('measures', 'scale', 'Mensurations', measRows().length ? measRows().length + ' mesure(s)' : '')}
+        ${row('lifts', 'run', 'Carnet de musculation', (S.lifts || []).length ? S.lifts.length + ' série(s)' : '')}
         ${row('reminders', 'bell', 'Rappels', S.program ? 'pilotés par le programme' : S.settings.reminders.on ? 'activés' : 'désactivés')}
         ${row('sync', 'share', 'Synchroniser mes appareils', lastSyncText())}
         ${row('progress', 'belt', 'Ma progression', S.settings.game ? 'ceinture ' + game().belt.label.toLowerCase() : 'désactivée')}
@@ -1709,8 +1752,9 @@ Règles:
       const timer = ctl ? setTimeout(() => ctl.abort(), 90000) : null;
       let r;
       try {
-        r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key),
-          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, signal: ctl ? ctl.signal : undefined });
+        // Clé dans un en-tête, pas dans l'adresse (les adresses finissent dans les journaux réseau).
+        r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent',
+          { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: payload, signal: ctl ? ctl.signal : undefined });
       } catch (e) {
         clearTimeout(timer);
         if (e && e.name === 'AbortError') { last = { timeout: true }; continue; }
@@ -1844,6 +1888,382 @@ Règles:
       <div class="sheet-actions"><button class="btn grow" data-act="printReport">${icon('download')}Imprimer / enregistrer en PDF</button></div>`, { full: true });
   }
 
+  /* ---------- Courbes à pastilles (composition, mensurations, force) ---------- */
+  /* metrics : [clé, libellé, unité, lecture(row), couleur, sens favorable 'up' | 'down' | ''] ; rows : [{date, …}] triées. */
+  function seriesExplorer(id, metrics, rows, since, dflt, target) {
+    const avail = metrics.filter(m => rows.some(w => m[3](w) != null));
+    if (!avail.length) return '';
+    const sel = (ui.ser || (ui.ser = {}))[id];
+    const cur = avail.find(m => m[0] === sel) || avail.find(m => m[0] === dflt) || avail[0];
+    const [key, label, unit, get, color, better] = cur;
+    const pts = rows.filter(w => get(w) != null).map(w => ({ date: w.date, v: get(w) }));
+    const inRange = pts.filter(x => pkey(x.date).getTime() >= since);
+    const shown = inRange.length >= 2 ? inRange : pts.slice(-30);
+    const r1 = v => Math.round(v * 10) / 10, last = shown[shown.length - 1], first = shown[0];
+    const d = shown.length > 1 ? last.v - first.v : 0;
+    const tone = Math.abs(d) < 0.05 || !better ? '' : (better === 'down' ? d < 0 : d > 0) ? 'good' : 'bad';
+    const vals = shown.map(x => x.v);
+    const chart = shown.length >= 2
+      ? C.line(shown.map(x => ({ x: pkey(x.date).getTime(), y: r1(x.v), title: pkey(x.date).toLocaleDateString('fr-FR') + ' : ' + fr(r1(x.v)) + (unit ? ' ' + unit : '') })), target && target(key) || null, { label })
+      : '<p class="empty">Il faut au moins deux mesures pour tracer la courbe.</p>';
+    const du = unit === '%' ? 'pt' : unit;
+    return `<div class="mexp" style="--mcol:${color}">
+      <div class="mchips">${avail.map(m => `<button class="mchip ${m === cur ? 'on' : ''}" data-act="serMetric" data-s="${id}" data-m="${esc(m[0])}" style="--mc:${m[4]}">${esc(m[1])}</button>`).join('')}</div>
+      <div class="mhead"><div><span class="muted small">${esc(label)}${inRange.length >= 2 ? '' : ' · toutes les mesures'}</span><div class="mval">${fr(r1(last.v))}<small>${unit}</small></div></div>
+        ${shown.length > 1 ? `<div class="mside"><span class="wdelta ${tone}">${d < -0.04 ? '▼' : d > 0.04 ? '▲' : '='} ${sgn(d)}${du ? ' ' + du : ''}</span><small class="muted">depuis le ${pkey(first.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} · min ${fr(r1(Math.min(...vals)))} · max ${fr(r1(Math.max(...vals)))}</small></div>` : ''}</div>
+      ${chart}</div>`;
+  }
+  function metricExplorer(since) {
+    return seriesExplorer('comp', METRICS, S.weights, since, 'fat', k => (k === 'kg' ? S.profile.targetWeight : null));
+  }
+
+  /* ---------- Mensurations ---------- */
+  const MEAS = [['waist', 'Tour de taille', 'var(--weight)'], ['hips', 'Hanches', 'var(--act)'], ['chest', 'Poitrine', 'var(--fat)'],
+    ['arm', 'Bras', 'var(--prot)'], ['thigh', 'Cuisse', 'var(--carb)'], ['neck', 'Cou', 'var(--water)']];
+  /* Les tours de taille saisis avec une pesée comptent aussi. */
+  function measRows() {
+    const by = new Map();
+    for (const w of S.weights) if (w.waist) by.set(w.date, { date: w.date, waist: w.waist });
+    for (const m of S.measures || []) by.set(m.date, Object.assign(by.get(m.date) || {}, m));
+    return [...by.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+  }
+  function measuresCard(since) {
+    const rows = measRows();
+    const gain = S.profile.goal === 'gain';
+    const metrics = MEAS.map(([k, l, c]) => [k, l, 'cm', r => r[k], c, k === 'arm' || k === 'chest' || k === 'thigh' ? (gain ? 'up' : '') : 'down']);
+    return `<section class="card"><header class="meal-head"><div class="grow"><h3>Mensurations</h3><p class="muted">${rows.length ? 'Le mètre ruban montre ce que la balance ne voit pas' : 'Tour de taille, hanches, bras… une fois par semaine'}</p></div>
+      <button class="add-btn" data-act="measures" aria-label="Ajouter des mensurations">${icon('plus')}</button></header>
+      ${rows.length ? seriesExplorer('meas', metrics, rows, since, 'waist') : ''}</section>`;
+  }
+  function openMeasures() {
+    const rows = measRows(), last = k => { for (let i = rows.length - 1; i >= 0; i--) if (rows[i][k]) return rows[i][k]; return null; };
+    openSheet(() => sheetHead('Mensurations', 'En centimètres, le matin, toujours au même endroit') + `<div class="form">
+      <div class="grid2">${MEAS.map(([k, l]) => `<label class="field"><span>${l} (cm)</span><input id="ms_${k}" inputmode="decimal" placeholder="${last(k) ? fr(last(k)) : ''}"></label>`).join('')}</div>
+      <label class="field"><span>Date</span><input id="ms_date" type="date" value="${ui.date > today() ? today() : ui.date}" max="${today()}"></label>
+      <p class="muted small">Taille : au niveau du nombril, ventre relâché. Bras et cuisse : au plus large, muscle détendu. Remplis seulement ce que tu mesures.</p>
+      ${(S.measures || []).length ? `<details><summary>Historique (${S.measures.length})</summary><ul class="entries">${S.measures.slice().reverse().map(m => `<li><div class="grow"><b>${pkey(m.date).toLocaleDateString('fr-FR')}</b><span class="muted">${MEAS.filter(([k]) => m[k]).map(([k, l]) => l + ' ' + fr(m[k])).join(' · ')}</span></div><button class="icon-btn" data-act="delMeasure" data-date="${m.date}" aria-label="Supprimer">${icon('trash')}</button></li>`).join('')}</ul></details>` : ''}
+      </div><div class="sheet-actions"><button class="btn grow" data-act="saveMeasures">${icon('check')}Enregistrer</button></div>`);
+  }
+
+  /* ---------- Carnet de musculation ---------- */
+  const LIFT_NAMES = ['Squat', 'Développé couché', 'Soulevé de terre', 'Développé militaire', 'Tractions lestées', 'Rowing barre', 'Presse à cuisses', 'Hip thrust', 'Dips lestés', 'Curl biceps', 'Fentes', 'Tirage vertical'];
+  /* Force estimée sur une répétition (formule d'Epley), pour comparer des séries différentes. */
+  const e1rm = l => (l.reps > 1 ? l.kg * (1 + Math.min(l.reps, 15) / 30) : l.kg);
+  function liftStats() {
+    const by = new Map();
+    for (const l of S.lifts || []) { const a = by.get(l.name) || []; a.push(l); by.set(l.name, a); }
+    return [...by.entries()].map(([name, list]) => {
+      const days = new Map();
+      for (const l of list) days.set(l.date, Math.max(days.get(l.date) || 0, e1rm(l)));
+      const pts = [...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, v]) => ({ date, v }));
+      return { name, n: pts.length, pts, last: pts[pts.length - 1], best: Math.max(...pts.map(p => p.v)) };
+    }).sort((a, b) => b.n - a.n);
+  }
+  /* Baisse de force nette (≥ 7 % sous le record des 8 dernières semaines, après au moins 3 séances) pendant une perte de poids. */
+  function liftAlert(stats) {
+    if (S.profile.goal !== 'lose' && S.profile.goal !== 'cut') return null;
+    const lim = addDays(today(), -56);
+    for (const s of stats) {
+      const rec = s.pts.filter(p => p.date >= lim);
+      if (rec.length < 3 || s.last.date < addDays(today(), -14)) continue;
+      const best = Math.max(...rec.slice(0, -1).map(p => p.v));
+      if (s.last.v < best * 0.93) return 'Ta force baisse sur « ' + s.name + ' » (' + fr(Math.round(s.last.v)) + ' kg estimés contre ' + fr(Math.round(best)) + ' kg). En perte de poids, c\'est souvent le signe d\'un déficit trop fort ou d\'un manque de protéines ou de sommeil.';
+    }
+    return null;
+  }
+  function liftsCard(since) {
+    const stats = liftStats().slice(0, 8);
+    const rows = [], idx = new Map();
+    stats.forEach((s, i) => s.pts.forEach(p => { let r = idx.get(p.date); if (!r) { r = { date: p.date }; idx.set(p.date, r); rows.push(r); } r['x' + i] = p.v; }));
+    rows.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const cols = ['var(--prot)', 'var(--fat)', 'var(--carb)', 'var(--weight)', 'var(--brand)', 'var(--act)', 'var(--water)', 'var(--warn)'];
+    const metrics = stats.map((s, i) => ['x' + i, s.name, 'kg', r => r['x' + i], cols[i % cols.length], 'up']);
+    const a = liftAlert(stats);
+    return `<section class="card"><header class="meal-head"><div class="grow"><h3>Force</h3><p class="muted">${stats.length ? 'Charge maximale estimée sur 1 répétition' : 'Note tes charges pour vérifier que tu gardes ta force'}</p></div>
+      <button class="add-btn" data-act="lifts" aria-label="Ajouter un exercice">${icon('plus')}</button></header>
+      ${stats.length ? seriesExplorer('lift', metrics, rows, since, 'x0') : ''}
+      ${a ? `<p class="target-note">${icon('info')}<span>${esc(a)}</span></p>` : ''}</section>`;
+  }
+  function openLifts() {
+    openSheet(s => {
+      const names = Array.from(new Set(liftStats().map(x => x.name).concat(LIFT_NAMES)));
+      const recent = (S.lifts || []).slice().sort((a, b) => (a.date === b.date ? (a.id < b.id ? 1 : -1) : a.date < b.date ? 1 : -1)).slice(0, 20);
+      const prev = (S.lifts || []).filter(l => l.name === s.data.name).pop();
+      return sheetHead('Carnet de musculation', 'Ta meilleure série de chaque exercice') + `<div class="form">
+        <label class="field"><span>Exercice</span><input id="lf_name" list="lf_names" value="${esc(s.data.name || '')}" placeholder="Ex. Squat" autocomplete="off"><datalist id="lf_names">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></label>
+        <div class="grid3"><label class="field"><span>Charge (kg)</span><input id="lf_kg" inputmode="decimal" placeholder="${prev ? fr(prev.kg) : ''}"></label>
+          <label class="field"><span>Répétitions</span><input id="lf_reps" inputmode="numeric" placeholder="${prev ? prev.reps : '8'}"></label>
+          <label class="field"><span>Séries</span><input id="lf_sets" inputmode="numeric" placeholder="${prev ? prev.sets : '3'}"></label></div>
+        <label class="field"><span>Date</span><input id="lf_date" type="date" value="${ui.date > today() ? today() : ui.date}" max="${today()}"></label>
+        ${prev ? `<p class="muted small">Dernière fois (${pkey(prev.date).toLocaleDateString('fr-FR')}) : ${prev.sets} × ${prev.reps} à ${fr(prev.kg)} kg.</p>` : ''}
+        <button class="btn" data-act="saveLift">${icon('plus')}Ajouter</button>
+        ${recent.length ? `<ul class="entries">${recent.map(l => `<li><div class="grow"><b>${esc(l.name)}</b><span class="muted">${pkey(l.date).toLocaleDateString('fr-FR')} · ${l.sets} × ${l.reps} à ${fr(l.kg)} kg · ≈ ${fr(Math.round(e1rm(l)))} kg max</span></div><button class="icon-btn" data-act="delLift" data-id="${esc(l.id)}" aria-label="Supprimer">${icon('trash')}</button></li>`).join('')}</ul>` : ''}
+      </div>`;
+    }, { data: { name: '' }, mount: sh => { const el = $('#lf_name', sh.el); if (el) el.addEventListener('change', () => { sh.data.name = el.value.trim(); sh.refresh(); }); } });
+  }
+
+  /* ---------- Statistiques d'une période (bilan de la semaine, rapport du mois, coach) ---------- */
+  function periodStats(from, to) {
+    const keys = [];
+    for (let k = from; k <= to; k = addDays(k, 1)) keys.push(k);
+    // Objectif d'eau hors séance : celui du jour affiché dépend du sport d'aujourd'hui.
+    const g = Object.assign({}, goals(), { water: S.profile.waterAuto ? E.waterBaseMl(S.profile.sex, currentWeight()) : S.profile.waterGoal });
+    const tots = keys.map(k => ({ k, t: dayTotals(k), d: dayGet(k) })), logged = tots.filter(x => x.t.count > 0);
+    const avg = f => (logged.length ? logged.reduce((a, x) => a + f(x), 0) / logged.length : 0);
+    const mean = a => (a.length ? a.reduce((x, w) => x + w.kg, 0) / a.length : null);
+    const ws = S.weights.filter(w => w.date >= from && w.date <= to);
+    const prevFrom = addDays(from, -keys.length), wsPrev = S.weights.filter(w => w.date >= prevFrom && w.date < from);
+    const wAvg = mean(ws), wPrev = mean(wsPrev);
+    // Écart de poids : moyenne de la période contre la précédente ; à défaut, première et dernière pesées.
+    const wDiff = wAvg != null && wPrev != null ? wAvg - wPrev : ws.length > 1 ? ws[ws.length - 1].kg - ws[0].kg : null;
+    const comp = S.weights.filter(w => w.fat != null && w.date <= to);
+    const c1 = comp.length && comp[comp.length - 1].date >= from ? comp[comp.length - 1] : null;
+    const c0 = c1 ? comp.filter(w => w.date < from).pop() || comp.find(w => w.date >= from && w !== c1) || null : null;
+    const fatKg = w => w.kg * w.fat / 100;
+    const fasts = S.fasting.history.filter(f => { const k = dkey(new Date(f.end)); return k >= from && k <= to; });
+    const acts = tots.reduce((a, x) => a.concat(x.d.acts || []), []);
+    return { from, to, days: keys.length, logged: logged.length, goal: g,
+      kcal: avg(x => x.t.eaten), p: avg(x => x.t.n.p), c: avg(x => x.t.n.c), f: avg(x => x.t.n.f), fi: avg(x => x.t.n.fi || 0),
+      water: avg(x => x.t.water), steps: tots.reduce((a, x) => a + (x.d.steps || 0), 0) / keys.length,
+      protDays: logged.filter(x => x.t.n.p >= g.p * 0.9).length, kcalDays: logged.filter(x => Math.abs(x.t.eaten - g.kcal) <= g.kcal * 0.1).length,
+      weighIns: ws.length, wAvg, wPrev, wDiff, wLast: ws.length ? ws[ws.length - 1].kg : null,
+      fat: c1 ? c1.fat : null, fatKgDiff: c1 && c0 ? fatKg(c1) - fatKg(c0) : null, leanDiff: c1 && c0 ? (c1.kg - fatKg(c1)) - (c0.kg - fatKg(c0)) : null,
+      fasts: fasts.length, fastsOk: fasts.filter(f => f.end - f.start >= (f.goalH || parseInt(f.plan, 10) || 16) * 3600000).length,
+      sessions: acts.length, actMin: acts.reduce((a, x) => a + (x.min || 0), 0), actKcal: acts.reduce((a, x) => a + (x.kcal || 0), 0) };
+  }
+  /* Conseils du bilan : [ton, texte], du plus important au moins important. */
+  function weekAdvice(st) {
+    const out = [], p = S.profile, w = currentWeight(), losing = p.goal === 'lose' || p.goal === 'cut';
+    const perWeek = st.wDiff != null ? st.wDiff / st.days * 7 : null;
+    if (st.logged < 5) out.push(['info', st.logged + ' jour(s) noté(s) sur ' + st.days + '. Plus tu notes, plus l\'objectif adaptatif et ce bilan sont justes.']);
+    if (st.weighIns < 2) out.push(['info', 'Pèse-toi au moins 2 ou 3 fois par semaine, le matin à jeun : une seule pesée ne dit rien de la tendance.']);
+    else if (losing && perWeek != null) {
+      if (perWeek < -w * 0.01) out.push(['warn', 'Tu perds vite (' + sgn(perWeek) + ' kg par semaine, plus de 1 % de ton poids). Pour garder ton muscle, remonte un peu les calories ou vise ' + fr(Math.round(w * 0.007 * 10) / 10) + ' kg par semaine.']);
+      else if (perWeek <= -0.2) out.push(['good', 'Bon rythme : ' + sgn(perWeek) + ' kg par semaine. Ne change rien.']);
+      else if (st.logged >= 5) out.push(['warn', 'Le poids ne bouge presque pas (' + sgn(perWeek) + ' kg). Sur une seule semaine, c\'est souvent de l\'eau. Si ça dure 2 à 3 semaines : vérifie les oublis (huiles, sauces, boissons), ajoute 2 000 pas par jour ou retire 100 à 150 kcal.']);
+    } else if (p.goal === 'gain' && perWeek != null) {
+      out.push(perWeek >= 0.1 ? ['good', 'Prise de ' + sgn(perWeek) + ' kg par semaine : c\'est le bon sens.'] : ['warn', 'Pas de prise de poids cette semaine : ajoute 150 à 200 kcal par jour.']);
+    } else if (p.goal === 'maintain' && perWeek != null) {
+      out.push(Math.abs(perWeek) <= 0.3 ? ['good', 'Poids stable (' + sgn(perWeek) + ' kg) : objectif tenu.'] : ['info', 'Le poids a bougé de ' + sgn(perWeek) + ' kg : à surveiller la semaine prochaine.']);
+    }
+    if (st.logged >= 3) {
+      if (st.protDays < Math.ceil(st.logged * 0.6)) out.push(['warn', 'Protéines atteintes ' + st.protDays + ' jour(s) sur ' + st.logged + ' (moyenne ' + r0(st.p) + ' g pour ' + st.goal.p + ' g visés). C\'est la priorité pour garder ton muscle : ajoute une source à chaque repas.']);
+      else out.push(['good', 'Protéines atteintes ' + st.protDays + ' jour(s) sur ' + st.logged + ' : ton muscle est protégé.']);
+      if (losing && st.kcal > st.goal.kcal * 1.1) out.push(['warn', 'Moyenne de ' + kcal(st.kcal) + ' kcal pour ' + kcal(st.goal.kcal) + ' visées : le déficit prévu n\'est pas là.']);
+      if (losing && st.kcal < Math.min(st.goal.bmr, st.goal.kcal * 0.8)) out.push(['warn', 'Tu manges nettement sous ton objectif (' + kcal(st.kcal) + ' kcal en moyenne). Trop bas, on perd du muscle et on craque : remonte vers ' + kcal(st.goal.kcal) + ' kcal.']);
+    }
+    if (st.fatKgDiff != null && st.leanDiff != null) {
+      if (st.fatKgDiff < -0.2 && st.leanDiff > -0.5) out.push(['good', 'Composition : ' + sgn(st.fatKgDiff) + ' kg de graisse, masse maigre ' + sgn(st.leanDiff) + ' kg. C\'est exactement ce qu\'on cherche.']);
+      else if (st.leanDiff <= -1) out.push(['warn', 'Masse maigre ' + sgn(st.leanDiff) + ' kg d\'après ta balance. À confirmer sur plusieurs pesées (l\'hydratation joue beaucoup).']);
+    }
+    if (st.fasts && st.fastsOk < st.fasts) out.push(['info', 'Jeûnes tenus jusqu\'au bout : ' + st.fastsOk + ' sur ' + st.fasts + '.']);
+    if (st.water && st.water < st.goal.water * 0.7) out.push(['info', 'Eau : ' + fr(st.water / 1000, 1) + ' L par jour en moyenne pour ' + fr(st.goal.water / 1000, 1) + ' L visés.']);
+    if (!st.sessions && st.steps < 5000) out.push(['info', 'Aucune séance et peu de pas cette semaine : même 30 minutes de marche par jour comptent.']);
+    return out;
+  }
+  /* Semaine terminée la plus récente (lundi à dimanche), décalée de off semaines. */
+  function weekRange(off) {
+    const t = pkey(today()), dow = (t.getDay() + 6) % 7; // 0 = lundi
+    const end = addDays(today(), -dow - 1 + (off || 0) * 7), from = addDays(end, -6);
+    return [from, end];
+  }
+  const rangeLabel = (a, b) => 'du ' + pkey(a).toLocaleDateString('fr-FR', { day: 'numeric', month: pkey(a).getMonth() === pkey(b).getMonth() ? undefined : 'long' }) + ' au ' + pkey(b).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  function openWeekReview() {
+    S.settings.weekSeen = weekRange(0)[1]; save(); render();
+    openSheet(s => {
+      const [from, to] = weekRange(s.data.off), st = periodStats(from, to), g = st.goal, adv = weekAdvice(st);
+      const good = d => (S.profile.goal === 'gain' ? d > 0 : d < 0);
+      const tile = (l, v, sub, tone) => `<div class="wtile ${tone || ''}"><span class="muted">${l}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+      return sheetHead('Bilan de la semaine', rangeLabel(from, to)) + `
+        <div class="wnav"><button class="btn ghost" data-act="weekNav" data-n="-1">${icon('chevL')}Semaine d'avant</button><button class="btn ghost" data-act="weekNav" data-n="1" ${s.data.off >= 0 ? 'disabled' : ''}>Suivante${icon('chevR')}</button></div>
+        <div class="wtiles">
+          ${tile('Poids moyen', st.wAvg != null ? fr(Math.round(st.wAvg * 10) / 10) + ' kg' : '–', st.wDiff != null ? sgn(st.wDiff) + ' kg ' + (st.wPrev != null ? 'contre la semaine d\'avant' : 'sur la semaine') : st.weighIns + ' pesée(s)', st.wDiff == null || Math.abs(st.wDiff) < 0.05 ? '' : good(st.wDiff) ? 'good' : 'bad')}
+          ${tile('Calories', st.logged ? kcal(st.kcal) : '–', 'objectif ' + kcal(g.kcal) + ' · ' + st.kcalDays + ' j dans la cible')}
+          ${tile('Protéines', st.logged ? r0(st.p) + ' g' : '–', st.protDays + ' j sur ' + st.logged + ' atteints', st.logged >= 3 ? (st.protDays >= Math.ceil(st.logged * 0.6) ? 'good' : 'bad') : '')}
+          ${tile('Jours notés', st.logged + ' / ' + st.days, st.logged >= 6 ? 'régulier' : 'à compléter', st.logged >= 6 ? 'good' : '')}
+          ${st.fat != null ? tile('Masse grasse', fr(st.fat) + ' %', st.fatKgDiff != null ? sgn(st.fatKgDiff) + ' kg de graisse' : '', st.fatKgDiff != null && st.fatKgDiff < -0.05 ? 'good' : '') : ''}
+          ${tile('Eau', fr(st.water / 1000, 1) + ' L', 'par jour · objectif ' + fr(g.water / 1000, 1) + ' L')}
+          ${tile('Activité', st.sessions + ' séance(s)', (st.actMin ? st.actMin + ' min · ' : '') + Math.round(st.steps).toLocaleString('fr-FR') + ' pas par jour')}
+          ${st.fasts ? tile('Jeûnes', st.fastsOk + ' / ' + st.fasts, 'tenus jusqu\'au bout', st.fastsOk === st.fasts ? 'good' : '') : ''}
+        </div>
+        <h4 class="sec">Ce que ça dit</h4>
+        <ul class="advice">${adv.length ? adv.map(([t, x]) => `<li class="${t}"><i></i><span>${esc(x)}</span></li>`).join('') : '<li class="info"><i></i><span>Pas assez de données cette semaine pour un conseil.</span></li>'}</ul>
+        <div class="sheet-actions"><button class="btn ghost grow" data-act="coach">${icon('sparkle')}Demander au coach IA</button></div>`;
+    }, { data: { off: 0 }, full: true });
+  }
+  /* Carte du journal : le bilan de la semaine passée attend d'être lu (du dimanche soir au mercredi). */
+  function weekBanner() {
+    const [from, to] = weekRange(0);
+    if (S.settings.weekSeen === to || today() > addDays(to, 3) || ui.date !== today()) return '';
+    if (!Object.keys(S.days).some(k => k >= from && k <= to)) return '';
+    return `<button class="week-banner" data-act="weekReview">${icon('report')}<span class="grow"><b>Ton bilan de la semaine est prêt</b><span>${rangeLabel(from, to)}</span></span>${icon('chevR')}</button>`;
+  }
+
+  /* ---------- Rapport du mois (imprimable / PDF, pour un médecin, un diététicien ou un coach) ---------- */
+  function monthReportHtml() {
+    const to = today(), from = addDays(to, -29), st = periodStats(from, to), g = st.goal, p = S.profile;
+    const row = (l, v) => `<div><span>${l}</span><b>${v}</b></div>`;
+    const weeks = [];
+    for (let i = 3; i >= 0; i--) { const b = addDays(to, -i * 7), a = addDays(b, -6); weeks.push(periodStats(a, b)); }
+    const comp = S.weights.filter(w => w.fat != null && w.date >= from);
+    const ws = S.weights.filter(w => w.date >= from);
+    const meas = measRows().filter(m => m.date >= from);
+    const lifts = liftStats().filter(s => s.last.date >= from).slice(0, 6);
+    let h = `<div class="report"><header><div><b>CALORYS</b><span>Rapport sur 30 jours</span></div><div class="r-date">${rangeLabel(from, to)}<br>${pkey(to).getFullYear()}</div></header>
+      <div class="r-grid">${row('Profil', (p.sex === 'f' ? 'Femme' : 'Homme') + ', ' + p.age + ' ans, ' + p.height + ' cm')}${row('Objectif', { lose: 'Perte de poids', maintain: 'Maintien', gain: 'Prise de poids', cut: 'Sèche' }[p.goal] + (p.targetWeight ? ' (' + fr(p.targetWeight) + ' kg)' : ''))}
+        ${row('Poids', ws.length ? fr(ws[0].kg) + ' → ' + fr(ws[ws.length - 1].kg) + ' kg (' + sgn(ws[ws.length - 1].kg - ws[0].kg) + ')' : 'aucune pesée')}${row('IMC', fr(N.bmi(currentWeight(), p.height)))}</div>
+      <div class="r-grid">${row('Calories / jour', kcal(st.kcal) + ' (objectif ' + kcal(g.kcal) + ')')}${row('Protéines', r0(st.p) + ' g (objectif ' + g.p + ' g)')}${row('Glucides', r0(st.c) + ' g')}${row('Lipides', r0(st.f) + ' g')}</div>
+      <div class="r-grid">${row('Fibres', fr(st.fi, 0) + ' g')}${row('Eau', fr(st.water / 1000, 1) + ' L / jour')}${row('Jours notés', st.logged + ' / 30')}${row('Métabolisme estimé', kcal(g.bmr) + ' kcal')}</div>
+      <h3>Semaine par semaine</h3><table><tr><td><b>Semaine</b></td><td><b>Poids moyen</b></td><td><b>Calories</b></td><td><b>Protéines</b></td><td><b>Jours notés</b></td><td><b>Séances</b></td></tr>
+      ${weeks.map(w => `<tr><td>${rangeLabel(w.from, w.to)}</td><td>${w.wAvg != null ? fr(Math.round(w.wAvg * 10) / 10) + ' kg' : '–'}</td><td>${w.logged ? kcal(w.kcal) : '–'}</td><td>${w.logged ? r0(w.p) + ' g' : '–'}</td><td>${w.logged} / 7</td><td>${w.sessions}</td></tr>`).join('')}</table>`;
+    if (comp.length) {
+      const a = comp[0], b = comp[comp.length - 1], fk = w => w.kg * w.fat / 100;
+      h += `<h3>Composition corporelle (balance impédancemètre)</h3><table><tr><td><b>Date</b></td><td><b>Poids</b></td><td><b>Masse grasse</b></td><td><b>Graisse</b></td><td><b>Masse maigre</b></td><td><b>Muscle</b></td></tr>
+        ${(comp.length > 1 ? [a, b] : [b]).map(w => `<tr><td>${pkey(w.date).toLocaleDateString('fr-FR')}</td><td>${fr(w.kg)} kg</td><td>${fr(w.fat)} %</td><td>${fr(Math.round(fk(w) * 10) / 10)} kg</td><td>${fr(Math.round((w.kg - fk(w)) * 10) / 10)} kg</td><td>${w.muscle ? fr(w.muscle) + ' kg' : '–'}</td></tr>`).join('')}</table>`;
+    }
+    if (meas.length) h += `<h3>Mensurations (cm)</h3><table>${[meas[0]].concat(meas.length > 1 ? [meas[meas.length - 1]] : []).map(m => `<tr><td>${pkey(m.date).toLocaleDateString('fr-FR')}</td><td>${MEAS.filter(([k]) => m[k]).map(([k, l]) => l + ' ' + fr(m[k])).join(' · ')}</td></tr>`).join('')}</table>`;
+    h += `<h3>Activité</h3><p>${st.sessions} séance(s), ${st.actMin} minutes, ${kcal(st.actKcal)} kcal · ${Math.round(st.steps).toLocaleString('fr-FR')} pas par jour en moyenne${st.fasts ? ' · ' + st.fastsOk + ' jeûne(s) tenu(s) sur ' + st.fasts : ''}</p>`;
+    if (lifts.length) h += `<h3>Force (charge maximale estimée)</h3><table>${lifts.map(s => `<tr><td>${esc(s.name)}</td><td>${fr(Math.round(s.last.v))} kg le ${pkey(s.last.date).toLocaleDateString('fr-FR')}</td><td>record ${fr(Math.round(s.best))} kg</td></tr>`).join('')}</table>`;
+    h += `<footer>${esc(p.name || 'Calorys')} · généré le ${new Date().toLocaleString('fr-FR')} · données saisies par l'utilisateur, ce rapport n'est pas un document médical</footer></div>`;
+    return h;
+  }
+  function openMonthReport() {
+    openSheet(() => sheetHead('Rapport du mois', 'Les 30 derniers jours') + monthReportHtml() + `
+      <div class="sheet-actions"><button class="btn grow" data-act="printReport">${icon('download')}Imprimer / enregistrer en PDF</button></div>`, { full: true });
+  }
+
+  /* ---------- « Que manger avec ce qu'il me reste ? » ---------- */
+  function suggestions() {
+    const g = goals(), t = dayTotals(ui.date);
+    const leftK = g.kcal - t.eaten + credited(t), leftP = Math.max(0, g.p - t.n.p);
+    if (leftK < 80) return { leftK, leftP, list: [] };
+    const budget = Math.min(leftK, 750), need = Math.min(0.6, leftP * 4 / Math.max(leftK, 1));
+    const seen = new Set(), cands = [];
+    const add = (f, w) => { if (f && f.per100 && f.per100.e > 0 && !seen.has(f.key)) { seen.add(f.key); cands.push([f, w]); } };
+    S.favs.forEach(k => add(foodByKey(k), 3));
+    S.recents.slice(0, 40).forEach((r, i) => add(foodByKey(r.key), 2 - i / 40));
+    S.recipes.forEach(r => add(recipeFood(r), 1.5));
+    NV_RECIPE_FOODS.forEach(f => add(f, 0.6));
+    BASE_LIST.forEach(f => add(f, 0.3));
+    const out = [];
+    for (const [f, w] of cands) {
+      const e = f.per100.e, pr = f.per100.p || 0;
+      const typ = lastGrams(f.key);
+      const own = f.src === 'recipe' || f.src === 'nvrecipe', fatShare = (f.per100.f || 0) * 9 / e;
+      let gms = Math.min(own ? typ : typ * 1.5, budget / e * 100);
+      // Aliments très denses (fromages, charcuteries, huiles, confiseries) : petite portion seulement.
+      if (!own && e > 450) gms = Math.min(gms, 30);
+      else if (!own && e > 280) gms = Math.min(gms, 60);
+      gms = gms >= 100 ? Math.round(gms / 10) * 10 : Math.round(gms / 5) * 5;
+      if (gms < 20 || gms < typ * 0.4) continue;
+      const n = N.forGrams(f.per100, gms), share = pr * 4 / e;
+      // Assez de protéines pour le besoin restant (en apporter plus n'est jamais pénalisé), aliments connus d'abord,
+      // et les aliments gras ou très denses passent après.
+      const score = w + 2.5 * Math.min(1, share / Math.max(need, 0.15)) + Math.min(1, n.p / 30) + 0.5 * Math.min(1, n.e / budget)
+        - (fatShare > 0.6 ? 1.5 : 0) - (!own && e > 280 ? 1 : 0);
+      out.push({ f, g: gms, n, score });
+    }
+    out.sort((a, b) => b.score - a.score);
+    // Variété : pas plus de deux propositions du même groupe.
+    const groups = new Map(), list = [];
+    for (const x of out) { const k = x.f.src + '|' + (x.f.group || x.f.brand || ''); const c = groups.get(k) || 0; if (c >= 2) continue; groups.set(k, c + 1); list.push(x); if (list.length >= 8) break; }
+    return { leftK, leftP, list };
+  }
+  function openSuggest() {
+    openSheet(() => {
+      const r = suggestions(), meal = defaultMeal();
+      return sheetHead('Que manger avec ce qu\'il me reste ?', kcal(Math.max(0, r.leftK)) + ' kcal et ' + r0(r.leftP) + ' g de protéines à trouver') + (r.list.length ? `
+        <p class="muted small">Choisi parmi tes favoris, tes aliments récents et tes recettes, pour tomber au plus près de tes protéines. Ajouté dans : ${mealLabel(meal)}.</p>
+        <ul class="entries sugg">${r.list.map((x, i) => `<li>${x.f.key.startsWith('o:') ? pimg(x.f, 100) : ''}<div class="grow"><b>${esc(x.f.name)}</b><span class="muted">${fr(x.g)} g · ${kcal(x.n.e)} kcal · <b class="pr">${r0(x.n.p)} g de protéines</b></span></div>
+          <button class="add-btn" data-act="suggAdd" data-i="${i}" aria-label="Ajouter">${icon('plus')}</button></li>`).join('')}</ul>` : `<p class="empty">${r.leftK < 80 ? 'Tu es au bout de ton objectif pour aujourd\'hui.' : 'Note quelques aliments pour avoir des propositions.'}</p>`);
+    }, { data: {} });
+  }
+
+  /* ---------- Étiquette nutritionnelle lue par Gemini ---------- */
+  const LABEL_SCHEMA = { type: 'OBJECT', properties: { name: { type: 'STRING' }, brand: { type: 'STRING' }, kcal_100: { type: 'NUMBER' }, protein_100: { type: 'NUMBER' }, carbs_100: { type: 'NUMBER' },
+    sugars_100: { type: 'NUMBER' }, fat_100: { type: 'NUMBER' }, saturated_100: { type: 'NUMBER' }, fiber_100: { type: 'NUMBER' }, salt_100: { type: 'NUMBER' }, serving_g: { type: 'NUMBER' }, serving_name: { type: 'STRING' } }, required: ['kcal_100'] };
+  async function geminiLabel(b64) {
+    let r;
+    try {
+      r = await geminiPost({ contents: [{ role: 'user', parts: [{ text: 'Photo d\'un tableau de valeurs nutritionnelles. Recopie les valeurs POUR 100 g (ou 100 ml), pas celles par portion. ' +
+        'kcal_100 en kilocalories (pas en kJ). Sel en grammes. name et brand seulement s\'ils sont lisibles sur la photo. serving_g = poids d\'une portion si indiqué. Omet une valeur absente.' }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }],
+        generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: LABEL_SCHEMA } });
+    } catch (e) { throw new Error(e && /Gemini/.test(e.message) ? e.message : 'Pas de connexion Internet.'); }
+    if (!r) throw new Error('Aucun modèle Gemini disponible actuellement.');
+    if (!r.ok) throw await geminiError(r, 'Lecture de l\'étiquette échouée');
+    let o;
+    try { const gt = geminiText(await r.json()); if (gt.block) throw new Error('x'); o = JSON.parse(gt.text); } catch (e) { throw new Error('Étiquette illisible. Reprends la photo bien à plat, sans reflet.'); }
+    if (!(o.kcal_100 >= 0 && o.kcal_100 <= 950)) throw new Error('Aucune valeur nutritionnelle trouvée sur cette photo.');
+    const v = (x, max) => (typeof x === 'number' && x >= 0 && x <= max ? Math.round(x * 100) / 100 : null);
+    return { name: String(o.name || '').slice(0, 80), brand: String(o.brand || '').slice(0, 60),
+      per100: { e: v(o.kcal_100, 950), p: v(o.protein_100, 100), c: v(o.carbs_100, 100), su: v(o.sugars_100, 100), f: v(o.fat_100, 100), sa: v(o.saturated_100, 100), fi: v(o.fiber_100, 100), sl: v(o.salt_100, 100) },
+      portions: o.serving_g > 0 && o.serving_g < 2000 ? [{ l: String(o.serving_name || 'portion').slice(0, 30), g: Math.round(o.serving_g) }] : [] };
+  }
+  function pickLabelPhoto(after) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.setAttribute('capture', 'environment'); inp.hidden = true;
+    document.body.appendChild(inp);
+    inp.addEventListener('change', async () => {
+      const f = inp.files[0]; inp.remove();
+      if (!f) return;
+      const wait = openSheet(() => sheetHead('Lecture de l\'étiquette…', 'Gemini recopie le tableau nutritionnel') + '<div class="dl busy"><i></i></div>');
+      try {
+        const pre = await geminiLabel((await shrinkImage(f, 1800)).split(',')[1]);
+        closeSheet(wait);
+        openCustomFood(null, pre, after);
+        toast('Vérifie les valeurs avec l\'étiquette avant d\'enregistrer.');
+      } catch (e) { closeSheet(wait); toast(e.message); }
+    });
+    inp.click();
+  }
+
+  /* ---------- Coach IA (Gemini, avec la clé de l'utilisateur) ---------- */
+  const COACH_SYSTEM = `Tu es un coach en nutrition sportive prudent, qui répond en français, en tutoyant, de façon courte et concrète (150 mots maximum, phrases simples, pas de tableau).
+Tu t'appuies uniquement sur les données JSON fournies (moyennes du journal, pesées, composition corporelle) : cite les chiffres utiles, et dis-le quand les données manquent pour conclure.
+Règles : pas de diagnostic médical ni de médicament ; jamais d'apport sous le métabolisme de base ni de perte de plus de 1 % du poids par semaine ; en cas de symptôme, de maladie, de grossesse ou de trouble alimentaire, renvoie vers un médecin.
+Les balances impédancemètres sont imprécises : parle de tendance. Termine par une seule action à faire cette semaine.`;
+  function coachContext() {
+    const p = S.profile, g = goals(), t = today(), r1 = v => (v == null ? null : Math.round(v * 10) / 10);
+    const weeks = [];
+    for (let i = 3; i >= 0; i--) { const b = addDays(t, -i * 7), a = addDays(b, -6), s = periodStats(a, b);
+      weeks.push({ du: a, au: b, jours_notes: s.logged, kcal: Math.round(s.kcal), proteines_g: Math.round(s.p), glucides_g: Math.round(s.c), lipides_g: Math.round(s.f), eau_l: r1(s.water / 1000), pas: Math.round(s.steps),
+        poids_moyen: r1(s.wAvg), pesees: s.weighIns, seances: s.sessions, minutes_sport: s.actMin, jeunes_tenus: s.fastsOk + '/' + s.fasts }); }
+    return { date: t, profil: { sexe: p.sex === 'f' ? 'femme' : 'homme', age: p.age, taille_cm: p.height, poids_kg: r1(currentWeight()), objectif: p.goal, rythme_kg_semaine: p.pace, poids_vise: p.targetWeight, coefficient_activite: p.activity },
+      objectifs: { kcal: g.kcal, proteines_g: g.p, glucides_g: g.c, lipides_g: g.f, metabolisme_base: g.bmr, depense_estimee: g.expenditure, depense_mesuree: g.adaptive && g.adaptive.reliable ? Math.round(g.adaptive.measured) : null },
+      programme: S.program ? S.program.p.name : null, jeune: S.fasting.plan,
+      quatre_dernieres_semaines: weeks,
+      pesees_recentes: S.weights.slice(-12).map(w => ({ date: w.date, kg: w.kg, masse_grasse_pct: w.fat, muscle_kg: w.muscle })),
+      mensurations: measRows().slice(-3), force: liftStats().slice(0, 5).map(s => ({ exercice: s.name, max_estime_kg: Math.round(s.last.v), record_kg: Math.round(s.best), date: s.last.date })) };
+  }
+  async function askCoach(q) {
+    let r;
+    try {
+      r = await geminiPost({ system_instruction: { parts: [{ text: COACH_SYSTEM }] },
+        contents: [{ role: 'user', parts: [{ text: 'Mes données :\n' + JSON.stringify(coachContext()) + '\n\nMa question : ' + q }] }], generationConfig: { temperature: 0.4 } });
+    } catch (e) { throw new Error(e && /Gemini/.test(e.message) ? e.message : 'Pas de connexion Internet : le coach a besoin du réseau.'); }
+    if (!r) throw new Error('Aucun modèle Gemini disponible actuellement.');
+    if (!r.ok) throw await geminiError(r, 'Le coach n\'a pas pu répondre');
+    const gt = geminiText(await r.json());
+    if (gt.block || !gt.text) throw new Error('Le coach n\'a pas répondu. Reformule ta question.');
+    return gt.text;
+  }
+  const COACH_QUESTIONS = ['Pourquoi je stagne ?', 'Que changer cette semaine ?', 'Est-ce que je perds du muscle ?', 'Mes protéines suffisent-elles ?', 'Comment mieux tenir mon jeûne ?'];
+  function openCoach() {
+    if (!S.settings.geminiKey) { openGeminiKey(() => openCoach()); return; }
+    openSheet(s => {
+      const d = s.data;
+      return sheetHead('Coach IA', 'Il lit ton journal et tes pesées') + `<div class="form">
+        <div class="mchips coach-q">${COACH_QUESTIONS.map(q => `<button class="mchip" data-act="coachAsk" data-q="${esc(q)}" style="--mc:var(--brand)">${q}</button>`).join('')}</div>
+        <label class="field"><span>Ta question</span><textarea id="coachQ" rows="2" placeholder="Ex. Je m'entraîne le soir, comment répartir mes repas ?">${esc(d.q || '')}</textarea></label>
+        <button class="btn" data-act="coachAsk" ${d.busy ? 'disabled' : ''}>${icon('sparkle')}${d.busy ? 'Le coach réfléchit…' : 'Demander'}</button>
+        ${d.busy ? '<div class="dl busy"><i></i></div>' : ''}
+        ${d.error ? `<p class="target-note">${icon('info')}<span>${esc(d.error)}</span></p>` : ''}
+        ${d.answer ? `<div class="coach-a"><p class="muted small">${esc(d.asked)}</p>${esc(d.answer).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').split(/\n{2,}/).map(x => '<p>' + x.replace(/\n/g, '<br>') + '</p>').join('')}</div>` : ''}
+        <p class="muted small">Tes moyennes des 4 dernières semaines, tes pesées et ton objectif sont envoyés à Google Gemini avec ta clé (pas ton nom ni le détail de tes repas). Une IA peut se tromper : ce n'est pas un avis médical.</p>
+      </div>`;
+    }, { data: {}, full: true });
+  }
+
   /* ---------- Rappels ---------- */
   const tmin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const tfmt = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
@@ -1893,6 +2313,7 @@ Règles:
       }
       if (r.weigh) out.push({ id: 20, at: r.weighAt, title: 'Pesée du matin', text: 'À jeun, après les toilettes : seule la courbe lissée compte.' });
     }
+    if (r.weekly !== false) out.push({ id: 60, at: '18:00', days: [7], title: 'Ton bilan de la semaine est prêt', text: 'Poids, calories, protéines : regarde ce que ta semaine dit (Analyse > Bilan de la semaine).' });
     // Horaires d'eau de l'utilisateur (hors programme, ou s'il remplace le planning du programme).
     if (r.water && (!S.program || r.waterOverProgram || !(prog().water && prog().water.schedule.length))) {
       waterSlots().forEach((w, i) => out.push({ id: 40 + i, at: w.at, title: 'Hydratation : ' + w.ml + ' ml', text: w.text }));
@@ -2014,6 +2435,7 @@ Règles:
           <div class="seg wide"><button class="${r.voiceMode !== 'full' ? 'on' : ''}" data-act="vMode" data-v="title">Titre seulement</button><button class="${r.voiceMode === 'full' ? 'on' : ''}" data-act="vMode" data-v="full">Titre et détails</button></div>
           <button class="btn ghost" data-act="voiceTest">Écouter un exemple</button>
         </div>` : ''}
+        <label class="switch"><input type="checkbox" id="rWeekly" ${r.weekly !== false ? 'checked' : ''}><span>Bilan de la semaine (dimanche à 18 h)</span></label>
         <label class="switch"><input type="checkbox" id="rWeigh" ${r.weigh ? 'checked' : ''}><span>Pesée du matin</span></label>
         <label class="field"><span>Heure de la pesée</span>${t('rW', r.weighAt)}</label>
         <label class="switch"><input type="checkbox" id="rFast" ${r.fastEnd ? 'checked' : ''}><span>Fin du jeûne en cours</span></label>
@@ -2030,7 +2452,7 @@ Règles:
     const v = (id, d) => (g(id) ? g(id).value || d : undefined);
     const c = id => (g(id) ? g(id).checked : undefined);
     const set = (k, val) => { if (val !== undefined) r[k] = val; };
-    set('on', c('rOn')); set('meals', c('rMeals')); set('water', c('rWater')); set('preMeal', c('rPre')); set('voice', c('rVoice'));
+    set('on', c('rOn')); set('meals', c('rMeals')); set('water', c('rWater')); set('preMeal', c('rPre')); set('voice', c('rVoice')); set('weekly', c('rWeekly'));
     set('breakfast', v('rB', '08:00')); set('lunch', v('rL', '12:30')); set('dinner', v('rD', '19:30'));
     set('weigh', c('rWeigh')); set('weighAt', v('rW', '07:30')); set('fastEnd', c('rFast'));
     set('waterEvery', g('rWE') ? Number(g('rWE').value) : undefined); set('waterFrom', v('rWF', '08:00')); set('waterTo', v('rWTo', '20:00'));
@@ -2095,6 +2517,7 @@ Règles:
     // Retour des réglages Android : met à jour l'état des notifications.
     for (const sh of sheets) if (sh.opts.reminders) { readReminders(sh); sh.refresh(); }
     healthAuto();
+    takeWidgetWater(); pushWidget();
     // Les alarmes exactes ont pu être autorisées entre-temps : reprogramme.
     if (window.CalorysNative && S.settings.reminders.on) syncReminders();
   });
@@ -2250,7 +2673,9 @@ Règles:
   function weightsCsv() {
     return ['Date;Poids (kg);IMC'].concat(S.weights.map(w => [w.date, csvNum(w.kg), csvNum(N.bmi(w.kg, S.profile.height))].join(';'))).join('\r\n');
   }
-  const backupJson = () => JSON.stringify(Object.assign({ app: 'Calorys', appVersion: APP_VERSION, exportedAt: new Date().toISOString() }, S), null, 1);
+  /* La clé Gemini ne part jamais dans un fichier de sauvegarde (il peut être partagé ou envoyé par e-mail). */
+  const backupJson = () => JSON.stringify(Object.assign({ app: 'Calorys', appVersion: APP_VERSION, exportedAt: new Date().toISOString() }, S,
+    { settings: Object.assign({}, S.settings, { geminiKey: '' }) }), null, 1);
   const stamp = () => today();
   async function doExport(name, mime, text) {
     try {
@@ -2269,7 +2694,9 @@ Règles:
     const n = Object.keys(data.days).length;
     if (!(await confirmBox(`Restaurer cette sauvegarde (${n} jour(s) de journal${data.exportedAt ? ', du ' + new Date(data.exportedAt).toLocaleDateString('fr-FR') : ''}) ? Les données actuelles seront remplacées.`, 'Restaurer', true))) return;
     delete data.app; delete data.appVersion; delete data.exportedAt;
+    const key = S.settings.geminiKey;
     S = migrate(data);
+    if (!S.settings.geminiKey) S.settings.geminiKey = key;
     Sync.init(S); Sync.stamp(S);
     P.save(S); await P.flush();
     applyTheme(); render(); toast('Sauvegarde restaurée.');
@@ -2760,8 +3187,59 @@ Règles:
     },
     reminders: () => openReminders(),
     scale: () => openScale(),
-    compMetric: el => { ui.compMetric = el.dataset.m; const y = window.scrollY; render(); window.scrollTo(0, y); showChip(); },
-    compGo: el => { ui.compMetric = el.dataset.m; ui.tab = 'stats'; render(); setTimeout(() => { const c = $('.mexp'); if (c) c.scrollIntoView({ block: 'center' }); showChip(); }, 30); },
+    serMetric: el => { (ui.ser || (ui.ser = {}))[el.dataset.s] = el.dataset.m; const y = window.scrollY, v = $('#view').scrollTop; render(); window.scrollTo(0, y); $('#view').scrollTop = v; showChips(); },
+    compGo: el => { (ui.ser || (ui.ser = {})).comp = el.dataset.m; ui.tab = 'stats'; render(); setTimeout(() => { const c = $('.mexp'); if (c) c.scrollIntoView({ block: 'center' }); showChips(); }, 30); },
+    measures: () => openMeasures(),
+    saveMeasures: () => {
+      const s = topSheet(), date = $('#ms_date', s.el).value || today(), rec = { date };
+      for (const [k] of MEAS) { const v = num($('#ms_' + k, s.el).value); if (v >= 10 && v <= 250) rec[k] = Math.round(v * 10) / 10; }
+      if (Object.keys(rec).length < 2) { toast('Indique au moins une mesure.'); return; }
+      const ex = (S.measures || []).find(m => m.date === date);
+      S.measures = (S.measures || []).filter(m => m.date !== date).concat([Object.assign({}, ex, rec)]).sort((a, b) => (a.date < b.date ? -1 : 1));
+      save(); closeSheet(s); render(); toast('Mensurations enregistrées');
+    },
+    delMeasure: el => { S.measures = S.measures.filter(m => m.date !== el.dataset.date); save(); topSheet().refresh(); render(); },
+    lifts: () => openLifts(),
+    saveLift: () => {
+      const s = topSheet(), g = id => $('#lf_' + id, s.el), name = g('name').value.trim().slice(0, 60);
+      const prev = (S.lifts || []).filter(l => l.name === name).pop() || {};
+      const kg = num(g('kg').value), reps = Math.round(num(g('reps').value) || prev.reps || 8), sets = Math.round(num(g('sets').value) || prev.sets || 3);
+      if (!name) { toast('Indique l\'exercice.'); return; }
+      if (!(kg > 0 && kg < 600) || !(reps >= 1 && reps <= 100)) { toast('Indique la charge et les répétitions.'); return; }
+      (S.lifts || (S.lifts = [])).push({ id: uid(), date: g('date').value || today(), name, kg: Math.round(kg * 100) / 100, reps, sets: Math.max(1, Math.min(20, sets)) });
+      S.lifts.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
+      save(); s.data.name = name; s.refresh(); render(); toast('Série ajoutée');
+    },
+    delLift: el => { S.lifts = S.lifts.filter(l => l.id !== el.dataset.id); save(); topSheet().refresh(); render(); },
+    weekReview: () => openWeekReview(),
+    weekNav: el => { const s = topSheet(); s.data.off = Math.min(0, s.data.off + Number(el.dataset.n)); s.refresh(); },
+    monthReport: () => openMonthReport(),
+    suggest: () => openSuggest(),
+    suggAdd: el => {
+      const s = topSheet(), x = suggestions().list[+el.dataset.i];
+      if (!x) return;
+      logFood(x.f, x.g, defaultMeal()); render(); s.refresh(); toast(x.f.name + ' ajouté (' + fr(x.g) + ' g)');
+    },
+    labelAi: () => {
+      const s = topSheet(), after = s && s.data.mode ? f => openFood(f, { meal: s.data.meal, mode: s.data.mode, pick: s.data.pick }) : null;
+      if (!S.settings.geminiKey) { openGeminiKey(() => pickLabelPhoto(after)); return; }
+      pickLabelPhoto(after);
+    },
+    coach: () => openCoach(),
+    coachAsk: async el => {
+      const s = topSheet(), q = (el.dataset.q || $('#coachQ', s.el).value).trim().slice(0, 500);
+      if (!q) { toast('Écris ta question.'); return; }
+      if (s.data.busy) return;
+      // Accord explicite, une fois : des données de santé (poids, composition, pas) partent chez Google.
+      if (!S.settings.coachOk) {
+        if (!(await confirmBox('Pour répondre, le coach envoie à Google Gemini tes moyennes des 4 dernières semaines, tes pesées, ta composition corporelle (y compris celles venues de ta balance ou de Health Connect), tes pas et ton objectif. Ton nom et le détail de tes repas ne sont pas envoyés. D\'accord ?', 'Oui, envoyer'))) return;
+        S.settings.coachOk = true; save();
+      }
+      Object.assign(s.data, { q: el.dataset.q ? '' : q, busy: true, error: '', asked: q }); s.refresh();
+      try { s.data.answer = await askCoach(q); } catch (e) { s.data.error = e.message; }
+      s.data.busy = false;
+      if (sheets.includes(s)) s.refresh();
+    },
     reportRetry: () => { const s = topSheet(), f = s.data.f; closeSheet(s); if (f) readReportFile(f); },
     reportManual: () => { closeSheet(topSheet()); openWeight(); setTimeout(() => { const d = $('#sheets .sheet-wrap.open:last-of-type details'); if (d) d.open = true; }, 50); },
     scaleReport: () => { if (!S.settings.geminiKey) { openGeminiKey(() => pickReportFile()); return; } pickReportFile(); },
@@ -2861,7 +3339,7 @@ Règles:
     if (act === 'pickDay' && el.value) { ui.date = el.value; render(); }
     if (act === 'setMeal') topSheet().data.meal = el.value;
     if (act === 'theme') { S.settings.theme = el.value; save(); applyTheme(); }
-    if (act === 'steps') { const d = dayMut(ui.date); d.steps = Math.max(0, Math.round(num(el.value) || 0)); save(); render(); }
+    if (act === 'steps') { const d = dayMut(ui.date); d.steps = Math.max(0, Math.round(num(el.value) || 0)); if (d.steps) d.stepsSrc = 'manual'; else delete d.stepsSrc; save(); render(); }
     if (act === 'gameToggleIn') { S.settings.game = el.checked; save(); render(); }
     if (act === 'aiG') { const s = topSheet(), x = s.data.items[+el.dataset.i]; const g = num(el.value); if (g > 0) { x.k = g / x.grams; s.refresh(); } }
     if (act === 'ingG') { const s = topSheet(); s.data.r.items[+el.dataset.i].g = num(el.value) || 0; s.refresh(); }
@@ -2872,6 +3350,8 @@ Règles:
     if (!f) return;
     if (mode === 'scale' || /\.(csv|txt)$/i.test(f.name)) importScaleCsv(await f.text(), f.name); else restoreFrom(await f.text());
   });
+  // Image de produit introuvable (hors ligne) : on la retire, sans gestionnaire en ligne (interdit par la CSP).
+  document.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.hasAttribute('data-rm')) t.remove(); }, true);
   $('#aiPhotoInput').addEventListener('change', e => { const f = e.target.files[0]; if (f) runPhoto(f, ui.photoMeal || defaultMeal()); });
   document.addEventListener('input', e => {
     if (e.target.id !== 'rcQ') return;
@@ -2930,6 +3410,7 @@ Règles:
     syncReminders();
     if (S.profile.onboarded) healthAuto();
     if (window.CalorysNative && window.CalorysNative.takeShared) window.__calorysShared();
+    takeWidgetWater(); pushWidget();
     const sp = $('#splash');
     sp.classList.add('hide'); setTimeout(() => sp.remove(), 400);
     if ('serviceWorker' in navigator && P.kind === 'web' && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

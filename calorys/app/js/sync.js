@@ -24,6 +24,8 @@
     for (const x of S.recipes || []) r.set('r:' + x.id, x);
     for (const [code, f] of Object.entries(S.off || {})) r.set('o:' + code, f);
     for (const x of S.shopping || []) r.set('sh:' + x.id, x);
+    for (const x of S.measures || []) r.set('ms:' + x.date, x);
+    for (const x of S.lifts || []) r.set('lf:' + x.id, x);
     for (const x of (S.fasting || {}).history || []) r.set('fh:' + x.start, x);
     r.set('fa', { active: S.fasting.active, plan: S.fasting.plan });
     r.set('p', S.profile);
@@ -95,7 +97,7 @@
     const days = {};
     const day = d => days[d] || (days[d] = { meals: Object.fromEntries(MEALS.map(x => [x, []])), water: 0, acts: [], steps: 0 });
     const entries = [], acts = [];
-    const out = { weights: [], foods: [], recipes: [], off: {}, shopping: [], history: [] };
+    const out = { weights: [], foods: [], recipes: [], off: {}, shopping: [], history: [], measures: [], lifts: [] };
     for (const [k, v] of Object.entries(R)) {
       const t = k.slice(0, k.indexOf(':') + 1) || k;
       if (t === 'e:') entries.push(v);
@@ -107,6 +109,8 @@
       else if (t === 'r:') out.recipes.push(v);
       else if (t === 'o:') out.off[k.slice(2)] = v;
       else if (t === 'sh:') out.shopping.push(v);
+      else if (t === 'ms:') out.measures.push(v);
+      else if (t === 'lf:') out.lifts.push(v);
       else if (t === 'fh:') out.history.push(v);
     }
     entries.sort((x, y) => (x.e.id < y.e.id ? -1 : 1));
@@ -117,6 +121,8 @@
     S.weights = out.weights.sort((a, b) => (a.date < b.date ? -1 : 1));
     S.foods = out.foods; S.recipes = out.recipes; S.off = out.off; S.shopping = out.shopping;
     S.fasting.history = out.history.sort((a, b) => a.start - b.start);
+    S.measures = out.measures.sort((a, b) => (a.date < b.date ? -1 : 1));
+    S.lifts = out.lifts.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1));
     if (R.fa) { S.fasting.active = R.fa.active; S.fasting.plan = R.fa.plan; }
     if (R.p) S.profile = R.p;
     if (R.sg) { S.settings.game = R.sg.game; S.settings.geminiKey = R.sg.geminiKey; }

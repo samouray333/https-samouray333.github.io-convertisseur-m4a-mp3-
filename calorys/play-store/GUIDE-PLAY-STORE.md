@@ -4,7 +4,7 @@ Tout est prêt dans ce dossier. Il reste les clics dans la Play Console, dans l'
 
 | Fichier | À quoi il sert |
 |---|---|
-| `Calorys-1.6.5.aab` (dans `release/`) | L'appli à envoyer (Android App Bundle signé avec ta clé d'importation) |
+| `Calorys-1.7.0.aab` (dans `release/`) | L'appli à envoyer (Android App Bundle signé avec ta clé d'importation) |
 | `icone-512.png` | Icône de la fiche (512 × 512) |
 | `banniere-1024x500.png` | Bannière de la fiche (« Image de présentation ») |
 | `captures/01…08.png` | Captures d'écran téléphone (1080 × 2160) |
@@ -72,6 +72,10 @@ OBJECTIF ADAPTATIF
 • Objectif calculé avec l'équation de Mifflin-St Jeor, puis ajusté à ta vraie dépense mesurée sur ton journal et tes pesées
 • Courbe de poids lissée pour ne pas paniquer à chaque variation d'eau
 • Balance connectée : tes pesées et ta masse grasse arrivent toutes seules via Health Connect (Fitdays, Renpho, Withings, Zepp, Huawei, Fitbit…), par import CSV, ou en partageant le rapport de ta balance (lu par IA)
+• Widget d'écran d'accueil : calories restantes, eau avec « + 1 verre » et chrono du jeûne
+• « Que manger avec ce qu'il me reste ? » : des idées qui rentrent dans tes calories et complètent tes protéines
+• Bilan de la semaine avec conseils, rapport du mois en PDF, coach IA (facultatif, avec ta clé Gemini)
+• Pas importés automatiquement via Health Connect, mensurations, carnet de musculation
 • Composition corporelle : masse grasse, masse maigre, muscle, eau, graisse viscérale et leur évolution
 • Mode sèche avec date de pesée pour les sportifs
 
@@ -164,9 +168,14 @@ La Play Console demande une justification pour chaque autorisation Health Connec
 - **Lire le poids** (`READ_WEIGHT`) : « Calorys affiche la courbe de poids de l'utilisateur et ajuste son objectif calorique à son évolution réelle. Il importe les pesées de la balance connectée de l'utilisateur, écrites dans Health Connect par l'appli de la balance. »
 - **Lire la masse grasse** (`READ_BODY_FAT`) : « Affichée à côté de chaque pesée dans l'historique de poids, pour suivre la composition corporelle pendant une perte de poids. »
 - **Lire l'historique** (`READ_HEALTH_DATA_HISTORY`) : « À la première connexion, l'utilisateur récupère ses pesées passées pour avoir une courbe de poids complète et un objectif adaptatif juste dès le départ. »
+- **Lire les pas** (`READ_STEPS`) : « Calorys affiche les pas du jour dans le journal d'activité et compte leur dépense calorique dans le bilan de la journée, sans saisie manuelle. »
 - Catégorie d'appli : **Nutrition / gestion du poids**. Les données ne quittent pas l'appareil, ne sont pas partagées et ne servent pas à la publicité.
 
-Dans **Sécurité des données**, rien ne change : le poids lu dans Health Connect reste sur le téléphone, ce n'est donc pas une « collecte ».
+Dans **Sécurité des données**, depuis la 1.7.0 (coach IA), déclare aussi **Santé et remise en forme > Informations sur la santé** et **Informations sur la forme physique** : collectées, non partagées, **facultatives** (envoyées à Gemini seulement quand l'utilisateur interroge le coach, après son accord), finalité « Fonctionnalités de l'application ». Sans le coach, le poids et les pas lus dans Health Connect restent sur le téléphone.
+
+Si l'examinateur Google bloque sur l'envoi de données Health Connect au coach IA, réponds que l'envoi est déclenché par l'utilisateur, après un écran d'accord explicite, pour une fonction qu'il voit (la réponse du coach), et que rien n'est conservé par QMTech.
+
+Depuis la 1.7.0, mets aussi à jour le document de politique de confidentialité avec les paragraphes « Étiquette nutritionnelle lue par IA », « Coach IA » et la mention des pas : recopie-les depuis `site/confidentialite.html`.
 
 ### Identifiant publicitaire
 **Non**, l'appli n'utilise pas l'identifiant publicitaire.
@@ -189,7 +198,7 @@ Un compte développeur personnel créé après novembre 2023 doit faire un **tes
 
 1. **Tester > Tests fermés > Créer un canal** (ou utiliser « Alpha »).
 2. **Testeurs** : crée une liste avec les adresses Gmail d'au moins 12 personnes (famille, amis, collègues avec un téléphone Android).
-3. **Créer une release** : importe `Calorys-1.6.5.aab`. Notes de version :
+3. **Créer une release** : importe `Calorys-1.7.0.aab`. Notes de version :
    ```
    Première version de Calorys sur le Play Store : compteur de calories, jeûne intermittent, programmes, eau, rappels (aussi vocaux) et balance connectée via Health Connect.
    ```

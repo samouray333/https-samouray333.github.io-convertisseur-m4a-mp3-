@@ -2,7 +2,11 @@ package com.qmtech.calorys;
 
 import android.annotation.TargetApi;
 import android.content.Context;
+import android.health.connect.AggregateRecordsGroupedByPeriodResponse;
+import android.health.connect.AggregateRecordsRequest;
 import android.health.connect.HealthConnectException;
+import android.health.connect.LocalTimeRangeFilter;
+import android.health.connect.datatypes.StepsRecord;
 import android.health.connect.HealthConnectManager;
 import android.health.connect.ReadRecordsRequestUsingFilters;
 import android.health.connect.ReadRecordsResponse;
@@ -16,6 +20,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.Period;
+import java.util.List;
 
 /**
  * Pesées des balances connectées via Health Connect (intégré à Android 14 et plus).
@@ -29,6 +36,7 @@ final class Health {
 
     static final String READ_WEIGHT = "android.permission.health.READ_WEIGHT";
     static final String READ_BODY_FAT = "android.permission.health.READ_BODY_FAT";
+    static final String READ_STEPS = "android.permission.health.READ_STEPS";
     static final String READ_HISTORY = "android.permission.health.READ_HEALTH_DATA_HISTORY";
 
     private Health() {}
@@ -39,7 +47,7 @@ final class Health {
     }
 
     static String[] permissions() {
-        return Build.VERSION.SDK_INT >= 35 ? new String[]{READ_WEIGHT, READ_BODY_FAT, READ_HISTORY} : new String[]{READ_WEIGHT, READ_BODY_FAT};
+        return Build.VERSION.SDK_INT >= 35 ? new String[]{READ_WEIGHT, READ_BODY_FAT, READ_STEPS, READ_HISTORY} : new String[]{READ_WEIGHT, READ_BODY_FAT, READ_STEPS};
     }
 
     /** Lit poids et masse grasse depuis sinceMs : {"weights":[{t,kg,src}],"fats":[{t,pct,src}]} ou {"error":…}. */
@@ -64,6 +72,38 @@ final class Health {
                 });
             }
         }, cb);
+    }
+
+    /** Pas par jour sur les derniers jours (total dédoublonné par Health Connect) : {"steps":[{"d":"AAAA-MM-JJ","n":1234}]}. */
+    static void readSteps(Context c, int days, final Done cb) {
+        try {
+            HealthConnectManager m = c.getSystemService(HealthConnectManager.class);
+            LocalDate today = LocalDate.now();
+            LocalTimeRangeFilter f = new LocalTimeRangeFilter.Builder()
+                    .setStartTime(today.minusDays(Math.max(0, days - 1)).atStartOfDay()).setEndTime(today.plusDays(1).atStartOfDay()).build();
+            AggregateRecordsRequest<Long> req = new AggregateRecordsRequest.Builder<Long>(f).addAggregationType(StepsRecord.STEPS_COUNT_TOTAL).build();
+            m.aggregateGroupByPeriod(req, Period.ofDays(1), c.getMainExecutor(),
+                    new OutcomeReceiver<List<AggregateRecordsGroupedByPeriodResponse<Long>>, HealthConnectException>() {
+                        @Override
+                        public void onResult(List<AggregateRecordsGroupedByPeriodResponse<Long>> list) {
+                            try {
+                                JSONArray out = new JSONArray();
+                                for (AggregateRecordsGroupedByPeriodResponse<Long> r : list) {
+                                    Long n = r.get(StepsRecord.STEPS_COUNT_TOTAL);
+                                    if (n == null || n <= 0) continue;
+                                    JSONObject o = new JSONObject();
+                                    o.put("d", r.getStartTime().toLocalDate().toString());
+                                    o.put("n", n);
+                                    out.put(o);
+                                }
+                                cb.done(new JSONObject().put("steps", out).toString());
+                            } catch (Exception e) { cb.done("{\"steps\":[]}"); }
+                        }
+
+                        @Override
+                        public void onError(HealthConnectException e) { cb.done("{\"steps\":[]}"); }
+                    });
+        } catch (Throwable t) { cb.done("{\"steps\":[]}"); }
     }
 
     private static TimeInstantRangeFilter range(Instant a, Instant b) {

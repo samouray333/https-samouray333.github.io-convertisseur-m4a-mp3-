@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Calorys</string>
+    <string name="widget_desc">Calories restantes, eau et jeûne en cours</string>
 </resources>

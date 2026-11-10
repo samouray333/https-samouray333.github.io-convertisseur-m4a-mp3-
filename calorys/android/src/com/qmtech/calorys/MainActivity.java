@@ -588,6 +588,7 @@ public class MainActivity extends Activity {
                 o.put("sdk", Build.VERSION.SDK_INT);
                 o.put("weight", ok && checkSelfPermission(Health.READ_WEIGHT) == PackageManager.PERMISSION_GRANTED);
                 o.put("fat", ok && checkSelfPermission(Health.READ_BODY_FAT) == PackageManager.PERMISSION_GRANTED);
+                o.put("steps", ok && checkSelfPermission(Health.READ_STEPS) == PackageManager.PERMISSION_GRANTED);
                 return o.toString();
             } catch (Exception e) { return "{}"; }
         }
@@ -627,6 +628,29 @@ public class MainActivity extends Activity {
                 }
             });
         }
+
+        @JavascriptInterface
+        public void healthSteps(final int days) {
+            if (!Health.available(MainActivity.this) || checkSelfPermission(Health.READ_STEPS) != PackageManager.PERMISSION_GRANTED) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Health.readSteps(MainActivity.this, Math.max(1, Math.min(30, days)), new Health.Done() {
+                        @Override
+                        public void done(String json) {
+                            web.evaluateJavascript("window.__calorysHealth && window.__calorysHealth('steps', " + JSONObject.quote(json) + ")", null);
+                        }
+                    });
+                }
+            });
+        }
+
+        /* ---- Widget d'écran d'accueil ---- */
+        @JavascriptInterface
+        public void setWidget(String json) { CalorysWidget.store(MainActivity.this, json); }
+
+        @JavascriptInterface
+        public String takeWidgetWater() { return CalorysWidget.takeWater(MainActivity.this); }
 
         /** Lecture à voix haute immédiate (bouton « Tester la voix »). */
         @JavascriptInterface
