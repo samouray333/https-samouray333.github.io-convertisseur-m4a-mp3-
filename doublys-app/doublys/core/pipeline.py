@@ -469,12 +469,12 @@ def step_segment(project: Project, job: Job) -> str:
 
 
 SPLIT_DISTANCE = 0.7  # distance (cosinus) entre les deux moitiés d'une réplique au-delà de laquelle ce sont deux voix
-SPLIT_MIN_SIDE = 0.7  # chaque partie doit durer au moins 0,7 s pour que son empreinte soit fiable
+SPLIT_MIN_SIDE = 1.0  # chaque partie doit durer au moins 1 s pour que son empreinte soit fiable
 
 
 def _pause_inside(ln: Line, talk: list) -> float | None:
     """Meilleur endroit où couper une réplique : le plus grand silence intérieur (entre deux mots, ou dans la parole
-    repérée), avec au moins 0,7 s de parole de chaque côté ; None s'il n'y en a pas."""
+    repérée), avec au moins 1 s de parole de chaque côté ; None s'il n'y en a pas."""
     best, best_gap = None, 0.15
     words = segment.to_words(ln.words)
     for w0, w1 in zip(words, words[1:]):
@@ -503,10 +503,11 @@ def _split_text(text: str, frac: float) -> tuple[str, str] | None:
     return (a, b) if a and b else None
 
 
-def split_speaker_changes(project: Project, job: Job, tool, voice16: Path) -> int:
+def split_speaker_changes(project: Project, job: Job, tool, voice16: Path) -> list[tuple[Line, Line, Line]]:
     """Répliques où deux personnes parlent l'une après l'autre (échanges rapides, pause courte) : les empreintes des
-    deux moitiés sont comparées ; très différentes, la réplique est coupée en deux. Sinon une « personne » mélange
-    deux voix et le regroupement se trompe."""
+    deux moitiés sont comparées ; très différentes, la réplique est coupée en deux (provisoirement : la coupure n'est
+    gardée que si les deux moitiés vont à deux personnes différentes, voir ``confirm_splits``). Sinon une
+    « personne » mélange deux voix et le regroupement se trompe. Renvoie [(réplique d'origine, 1re, 2e)]."""
     talk = coverage.load_speech(project) or []
     cands = []
     for ln in project.lines:
@@ -515,11 +516,11 @@ def split_speaker_changes(project: Project, job: Job, tool, voice16: Path) -> in
             if t is not None:
                 cands.append((ln, t))
     if not cands:
-        return 0
+        return []
     segs = [seg for ln, t in cands for seg in ((ln.start, t), (t, ln.end))]
     job.progress(0.0, "Recherche des changements de voix…")
     emb = _guard(job, tool.embed, voice16, segs)
-    done = 0
+    done = []
     for k, (ln, t) in enumerate(cands):
         a, b = np.asarray(emb[2 * k], dtype=float), np.asarray(emb[2 * k + 1], dtype=float)
         dist = 1.0 - float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
@@ -541,9 +542,32 @@ def split_speaker_changes(project: Project, job: Job, tool, voice16: Path) -> in
         first.ocr_conf = second.ocr_conf = ln.ocr_conf
         i = project.lines.index(ln)
         project.lines[i:i + 1] = [first, second]
-        job.log(f"Réplique à {ln.start:.1f} s : deux voix différentes, coupée en deux à {t:.1f} s")
-        done += 1
+        done.append((ln, first, second))
     return done
+
+
+def confirm_splits(project: Project, job: Job, splits: list[tuple[Line, Line, Line]],
+                   embeddings: dict[str, list]) -> int:
+    """Une coupure n'est gardée que si les deux moitiés appartiennent à deux personnes différentes après le
+    regroupement ; sinon la réplique d'origine revient (une moitié courte a une empreinte moins sûre)."""
+    kept = 0
+    for orig, first, second in splits:
+        if first not in project.lines or second not in project.lines:
+            continue
+        if first.person_id != second.person_id:
+            kept += 1
+            job.log(f"Réplique à {orig.start:.1f} s : deux voix différentes, coupée en deux à {second.start:.1f} s")
+            continue
+        orig.person_id = first.person_id
+        i = project.lines.index(first)
+        project.lines[i:i + 2] = [orig]
+        a, b = embeddings.pop(first.id, None), embeddings.pop(second.id, None)
+        if a is not None and b is not None:
+            embeddings[orig.id] = list((np.asarray(a) * first.length + np.asarray(b) * second.length)
+                                       / max(1e-6, first.length + second.length))
+    used = {ln.person_id for ln in project.lines}
+    project.people = [p for p in project.people if p.id in used]
+    return kept
 
 
 def step_speakers(project: Project, job: Job) -> str:
@@ -553,13 +577,14 @@ def step_speakers(project: Project, job: Job) -> str:
     _voice, voice16 = speech_source(project)
     tool = _tool("analysis")
     job.progress(0.0, "Chargement du modèle d'empreintes vocales…")
-    split = split_speaker_changes(project, job, tool, voice16)
+    splits = split_speaker_changes(project, job, tool, voice16)
     segs = [(ln.start, ln.end) for ln in project.lines]
     emb = _guard(job, tool.embed, voice16, segs, on_progress=lambda v, m: job.progress(v, m))
     embeddings = {ln.id: e for ln, e in zip(project.lines, emb)}
     before = {ln.id: ln.person_id for ln in project.lines}
     people = speakers.assign_people(project.lines, embeddings, s.speaker_threshold, s.max_speakers)
     project.people = speakers.keep_names(project.people, people, before, project.lines)
+    split = confirm_splits(project, job, splits, embeddings) if splits else 0
     speakers.score_lines(project.lines, embeddings, project.people)
     found = ""
     if project.series:

@@ -433,7 +433,7 @@ class WorkerEngine(TTSEngine):
             if not installer.is_installed(self.env_id):
                 raise EngineError(f"Le moteur « {self.info.name} » n'est pas installé. "
                                   "Installez-le depuis la page Moteurs.")
-            offline = installer.models_cached(self.env_id) and not self._online
+            offline = installer.models_cached(self.env_id, self.worker_name) and not self._online
             w = WorkerProcess(self.engine_id, self.worker_name, installer.env_python(self.env_id),
                               installer.worker_env(self.env_id, offline=offline), installer.engine_root(self.env_id))
             w.start()
@@ -450,7 +450,7 @@ class WorkerEngine(TTSEngine):
                 raise
             self._offline_mode = offline
             if not offline:
-                installer.mark_models_cached(self.env_id)
+                installer.mark_models_cached(self.env_id, self.worker_name)
             self._worker = w
             self._save_speakers(w)
             return w

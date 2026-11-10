@@ -476,3 +476,21 @@ def test_free_space_after_export_and_restore(tmp_path, test_video, make_project)
     project_io.free_space(pr)
     project_io.save_project(pr)
     assert set(project_io.load_project(pr.path).freed) == {"extract", "separate", "mix"}
+
+
+@needs_ffmpeg
+def test_false_split_is_undone(tmp_path, test_video, make_project, monkeypatch):
+    """Une coupure provisoire dont les deux moitiés vont à la même personne est annulée."""
+    from doublys.core import pipeline, segment
+
+    pr = make_project(test_video)
+    pr.settings.use_subtitles = False
+    for step in ("extract", "subtitles", "separate", "transcribe", "segment"):
+        pipeline.run_step(pr, step, pipeline.Job())
+    same = segment.merge_lines(pr.lines[0], pr.lines[2])  # deux passages de la même voix grave
+    pr.lines = [same, pr.lines[3], pr.lines[4]]
+    monkeypatch.setattr(pipeline, "SPLIT_DISTANCE", -1.0)  # toute pause devient une coupure provisoire
+    logs = []
+    pipeline.run_step(pr, "speakers", pipeline.Job(on_log=logs.append))
+    assert len(pr.lines) == 3 and pr.lines[0].id == same.id and same.person_id
+    assert not any("deux voix" in m for m in logs)

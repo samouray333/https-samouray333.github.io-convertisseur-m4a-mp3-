@@ -218,18 +218,20 @@ def path_without_espeak(path: str) -> str:
     return os.pathsep.join(keep)
 
 
-def models_marker(engine_id: str) -> Path:
-    return engine_root(engine_id) / "modeles-ok"
+def models_marker(engine_id: str, worker: str = "") -> Path:
+    # un marqueur par moteur chargé : deux moteurs d'un même environnement (Chatterbox, clonage rapide) n'utilisent
+    # pas les mêmes modèles
+    return engine_root(engine_id) / (f"modeles-ok-{worker}" if worker and worker != engine_id else "modeles-ok")
 
 
-def models_cached(engine_id: str) -> bool:
+def models_cached(engine_id: str, worker: str = "") -> bool:
     """Le moteur a déjà été chargé une fois avec ses modèles : ils sont dans le cache local."""
-    return models_marker(engine_id).exists()
+    return models_marker(engine_id, worker).exists()
 
 
-def mark_models_cached(engine_id: str) -> None:
+def mark_models_cached(engine_id: str, worker: str = "") -> None:
     try:
-        models_marker(engine_id).write_text(time.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
+        models_marker(engine_id, worker).write_text(time.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
     except OSError:
         log.debug("Marqueur des modèles impossible à écrire", exc_info=True)
 
