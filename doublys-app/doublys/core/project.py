@@ -189,3 +189,56 @@ def cache_size_bytes(project: Project) -> int:
     except (OSError, ProjectError):
         pass
     return total
+
+
+# ---------------------------------------------------------------------------------------
+# Place sur le disque
+# ---------------------------------------------------------------------------------------
+# gros fichiers recalculables, avec l'étape qui les produit (le texte, les personnes et les voix sont gardés)
+FREEABLE = {"original.wav": "extract", "original16.wav": "extract", "voix.wav": "separate", "voix16.wav": "separate",
+            "fond.wav": "separate", "vf_mix.wav": "mix", "vf_voix.wav": "mix"}
+BYTES_PER_SECOND = 1_000_000  # fichiers de travail par seconde de vidéo (WAV 44,1 kHz : son, voix, fond, mixage)
+
+
+def freeable_bytes(project: Project) -> int:
+    try:
+        wd = work_dir(project)
+    except ProjectError:
+        return 0
+    return sum((wd / n).stat().st_size for n in FREEABLE if (wd / n).exists())
+
+
+def free_space(project: Project) -> int:
+    """Supprime les gros fichiers recalculables après l'export ; renvoie le nombre d'octets libérés. Le projet reste
+    complet : répliques, traductions, personnes et voix françaises sont gardées ; si on le retravaille, seules
+    l'extraction, la séparation et le mixage sont refaits (sans rien recalculer d'autre)."""
+    wd = work_dir(project)
+    freed = 0
+    steps = set()
+    for name, step in FREEABLE.items():
+        f = wd / name
+        if f.exists():
+            freed += f.stat().st_size
+            f.unlink()
+            steps.add(step)
+    shutil.rmtree(wd / "transcription", ignore_errors=True)  # morceaux de la transcription (déjà réunis)
+    shutil.rmtree(wd / "controle", ignore_errors=True)  # vignettes de la page Contrôle
+    for step in steps:
+        if project.step_done(step):
+            project.steps.pop(step, None)
+            if step not in project.freed:
+                project.freed.append(step)
+    return freed
+
+
+def disk_free(project: Project) -> int:
+    try:
+        return shutil.disk_usage(work_dir(project)).free
+    except (OSError, ProjectError):
+        return 1 << 62
+
+
+def disk_needed(project: Project) -> int:
+    """Place estimée pour les fichiers de travail encore à créer."""
+    need = int(project.video.duration * BYTES_PER_SECOND)
+    return max(0, need - freeable_bytes(project))

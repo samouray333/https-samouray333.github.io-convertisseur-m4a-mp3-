@@ -88,7 +88,7 @@ mesurée sur ton cas réel (Zyuranger).
 | M2 | Versions des moteurs incomplètement figées : `transformers>=4.46,<5`, `huggingface-hub`, `librosa`, `faiss-cpu` sans version, dépendances transitives libres ; modèles Hugging Face sans révision figée | `installer.py` (`SPECS`) | Fichier de contraintes par moteur (versions figées, testées dans la CI), révision fixe des modèles |
 | M3 | 96 `except Exception`, dont 16 qui ne font rien (`pass`) ; une erreur réelle peut passer inaperçue | `app.py`, `player.py`, `main_window.py`, `qc.py:75`, `tts_worker.py`… | Journaliser au moins en `debug` (fait pour les endroits critiques en 1.2), restreindre le type d'exception attrapé |
 | M4 | Reconnaissance des personnes fragile entre voix très proches : corrigée en 1.2.3 pour les répliques à deux voix, mais le seuil de regroupement reste fixe (0,62) | `core/speakers.py` | Seuil adapté automatiquement à la vidéo, ou proposition « ces deux personnes se ressemblent : les fusionner ? » |
-| M5 | Traduction directe japonais vers français (Opus-MT ja-fr) de qualité faible quand il n'y a pas de sous-titres | `core/models.py` (`LANGUAGES`) | Passer par l'anglais (ja-en puis tc-big en-fr, souvent meilleur), ou recommander DeepSeek pour le japonais |
+| M5 | Traduction directe japonais vers français (Opus-MT ja-fr) de qualité moyenne quand il n'y a pas de sous-titres | `core/models.py` (`LANGUAGES`) | **Vérifié (1.2.4) : passer par l'anglais n'est pas meilleur** (12 phrases comparées : erreurs différentes, parfois pires, comme un sens inversé ou des noms déformés). Garder la traduction directe ; leviers réels : sous-titres anglais (OCR), glossaire, DeepSeek |
 | M6 | Voix Microsoft (edge-tts) obtenues par un accès non officiel au service de lecture d'Edge | `core/engines/edge.py` | Le dire dans l'appli (conditions d'utilisation incertaines, usage commercial déconseillé) ; le mode par défaut (Kokoro + Chatterbox) n'en dépend pas |
 | M7 | Deux fichiers très gros : `ui/pages/dubbing.py` (1 225 lignes), `core/pipeline.py` (1 068 lignes) ; fonctions longues (23 de plus de 50 instructions) | | Découper : pipeline en un module par étape, page Doublage en composants (tableau, barre d'étapes, choix du texte) |
 | M8 | Couverture faible de certaines parties : dialogue de zone OCR (0 %), page Contrôle (58 %), personnes (61 %), processus moteur (14 % hors CI) | `tests/` | Tests d'interface pour la zone et les actions de la page Contrôle ; les tests réels de la CI couvrent le processus moteur |
@@ -134,3 +134,14 @@ mesurée sur ton cas réel (Zyuranger).
    - M7 (découpage des gros fichiers) ;
    - M8 (tests d'interface).
 4. **Distribution** : E3 (signature) quand un certificat est disponible.
+
+---
+
+## 6. Corrections faites (1.2.4)
+
+| # | État | Détail |
+|---|---|---|
+| E1 | **corrigé** | Moteurs chargés en mode hors ligne dès que leurs modèles sont dans le cache ; si un modèle manque (nouvelle langue, autre taille de Whisper), le moteur est relancé en ligne tout seul ; délais réseau courts. Vérifié avec les vrais moteurs : plus aucun blocage, chaîne japonais + sous-titres réussie |
+| E2 | **corrigé** | Bouton « Libérer l'espace » (page Export) : supprime les gros fichiers recalculables, garde répliques, traductions et voix ; si on retravaille le projet, seuls l'extraction, la séparation et le mixage sont refaits. Avertissement avant de lancer si le disque est presque plein |
+| M1 | **corrigé** | Modèles Kokoro vérifiés par SHA-256 ; un fichier abîmé est retéléchargé, un fichier qui ne correspond pas est refusé |
+| M5 | **vérifié, pas de changement** | Voir le tableau : la traduction par l'anglais n'est pas meilleure |

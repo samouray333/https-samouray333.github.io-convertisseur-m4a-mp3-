@@ -420,6 +420,15 @@ class DubbingPage(Page):
                 self.ctx.navigate("engines")
                 self.window_.pages["engines"].install_many(REQUIRED)
             return
+        need, free = project_io.disk_needed(pr), project_io.disk_free(pr)
+        if need > 0 and free < need * 1.1:
+            r = QMessageBox.question(
+                self, "Disque presque plein",
+                f"Le doublage de cette vidéo demande environ {need / 1e9:.1f} Go de fichiers de travail, et il ne "
+                f"reste que {free / 1e9:.1f} Go sur le disque du projet.\n\nLibérez de la place (page Export de vos "
+                "anciens projets : « Libérer l'espace ») ou continuez quand même ?")
+            if r != QMessageBox.Yes:
+                return
         plan = pipeline.steps_to_run(pr) + ["export"]
 
         def work(job):
@@ -694,6 +703,9 @@ class DubbingPage(Page):
                 _text, problems = coverage.summary(self.project)
                 if problems:
                     extra += f" {problems} point(s) à vérifier dans Contrôle."
+                size = project_io.freeable_bytes(self.project)
+                if size > 1e9:
+                    extra += f" Page Export : « Libérer l'espace » ({size / 1e9:.1f} Go) quand vous avez fini."
                 self.ctx.toast("La version française est prête !" + extra, "success" if not problems else "warning",
                                9000)
             else:

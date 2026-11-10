@@ -126,10 +126,11 @@ def step_extract(project: Project, job: Job) -> str:
         raise StepError(f"La vidéo est introuvable : {src}. Remettez-la à sa place ou ouvrez-la à nouveau.")
     if not project.video.duration:
         project.video = project_io.probe_video(src)
-    # le son change : les fichiers des étapes suivantes (éventuellement à moitié faits) ne valent plus rien
-    for name in (VOICE, VOICE16, BACKGROUND, SPEECH, TRANSCRIPT):
-        wf(project, name).unlink(missing_ok=True)
-    shutil.rmtree(wf(project, TRANSCRIPT_PARTS), ignore_errors=True)
+    if "extract" not in project.freed:
+        # le son change : les fichiers des étapes suivantes (éventuellement à moitié faits) ne valent plus rien
+        for name in (VOICE, VOICE16, BACKGROUND, SPEECH, TRANSCRIPT):
+            wf(project, name).unlink(missing_ok=True)
+        shutil.rmtree(wf(project, TRANSCRIPT_PARTS), ignore_errors=True)
     media.extract_audio(src, wf(project, ORIGINAL), wf(project, ORIGINAL16), project.video.duration,
                         progress=lambda f: job.progress(f, "Extraction du son"), cancel=job.cancel)
     return f"{project.video.duration / 60:.1f} min de son extrait"
@@ -927,11 +928,18 @@ def run_step(project: Project, step: str, job: Job, save: Callable[[], None] | N
     job.progress(0.0, STEP_LABELS[step])
     # étape interrompue (pas encore faite) : on reprend ; étape déjà faite et relancée : on refait tout
     job.resume = not project.step_done(step)
-    project.invalidate_from(step)
+    restoring = step in project.freed  # gros fichiers supprimés pour libérer de la place : refaits à l'identique
+    if restoring:
+        job.resume = False
+        project.steps.pop(step, None)
+    else:
+        project.invalidate_from(step)
     t0 = time.time()
     detail = STEP_FUNCS[step](project, job)
     learn_speed(step, time.time() - t0, project.video.duration, resumed=job.resume)
     project.mark_step(step, True, detail=detail)
+    if restoring:
+        project.freed.remove(step)
     if step in ("segment", "speakers", "translate", "dub"):
         qc.check(project)
     job.progress(1.0, detail)

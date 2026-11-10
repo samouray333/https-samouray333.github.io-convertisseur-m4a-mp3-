@@ -47,7 +47,7 @@ class EngineSpec:
     torch_version_blackwell: str | None = None
     python: str = "3.11"
     pin_torch: bool = False  # force la version de torch installée (le paquet en exige une autre)
-    downloads: list[tuple[str, str]] = field(default_factory=list)
+    downloads: list[tuple[str, str, str]] = field(default_factory=list)  # (adresse, fichier, empreinte SHA-256)
     nodeps: list[str] = field(default_factory=list)  # paquets installés sans leurs dépendances
     size_gpu: str = ""
     size_cpu: str = ""
@@ -111,9 +111,9 @@ SPECS: dict[str, EngineSpec] = {
         packages=["kokoro-onnx==0.6.1", "soundfile"],
         downloads=[
             ("https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
-             "kokoro-v1.0.onnx"),
+             "kokoro-v1.0.onnx", "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5"),
             ("https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
-             "voices-v1.0.bin"),
+             "voices-v1.0.bin", "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d"),
         ],
         size_gpu="≈ 0,6 Go", size_cpu="≈ 0,6 Go", model_size="0,3 Go",
     ),
@@ -218,8 +218,27 @@ def path_without_espeak(path: str) -> str:
     return os.pathsep.join(keep)
 
 
-def worker_env(engine_id: str) -> dict[str, str]:
-    """Variables d'environnement pour le processus du moteur (modèles rangés dans nos dossiers)."""
+def models_marker(engine_id: str) -> Path:
+    return engine_root(engine_id) / "modeles-ok"
+
+
+def models_cached(engine_id: str) -> bool:
+    """Le moteur a déjà été chargé une fois avec ses modèles : ils sont dans le cache local."""
+    return models_marker(engine_id).exists()
+
+
+def mark_models_cached(engine_id: str) -> None:
+    try:
+        models_marker(engine_id).write_text(time.strftime("%Y-%m-%d %H:%M"), encoding="utf-8")
+    except OSError:
+        log.debug("Marqueur des modèles impossible à écrire", exc_info=True)
+
+
+def worker_env(engine_id: str, offline: bool = False) -> dict[str, str]:
+    """Variables d'environnement pour le processus du moteur (modèles rangés dans nos dossiers).
+
+    ``offline`` : modèles déjà téléchargés, aucune vérification en ligne (un réseau lent ou filtré ne bloque plus
+    le chargement) ; un modèle manquant fait redémarrer le moteur en ligne."""
     env = dict(os.environ)
     for k in ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"):
         env.pop(k, None)
@@ -232,6 +251,12 @@ def worker_env(engine_id: str) -> dict[str, str]:
     env["TOKENIZERS_PARALLELISM"] = "false"
     env["HF_HUB_DISABLE_TELEMETRY"] = "1"
     env["GRADIO_ANALYTICS_ENABLED"] = "False"
+    # délais réseau courts : un serveur qui ne répond pas ne fige plus le chargement d'un modèle
+    env.setdefault("HF_HUB_ETAG_TIMEOUT", "10")
+    env.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
+    if offline:
+        env["HF_HUB_OFFLINE"] = "1"
+        env["TRANSFORMERS_OFFLINE"] = "1"
     if engine_id == "xtts":
         env["PATH"] = path_without_espeak(env.get("PATH", ""))
     return env
@@ -309,6 +334,21 @@ def download(url: str, dest: Path, log_cb: LogCb, cancel: threading.Event | None
                 log_cb(f"Téléchargement de {dest.name} : {done / 1e6:.0f} Mo{pct}")
     os.replace(tmp, dest)
     log_cb(f"{dest.name} téléchargé ({done / 1e6:.0f} Mo)")
+
+
+def fetch_verified(url: str, target: Path, digest: str, log_cb: LogCb, cancel: threading.Event | None = None) -> Path:
+    """Fichier de modèle téléchargé puis vérifié par son empreinte SHA-256 ; un fichier déjà présent mais abîmé
+    est retéléchargé, un fichier qui ne correspond pas est supprimé et refusé."""
+    if target.exists() and _sha256(target) != digest:
+        log_cb(f"{target.name} abîmé ou incomplet : nouveau téléchargement…")
+        target.unlink()
+    if not target.exists():
+        download(url, target, log_cb, cancel)
+        if _sha256(target) != digest:
+            target.unlink(missing_ok=True)
+            raise RuntimeError(f"Le fichier {target.name} téléchargé ne correspond pas à l'empreinte attendue "
+                               "(téléchargement corrompu ou fichier modifié). Réessayez l'installation.")
+    return target
 
 
 # Python de base des moteurs sous Windows, extrait dans un dossier ordinaire. Sinon, uv crée pour sa
@@ -445,10 +485,8 @@ def install_engine(engine_id: str, device: str = "auto", log_cb: LogCb = print,
     if spec.nodeps:
         _run([uv, "pip", "install", "--python", py, "--no-deps", *spec.nodeps], log_cb, cancel)
 
-    for url, name in spec.downloads:
-        target = model_dir(engine_id) / name
-        if not target.exists():
-            download(url, target, log_cb, cancel)
+    for url, name, digest in spec.downloads:
+        fetch_verified(url, model_dir(engine_id) / name, digest, log_cb, cancel)
 
     log_cb("Vérification de l'installation…")
     check = {"xtts": "import TTS, torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())",

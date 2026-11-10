@@ -383,3 +383,96 @@ def test_windows_ocr_fallback_off_windows():
     if winocr.paths.IS_WINDOWS:
         pytest.skip("vérifié par l'autotest Windows")
     assert not winocr.available() and "Windows" in winocr.status_message()
+
+
+def test_offline_engine_env_and_errors(tmp_path, monkeypatch):
+    from doublys.core.engines import installer, neural
+
+    env = installer.worker_env("whisper", offline=True)
+    assert env["HF_HUB_OFFLINE"] == "1" and env["TRANSFORMERS_OFFLINE"] == "1" and env["HF_HUB_ETAG_TIMEOUT"]
+    assert not installer.models_cached("whisper")
+    installer.engine_root("whisper").mkdir(parents=True, exist_ok=True)
+    installer.mark_models_cached("whisper")
+    assert installer.models_cached("whisper")
+    assert neural.is_offline_error("We couldn't connect to 'https://huggingface.co' and couldn't find them in the "
+                                   "cached files")
+    assert neural.is_offline_error("LocalEntryNotFoundError: offline mode is enabled")
+    assert not neural.is_offline_error("Mémoire insuffisante")
+
+
+def test_missing_model_offline_restarts_online():
+    from doublys.core.engines import EngineError
+    from doublys.core.engines.neural import WhisperTool
+
+    class FakeWorker:
+        def __init__(self, offline):
+            self.offline = offline
+
+        def request(self, cmd, timeout=0, on_progress=None, **payload):
+            if self.offline:
+                raise EngineError("We couldn't connect to 'https://huggingface.co' and couldn't find them in the "
+                                  "cached files.")
+            return {"text": "ok"}
+
+        def stop(self):
+            pass
+
+    tool = WhisperTool()
+    starts = []
+
+    def ensure():
+        if tool._worker is None:
+            offline = not tool._online
+            tool._offline_mode = offline
+            tool._worker = FakeWorker(offline)
+            starts.append(offline)
+        return tool._worker
+
+    tool._ensure = ensure
+    assert tool.transcribe("x.wav") == "ok"
+    assert starts == [True, False] and tool._online  # hors ligne d'abord, puis relancé en ligne
+
+
+def test_model_download_checked_by_hash(tmp_path, monkeypatch):
+    import hashlib
+
+    from doublys.core.engines import installer
+
+    good = b"modele"
+    digest = hashlib.sha256(good).hexdigest()
+    payload = {"data": b"pirate"}
+    monkeypatch.setattr(installer, "download", lambda url, dest, log_cb, cancel=None: dest.write_bytes(payload["data"]))
+    target = tmp_path / "m.onnx"
+    with pytest.raises(RuntimeError):
+        installer.fetch_verified("https://exemple.invalid/m", target, digest, print)
+    assert not target.exists()  # fichier refusé, supprimé
+    payload["data"] = good
+    assert installer.fetch_verified("https://exemple.invalid/m", target, digest, print).read_bytes() == good
+    target.write_bytes(b"abime")  # fichier présent mais abîmé : retéléchargé
+    assert installer.fetch_verified("https://exemple.invalid/m", target, digest, print).read_bytes() == good
+
+
+@needs_ffmpeg
+def test_free_space_after_export_and_restore(tmp_path, test_video, make_project):
+    from doublys.core import pipeline
+    from doublys.core import project as project_io
+
+    pr = make_project(test_video)
+    pr.settings.use_subtitles = False
+    pipeline.run_all(pr, pipeline.Job())
+    pipeline.export_files(pr, pipeline.Job(), out_dir=tmp_path / "out")
+    keys = [ln.audio_key for ln in pr.lines]
+    before = project_io.freeable_bytes(pr)
+    assert before > 0 and project_io.free_space(pr) == before and project_io.freeable_bytes(pr) == 0
+    assert set(pr.freed) == {"extract", "separate", "mix"}
+    assert pr.step_done("translate") and pr.step_done("dub")  # texte et voix gardés
+    steps = []
+    job = pipeline.Job(on_progress=lambda s, f, m: steps.append(s) if not steps or steps[-1] != s else None)
+    pipeline.run_all(pr, job)
+    assert steps == ["extract", "separate", "mix"] and not pr.freed  # seulement ce qui avait été supprimé
+    assert [ln.audio_key for ln in pr.lines] == keys and pr.next_step() is None
+    assert pipeline.export_files(pr, pipeline.Job(), out_dir=tmp_path / "out2")[0].exists()
+    # projet enregistré puis rouvert : l'information est gardée
+    project_io.free_space(pr)
+    project_io.save_project(pr)
+    assert set(project_io.load_project(pr.path).freed) == {"extract", "separate", "mix"}

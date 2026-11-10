@@ -1,12 +1,12 @@
 ; Installateur NSIS de Doublys (Echo Matras)
-; Compilation (après PyInstaller) : makensis /DAPP_VERSION=1.2.3 packaging\installer.nsi
+; Compilation (après PyInstaller) : makensis /DAPP_VERSION=1.2.4 packaging\installer.nsi
 ; Installation pour l'utilisateur courant, sans droits administrateur.
 
 Unicode true
 ManifestDPIAware true
 
 !ifndef APP_VERSION
-  !define APP_VERSION "1.2.3"
+  !define APP_VERSION "1.2.4"
 !endif
 !ifndef APP_ROOT
   !define APP_ROOT "${__FILEDIR__}\.."

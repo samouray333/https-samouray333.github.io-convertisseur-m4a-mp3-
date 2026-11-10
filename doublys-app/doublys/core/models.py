@@ -346,6 +346,8 @@ class Project:
     subs: SubtitleSource = field(default_factory=SubtitleSource)
     gaps: list = field(default_factory=list)  # passages parlés sans VF : [{start, end, state, text}]
     no_dub_ranges: list = field(default_factory=list)  # plages à ne pas doubler : [[début, fin], …]
+    freed: list = field(default_factory=list)  # étapes dont les gros fichiers ont été supprimés (refaites sans rien
+    # invalider si on retravaille le projet)
     id: str = field(default_factory=lambda: new_id("prj_"))
     created: str = field(default_factory=now_iso)
     modified: str = field(default_factory=now_iso)
@@ -373,6 +375,7 @@ class Project:
             subs=SubtitleSource.from_dict(d.get("subs")),
             gaps=list(d.get("gaps", [])),
             no_dub_ranges=list(d.get("no_dub_ranges", [])),
+            freed=list(d.get("freed", [])),
         )
         for key in ("id", "created", "modified", "format_version"):
             if key in d:

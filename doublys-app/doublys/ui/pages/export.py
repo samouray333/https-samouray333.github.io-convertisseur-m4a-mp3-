@@ -12,6 +12,10 @@ from ..widgets import Card, ToggleSwitch, button, card_title, label
 from .base import Page
 
 
+def human_size(n: int) -> str:
+    return f"{n / 1e9:.1f} Go".replace(".", ",") if n >= 1e9 else f"{max(1, round(n / 1e6))} Mo"
+
+
 class ExportPage(Page):
     name = "export"
 
@@ -134,6 +138,15 @@ class ExportPage(Page):
         go.add(self.bar)
         self.status = label("", "Muted", wrap=True)
         go.add(self.status)
+        disk = QHBoxLayout()
+        self.disk_info = label("", "Hint", wrap=True)
+        disk.addWidget(self.disk_info, 1)
+        self.free_btn = button("Libérer l'espace", "trash",
+                               tooltip="Supprime les gros fichiers de travail recalculables (son, voix, fond, mixage) ; "
+                                       "répliques, traductions et voix françaises sont gardées")
+        self.free_btn.clicked.connect(self._free_space)
+        disk.addWidget(self.free_btn)
+        go.add(disk)
         self.body.addWidget(go)
         self.body.addStretch(1)
 
@@ -225,6 +238,38 @@ class ExportPage(Page):
             self.out_dir.setText(d)
             self._save()
 
+    def _update_disk(self) -> None:
+        pr = self.ctx.project
+        size = project_io.freeable_bytes(pr) if pr is not None and pr.path is not None else 0
+        busy = self.ctx.runner.running
+        if size <= 0:
+            self.disk_info.setText("")
+            self.free_btn.hide()
+            return
+        self.disk_info.setText(f"Fichiers de travail recalculables : {human_size(size)}. Une fois la vidéo "
+                               "exportée, vous pouvez les supprimer pour gagner de la place.")
+        self.free_btn.show()
+        self.free_btn.setEnabled(not busy)
+
+    def _free_space(self) -> None:
+        pr = self.ctx.project
+        if pr is None or self.ctx.runner.running:
+            return
+        size = project_io.freeable_bytes(pr)
+        r = QMessageBox.question(
+            self, "Libérer l'espace",
+            f"Supprimer {human_size(size)} de fichiers de travail (son extrait, voix isolée, fond, mixage) ?\n\n"
+            "Le projet reste complet : répliques, traductions, personnes et voix françaises sont gardées, et la vidéo "
+            "exportée n'est pas touchée. Si vous retravaillez ce projet plus tard, l'extraction, la séparation et le "
+            "mixage seront refaits automatiquement (quelques minutes à une heure selon la durée).")
+        if r != QMessageBox.Yes:
+            return
+        freed = project_io.free_space(pr)
+        self.ctx.mark_dirty()
+        self.ctx.save()
+        self._enable()
+        self.ctx.toast(f"{human_size(freed)} libérés.", "success", 5000)
+
     def _enable(self) -> None:
         pr = self.ctx.project
         only = pr is not None and pr.settings.subtitles_only
@@ -240,6 +285,7 @@ class ExportPage(Page):
         self.t_norm.setVisible(not only)
         self.t_sfr.setVisible(not only)  # sous-titres seuls : toujours intégrés (affichés par défaut)
         self.open_btn.setEnabled(pr is not None)
+        self._update_disk()
         if pr is None:
             self.status.setText("Aucun projet.")
         elif not ready and not busy and only:

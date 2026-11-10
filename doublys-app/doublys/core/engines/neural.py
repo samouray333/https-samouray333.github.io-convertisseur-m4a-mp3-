@@ -34,6 +34,16 @@ def emit_log(engine_id: str, line: str) -> None:
             log.debug("Écouteur du journal en erreur", exc_info=True)
 
 
+_OFFLINE_ERRORS = ("offline", "local_files_only", "localentrynotfound", "cached files", "local cache",
+                   "cached snapshot", "no connection", "couldn't connect", "could not connect")
+
+
+def is_offline_error(message: str) -> bool:
+    """Erreur due au mode hors ligne : un modèle n'est pas encore dans le cache local."""
+    low = (message or "").lower()
+    return any(k in low for k in _OFFLINE_ERRORS)
+
+
 class WorkerDied(EngineError):
     pass
 
@@ -393,6 +403,8 @@ class WorkerEngine(TTSEngine):
         self._worker: WorkerProcess | None = None
         self._lock = threading.RLock()
         self.load_info: dict = {}
+        self._online = False  # un modèle manquait hors ligne : le moteur tourne désormais en ligne
+        self._offline_mode = False
 
     # -- état ---------------------------------------------------------------------------
     def status(self):
@@ -421,15 +433,51 @@ class WorkerEngine(TTSEngine):
             if not installer.is_installed(self.env_id):
                 raise EngineError(f"Le moteur « {self.info.name} » n'est pas installé. "
                                   "Installez-le depuis la page Moteurs.")
+            offline = installer.models_cached(self.env_id) and not self._online
             w = WorkerProcess(self.engine_id, self.worker_name, installer.env_python(self.env_id),
-                              installer.worker_env(self.env_id), installer.engine_root(self.env_id))
+                              installer.worker_env(self.env_id, offline=offline), installer.engine_root(self.env_id))
             w.start()
-            emit_log(self.engine_id, "Chargement du modèle…")
-            self.load_info = w.request("load", timeout=3600, device=self._device(),
-                                       options=self.load_options())
+            emit_log(self.engine_id, "Chargement du modèle…" + (" (hors ligne)" if offline else ""))
+            try:
+                self.load_info = w.request("load", timeout=3600, device=self._device(),
+                                           options=self.load_options())
+            except EngineError as exc:
+                w.stop()
+                if offline and is_offline_error(str(exc)):
+                    emit_log(self.engine_id, "Modèle absent du cache : téléchargement…")
+                    self._online = True
+                    return self._ensure()
+                raise
+            self._offline_mode = offline
+            if not offline:
+                installer.mark_models_cached(self.env_id)
             self._worker = w
             self._save_speakers(w)
             return w
+
+    def _req(self, cmd: str, timeout: float, on_progress=None, **payload) -> dict:
+        """Requête au moteur : un redémarrage du processus est retenté une fois ; un modèle manquant en mode hors
+        ligne (nouvelle langue, autre taille de Whisper) fait relancer le moteur en ligne."""
+        for attempt in range(3):
+            w = self._ensure()
+            try:
+                return w.request(cmd, timeout=timeout, on_progress=on_progress, **payload)
+            except WorkerDied:
+                with self._lock:
+                    self._worker = None
+                if attempt == 2:
+                    raise
+                emit_log(self.engine_id, "Le moteur a redémarré, nouvelle tentative…")
+            except EngineError as exc:
+                if not (self._offline_mode and is_offline_error(str(exc))) or attempt == 2:
+                    raise
+                emit_log(self.engine_id, "Modèle absent du cache : relance en ligne pour le télécharger…")
+                with self._lock:
+                    if self._worker is not None:
+                        self._worker.stop()
+                    self._worker = None
+                    self._online = True
+        return {}
 
     def load_options(self) -> dict:
         return {"model_dir": str(installer.model_dir(self.env_id))}
@@ -480,17 +528,7 @@ class WorkerEngine(TTSEngine):
         target = Path(out_path).with_suffix(".wav")
         payload = dict(text=text, language=language, refs=refs, speaker=voice.engine_voice or None,
                        out=str(target), params=params, seed=seed, device=self._device())
-        for attempt in range(2):
-            w = self._ensure()
-            try:
-                w.request("synth", timeout=900, **payload)
-                break
-            except WorkerDied:
-                with self._lock:
-                    self._worker = None
-                if attempt == 1:
-                    raise
-                emit_log(self.engine_id, "Le moteur a redémarré, nouvelle tentative…")
+        self._req("synth", 900, **payload)
         if not native_speed and abs(float(speed or 1.0) - 1.0) > 0.01:
             from .. import audio
 
@@ -519,6 +557,8 @@ class DummyWorkerEngine(WorkerEngine):
         self._worker = None
         self._lock = threading.RLock()
         self.load_info = {}
+        self._online = False
+        self._offline_mode = False
         self._python = python or Path(sys.executable)
 
     def status(self):
@@ -594,17 +634,7 @@ class FastCloneEngine(WorkerEngine):
                 shutil.copyfile(words_path(spoken), words_path(target))
             data, sr = audio.read_audio(spoken)
             src = audio.write_audio(Path(td) / "base.wav", data, sr, subtype="PCM_16")
-            for attempt in range(2):
-                w = self._ensure()
-                try:
-                    w.request("convert", timeout=900, source=str(src), out=str(target), device=self._device(),
-                              **extra)
-                    break
-                except WorkerDied:
-                    with self._lock:
-                        self._worker = None
-                    if attempt == 1:
-                        raise
+            self._req("convert", 900, source=str(src), out=str(target), device=self._device(), **extra)
         return target
 
 
@@ -648,16 +678,7 @@ class WhisperTool(WorkerEngine):
         raise EngineError("Whisper ne produit pas de voix.")
 
     def _call(self, cmd: str, timeout: float, on_progress=None, **payload) -> dict:
-        for attempt in range(2):
-            w = self._ensure()
-            try:
-                return w.request(cmd, timeout=timeout, on_progress=on_progress, **payload)
-            except WorkerDied:
-                with self._lock:
-                    self._worker = None
-                if attempt == 1:
-                    raise
-        return {}
+        return self._req(cmd, timeout, on_progress, **payload)
 
     def transcribe_words(self, path: Path, language: str = "en", model: str = "small", on_progress=None,
                          start: float = 0.0, end: float | None = None) -> dict:
@@ -676,16 +697,7 @@ class WhisperTool(WorkerEngine):
         return self._call("detect_language", 1800, None, path=str(path), spans=spans)
 
     def transcribe(self, path: Path, language: str = "fr") -> str:
-        for attempt in range(2):
-            w = self._ensure()
-            try:
-                return w.request("transcribe", timeout=600, path=str(path), language=language).get("text", "")
-            except WorkerDied:
-                with self._lock:
-                    self._worker = None
-                if attempt == 1:
-                    raise
-        return ""
+        return self._req("transcribe", 600, path=str(path), language=language).get("text", "")
 
 
 
