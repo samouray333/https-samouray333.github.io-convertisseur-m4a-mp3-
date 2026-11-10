@@ -1,21 +1,21 @@
-# Bimys 1.3.0 (QMTech)
+# Bimys 1.4.0 (QMTech)
 
 Visionneuse BIM pédagogique spécialisée génie thermique pour les Bac Pro **ICCER** et **MEE** : ouverture de maquettes IFC, exploration des réseaux, métrés, déperditions, maintenance et défis élèves. Application 100 % hors ligne (aucun serveur, aucun compte, aucune clé API), interface entièrement en français.
 
-- Package Android : `com.qmtech.bimys`, versionCode 5, versionName 1.3.0
+- Package Android : `com.qmtech.bimys`, versionCode 6, versionName 1.4.0
 - Windows : installeur NSIS (installation par utilisateur, sans droits administrateur, raccourcis menu Démarrer et bureau, désinstallation depuis « Applications et fonctionnalités ») et version portable
 - Rendu WebGL standard (aucune dépendance CUDA ou carte Nvidia)
 - Interface 100 % en français, y compris les propriétés IFC normalisées (noms de Pset, propriétés, quantités et valeurs traduits, nom IFC d'origine affiché en petit) et les textes internes de Chromium sous Windows
 
 ## Télécharger
 
-Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.3.0`** du dépôt :
+Les fichiers sont construits par GitHub Actions (workflow `.github/workflows/bimys.yml`) et publiés dans la **Release GitHub `bimys-v1.4.0`** du dépôt :
 
 | Fichier | Usage |
 | --- | --- |
-| `Bimys-1.3.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
-| `Bimys-Setup-1.3.0.exe` | Installeur Windows 10/11 (64 bits) |
-| `Bimys-Portable-1.3.0.exe` | Version portable Windows, sans installation |
+| `Bimys-1.4.0.apk` | Android 7.0 et plus, installation directe (autoriser les sources inconnues) |
+| `Bimys-Setup-1.4.0.exe` | Installeur Windows 10/11 (64 bits) |
+| `Bimys-Portable-1.4.0.exe` | Version portable Windows, sans installation |
 
 ## Bibliothèque de maquettes (7 bâtiments complets)
 
@@ -45,6 +45,13 @@ Régénération : `npm run maquette` (maisons R+1) et `npm run batiments` (les 5
 | Maintenance | fiches équipements, check-lists (`src/data/maintenance.json`), contrôle d'étanchéité selon la charge en t éq. CO2, carnet d'interventions (photo, mesures, pièces), repères 3D (rouge : en retard, orange : en cours), rapport PDF avec signature au doigt ou à la souris |
 | Énergie | consommations annuelles, ratio kWh/m².an, gains estimés (chaudière, PAC, isolation, fenêtres, régulation) avec hypothèses affichées, export PDF |
 | Défis | questions générées depuis la maquette, correction avec tolérance, score, PDF du résultat, mode prof protégé par code (1234 au départ, modifiable) pour les corrigés et l'historique |
+
+### Nouveautés 1.4
+
+- Équipements modélisés en détail dans les 7 maquettes (`tools/formes.py`) : radiateurs à panneaux nervurés, sèche-serviettes tubulaires, chaudières avec ventouse et bandeau de commande, unités extérieures avec ventilateurs, groupes froids, rooftops, centrales d'air, cassettes, ballons, circulateurs, vannes, compteurs, collecteurs, sanitaires, fenêtres (dormant, vitrage, meneaux) et portes (huisserie, vantail, poignées). Encombrements, raccordements et identifiants inchangés
+- Rendu : ombres portées du soleil sur le bâtiment et le sol, vitrages réfléchissants, métaux brillants, anticrénelage, cercles plus lisses
+- Couleurs par lot : tuyaux et gaines en couleur franche, équipements légèrement teintés pour garder le détail des pièces
+- Repères de maintenance : pastilles au-dessus des équipements au lieu d'un aplat de couleur
 
 ### Nouveautés 1.3
 

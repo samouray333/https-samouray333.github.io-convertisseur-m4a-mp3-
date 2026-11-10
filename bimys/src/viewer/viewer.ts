@@ -64,6 +64,9 @@ export interface ViewerEvents {
 }
 
 const SEL_COLOR = 0x22d3ee;
+const TMP_COLOR = new THREE.Color();
+/** seau composé de tronçons (tubes, gaines) et non d'équipements : marqué par le worker */
+const data_isRun = (d: GeoBucket) => d.run === true;
 
 export class Viewer {
   readonly container: HTMLElement;
@@ -114,6 +117,9 @@ export class Viewer {
   private edgeColor = new THREE.Color(0x2b3a40);
   private grid: THREE.Group | null = null;
   private gridOn = true;
+  private ground: THREE.Mesh | null = null;
+  private shadowsOn = true;
+  private shadowDirty = true;
   private planStyleOn = false;
   private cubeRenderer: CSS3DRenderer | null = null;
   private cubeScene = new THREE.Scene();
@@ -140,12 +146,18 @@ export class Viewer {
     this.controls.screenSpacePanning = true;
     this.controls.zoomToCursor = true;
     this.controls.addEventListener('change', () => {
-      this.requestRender();
+      this.requestRender(false);
       this.events.onCamera?.();
     });
     const hemi = new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.6);
-    const dir = new THREE.DirectionalLight(0xffffff, 1.4);
+    const dir = new THREE.DirectionalLight(0xfff4e2, 1.4);
     dir.position.set(10, 20, 8);
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.bias = -0.0004;
+    dir.shadow.normalBias = 0.03;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.scene.add(dir.target);
     const dir2 = new THREE.DirectionalLight(0xffffff, 0.5);
     dir2.position.set(-10, 6, -12);
     this.lights = { hemi, dir, dir2 };
@@ -190,7 +202,7 @@ export class Viewer {
     this.applyQuality();
     for (const b of this.buckets) {
       const old = b.mat;
-      b.mat = this.makeMaterial(b.data.lot);
+      b.mat = this.makeMaterial(b.data);
       if (!this.planMats.has(b)) b.mesh.material = b.mat;
       else this.planMats.set(b, b.mat);
       old.dispose();
@@ -208,14 +220,16 @@ export class Viewer {
     this.scene.environment = high ? this.envMap : null;
     (this.scene as any).environmentIntensity = 0.55;
     if (this.lights) {
-      this.lights.hemi.intensity = high ? 0.9 : 1.6;
-      this.lights.dir.intensity = high ? 1.6 : 1.4;
-      this.lights.dir2.intensity = high ? 0.35 : 0.5;
+      this.lights.hemi.intensity = high ? 0.75 : 2.3;
+      this.lights.dir.intensity = high ? 2.1 : 1.7;
+      this.lights.dir2.intensity = high ? 0.3 : 0.9;
     }
     if (high && !this.composer) {
       const w = this.container.clientWidth || 1;
       const h = this.container.clientHeight || 1;
-      this.composer = new EffectComposer(this.renderer);
+      const pr = this.renderer.getPixelRatio();
+      const rt = new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType, samples: 4 });
+      this.composer = new EffectComposer(this.renderer, rt);
       this.renderPass = new RenderPass(this.scene, this.camera);
       this.gtao = new GTAOPass(this.scene, this.camera, w, h);
       this.gtao.blendIntensity = 0.85;
@@ -228,14 +242,30 @@ export class Viewer {
     this.requestRender();
   }
 
-  private makeMaterial(lot: string): THREE.MeshLambertMaterial | THREE.MeshStandardMaterial {
+  private makeMaterial(d: GeoBucket): THREE.MeshLambertMaterial | THREE.MeshStandardMaterial {
     if (this.quality === 'standard') return new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
-    const pipe = PIPE_LOTS.has(lot);
-    return new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: pipe ? 0.42 : lot === 'equipements' ? 0.5 : 0.82, metalness: pipe ? 0.25 : lot === 'equipements' ? 0.12 : 0.0 });
+    const glass = d.lot === 'archi' && d.color[3] < 0.99;
+    if (glass) return new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.05, metalness: 0.0, envMapIntensity: 2.2 });
+    if (d.run) return new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.4, metalness: 0.3 });
+    if (d.lot === 'archi' || d.lot === 'espaces') return new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.86, metalness: 0.0 });
+    // équipements : tôle laquée, laiton et inox un peu plus brillants
+    const [r, g, b] = d.color;
+    const metal = Math.abs(r - g) > 0.12 || (Math.abs(r - b) < 0.06 && r > 0.6 && r < 0.9);
+    return new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: metal ? 0.38 : 0.55, metalness: metal ? 0.45 : 0.08 });
   }
 
   /** l'occlusion ambiante est coupée en transparence et en plan (rendu plus lisible) */
   private renderFrame() {
+    const sh = this.quality === 'haute' && this.shadowsOn && !this.planStyleOn;
+    if (this.renderer.shadowMap.enabled !== sh) {
+      this.renderer.shadowMap.enabled = sh;
+      this.shadowDirty = true;
+      for (const b of this.buckets) b.mat.needsUpdate = true;
+    }
+    if (this.lights) this.lights.dir.castShadow = sh;
+    if (this.ground) this.ground.visible = sh && this.camera.position.y > this.ground.position.y;
+    if (sh && this.shadowDirty) this.renderer.shadowMap.needsUpdate = true;
+    this.shadowDirty = false;
     const useAO = this.quality === 'haute' && this.composer && !this.archiTransparent && !this.planStyleOn;
     if (useAO && this.composer && this.renderPass && this.gtao) {
       this.renderPass.camera = this.camera;
@@ -311,6 +341,44 @@ export class Viewer {
     group.visible = this.gridOn;
     this.grid = group;
     this.scene.add(group);
+    // sol invisible qui reçoit l'ombre portée du bâtiment
+    if (this.ground) {
+      this.scene.remove(this.ground);
+      this.ground.geometry.dispose();
+      (this.ground.material as THREE.Material).dispose();
+    }
+    const gr = new THREE.Mesh(new THREE.PlaneGeometry(ext * 3, ext * 3), new THREE.ShadowMaterial({ opacity: dark ? 0.35 : 0.22, depthWrite: false }));
+    gr.rotation.x = -Math.PI / 2;
+    gr.position.set(c.x, this.modelBox.min.y - 0.03, c.z);
+    gr.receiveShadow = true;
+    gr.renderOrder = -2;
+    this.ground = gr;
+    this.scene.add(gr);
+    // soleil : cadrage de la carte d'ombres sur la maquette
+    if (this.lights) {
+      const d = this.lights.dir;
+      const rad = Math.max(4, size.length() / 2) * 1.15;
+      d.target.position.copy(c);
+      d.position.copy(c).add(new THREE.Vector3(-0.38, 0.8, 0.46).normalize().multiplyScalar(rad * 2));
+      const cam = d.shadow.camera;
+      cam.left = cam.bottom = -rad;
+      cam.right = cam.top = rad;
+      cam.near = rad * 0.2;
+      cam.far = rad * 4;
+      cam.updateProjectionMatrix();
+      const big = rad > 30;
+      if (d.shadow.mapSize.x !== (big ? 4096 : 2048)) {
+        d.shadow.mapSize.set(big ? 4096 : 2048, big ? 4096 : 2048);
+        d.shadow.map?.dispose();
+        d.shadow.map = null as any;
+      }
+      d.shadow.normalBias = Math.max(0.02, rad / 600);
+    }
+  }
+
+  setShadows(v: boolean) {
+    this.shadowsOn = v;
+    this.requestRender();
   }
 
   setGridVisible(v: boolean) {
@@ -319,7 +387,9 @@ export class Viewer {
     this.requestRender();
   }
 
-  requestRender() {
+  /** `shadows` = false quand seule la caméra a bougé : la carte d'ombres est conservée */
+  requestRender(shadows = true) {
+    if (shadows) this.shadowDirty = true;
     this.needsRender = true;
   }
 
@@ -377,7 +447,7 @@ export class Viewer {
       geom.setIndex(new THREE.BufferAttribute(data.indices.slice(), 1));
       geom.computeBoundingBox();
       geom.computeBoundingSphere();
-      const mat = this.makeMaterial(data.lot);
+      const mat = this.makeMaterial(data);
       const mesh = new THREE.Mesh(geom, mat);
       mesh.matrixAutoUpdate = false;
       const rt: BucketRT = { data, mesh, geom, mat, edges: null, visStarts: new Int32Array(0), visIds: new Int32Array(0), bvhDirty: true };
@@ -419,7 +489,7 @@ export class Viewer {
   private buildEdges() {
     const tmp = new THREE.BufferGeometry();
     for (const b of this.buckets) {
-      if (!EDGE_LOTS.has(b.data.lot) || b.data.indices.length > 1_800_000) continue;
+      if ((!EDGE_LOTS.has(b.data.lot) && b.data.run !== false) || b.data.lot === 'espaces' || b.data.indices.length > 1_800_000) continue;
       const P = b.data.positions, I = b.data.indices, r = b.data.ranges;
       const chunks: Float32Array[] = [];
       const ranges: number[] = [];
@@ -521,8 +591,12 @@ export class Viewer {
       const [r, g, bl, a] = b.data.color;
       const mat = b.mat;
       const useLot = this.colorMode === 'lot' && lot !== 'archi' && lot !== 'autres';
-      if (useLot) mat.color.set(LOT_BY_ID[lot].color);
-      else mat.color.setRGB(r, g, bl, THREE.SRGBColorSpace);
+      mat.color.setRGB(r, g, bl, THREE.SRGBColorSpace);
+      // tuyaux et gaines : couleur franche du lot ; équipements : teinte du lot qui garde le détail des pièces
+      if (useLot) {
+        if (data_isRun(b.data)) mat.color.set(LOT_BY_ID[lot].color);
+        else mat.color.lerp(TMP_COLOR.set(LOT_BY_ID[lot].color), 0.22);
+      }
       let opacity = a;
       if (lot === 'espaces') opacity = Math.min(a, 0.18);
       if (lot === 'archi' && this.archiTransparent) opacity = Math.min(a, 0.18);
@@ -534,6 +608,8 @@ export class Viewer {
       mat.polygonOffsetFactor = lot === 'archi' ? 1.5 : 1;
       mat.polygonOffsetUnits = 1;
       b.mesh.renderOrder = mat.transparent ? 2 : lot === 'archi' ? 0 : 1;
+      b.mesh.castShadow = !mat.transparent;
+      b.mesh.receiveShadow = !mat.transparent;
       mat.needsUpdate = true;
       b.mesh.visible = this.lotVisible[lot] !== undefined ? this.lotVisible[lot] : LOT_BY_ID[lot]?.visible !== false;
       if (b.edges) {
@@ -664,7 +740,7 @@ export class Viewer {
     if (this.selectedSet.size) {
       const g = this.subsetGeometry([...this.selectedSet]);
       if (g) {
-        const m = new THREE.MeshLambertMaterial({ color: SEL_COLOR, emissive: SEL_COLOR, emissiveIntensity: 0.45, side: THREE.DoubleSide, depthTest: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, transparent: true, opacity: 0.92 });
+        const m = new THREE.MeshLambertMaterial({ color: SEL_COLOR, emissive: SEL_COLOR, emissiveIntensity: 0.35, side: THREE.DoubleSide, depthTest: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, transparent: true, opacity: 0.6, depthWrite: false });
         this.selMesh = new THREE.Mesh(g, m);
         this.selMesh.renderOrder = 5;
         this.scene.add(this.selMesh);
@@ -710,7 +786,7 @@ export class Viewer {
   clearMarkers() {
     for (const c of [...this.markers.children]) {
       const m = c as THREE.Mesh;
-      m.geometry?.dispose();
+      if (!(c as any).isSprite) m.geometry?.dispose();
       (m.material as THREE.Material)?.dispose();
       this.markers.remove(c);
     }
@@ -722,20 +798,49 @@ export class Viewer {
     for (const it of items) {
       const g = this.subsetGeometry([it.id]);
       if (!g) continue;
-      const mat = new THREE.MeshLambertMaterial({ color: it.color, emissive: it.color, emissiveIntensity: 0.55, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+      // teinte légère (le détail de l'équipement reste lisible) et pastille au-dessus, visible de loin
+      const mat = new THREE.MeshBasicMaterial({ color: it.color, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
       const mesh = new THREE.Mesh(g, mat);
       mesh.renderOrder = 4;
       this.markers.add(mesh);
-      // halo discret seulement pour les petits équipements, difficiles à repérer de loin
-      const bs = g.boundingSphere!;
-      if (bs.radius < 0.45) {
-        const halo = new THREE.Mesh(new THREE.SphereGeometry(Math.min(0.5, Math.max(bs.radius * 1.8, 0.2)), 16, 12), new THREE.MeshBasicMaterial({ color: it.color, transparent: true, opacity: 0.2, depthWrite: false }));
-        halo.position.copy(bs.center);
-        halo.renderOrder = 6;
-        this.markers.add(halo);
-      }
+      const bb = g.boundingBox!;
+      const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.pinTexture(it.color), sizeAttenuation: false, depthTest: false, transparent: true }));
+      pin.scale.setScalar(0.034);
+      pin.center.set(0.5, 0);
+      pin.position.set((bb.min.x + bb.max.x) / 2, bb.max.y + 0.03, (bb.min.z + bb.max.z) / 2);
+      pin.renderOrder = 7;
+      this.markers.add(pin);
     }
     this.requestRender();
+  }
+
+  private pinTextures = new Map<string, THREE.Texture>();
+
+  /** pastille en goutte avec point d'exclamation */
+  private pinTexture(color: string): THREE.Texture {
+    let t = this.pinTextures.get(color);
+    if (t) return t;
+    const c = document.createElement('canvas');
+    c.width = c.height = 96;
+    const g = c.getContext('2d')!;
+    g.beginPath();
+    g.arc(48, 38, 30, Math.PI * 0.86, Math.PI * 0.14);
+    g.lineTo(48, 94);
+    g.closePath();
+    g.fillStyle = color;
+    g.fill();
+    g.lineWidth = 5;
+    g.strokeStyle = '#ffffff';
+    g.stroke();
+    g.fillStyle = '#ffffff';
+    g.fillRect(44, 18, 8, 26);
+    g.beginPath();
+    g.arc(48, 54, 5, 0, Math.PI * 2);
+    g.fill();
+    t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    this.pinTextures.set(color, t);
+    return t;
   }
 
   setMarkersVisible(v: boolean) {

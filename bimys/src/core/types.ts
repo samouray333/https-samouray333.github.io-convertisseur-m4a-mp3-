@@ -153,6 +153,8 @@ export class Model {
 export interface GeoBucket {
   key: string;
   lot: LotId;
+  /** tronçons et raccords de réseaux (couleur franche du lot) ; sinon équipements et bâti */
+  run?: boolean;
   color: [number, number, number, number];
   positions: Float32Array;
   normals: Float32Array;

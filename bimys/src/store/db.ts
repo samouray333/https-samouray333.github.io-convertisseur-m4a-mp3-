@@ -21,6 +21,7 @@ export interface Settings {
   qualite: 'auto' | 'haute' | 'standard';
   aretes: boolean;
   grille: boolean;
+  ombres: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -40,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   qualite: 'auto',
   aretes: true,
   grille: true,
+  ombres: true,
 };
 
 export interface RecentFile {

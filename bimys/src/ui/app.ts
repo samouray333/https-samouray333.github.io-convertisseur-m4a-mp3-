@@ -154,6 +154,7 @@ export class App implements Ctx {
     v.setQuality(q === 'auto' ? v.autoQuality() : q);
     v.setEdges(this.settings.aretes ?? true);
     v.setGridVisible(this.settings.grille ?? true);
+    v.setShadows(this.settings.ombres ?? true);
   }
 
   async openFile() {

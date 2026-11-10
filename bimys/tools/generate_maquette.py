@@ -27,6 +27,9 @@ import ifcopenshell.api
 import ifcopenshell.guid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import formes  # noqa: E402
+
 ROOT = os.path.dirname(HERE)
 OUT_IFC = os.path.join(ROOT, "public", "samples")
 OUT_JSON = os.path.join(HERE, "out")
@@ -161,6 +164,15 @@ class Builder:
         if style:
             self.paint(p, style)
         api("spatial.assign_container", self.f, products=[p], relating_structure=container or st)
+        return p
+
+    def product_detail(self, ifc_class, name, storey, origin, detail, solids, style, **kw):
+        """produit à forme détaillée : `detail` = [(solide, style)], sinon les `solids` simples"""
+        if not detail:
+            return self.product(ifc_class, name, storey, origin, solids, style, **kw)
+        p = self.product(ifc_class, name, storey, origin, [d[0] for d in detail], None, **kw)
+        for solid, st in detail:
+            self.f.createIfcStyledItem(solid, [self.styles[st]], None)
         return p
 
     def pset(self, product, name, props):
@@ -369,7 +381,7 @@ class Builder:
         op.Representation = self.shape([self.box_solid(*o_dims)])
         f.createIfcRelVoidsElement(ifcopenshell.guid.new(), None, None, None, wall, op)
         cls = "IfcWindow" if kind == "W" else "IfcDoor"
-        el = self.product(cls, name, skey, fr_origin, [self.box_solid(*fr_dims)], "Vitrage" if kind == "W" else "Porte")
+        el = self.product_detail(cls, name, skey, fr_origin, formes.detail_menuiserie(self, kind, fr_dims), [self.box_solid(*fr_dims)], "Vitrage" if kind == "W" else "Porte")
         el.OverallWidth = width
         el.OverallHeight = height
         if kind == "W":
@@ -539,14 +551,16 @@ class Builder:
         self.expected["counts"][key] = self.expected["counts"].get(key, 0) + n
 
     def box_equipment(self, cls, name, storey, origin, dims, style, predefined=None, object_type=None, container=None, system=None):
-        p = self.product(cls, name, storey, origin, [self.box_solid(*dims)], style, container=container, predefined=predefined, object_type=object_type)
+        det = formes.detail_boite(self, cls, predefined, name, dims, style)
+        p = self.product_detail(cls, name, storey, origin, det, [self.box_solid(*dims)], style, container=container, predefined=predefined, object_type=object_type)
         self.count(cls)
         if system:
             self.assign(system, [p])
         return p
 
     def cyl_equipment(self, cls, name, storey, origin, r, h, style, predefined=None, object_type=None, container=None, system=None):
-        p = self.product(cls, name, storey, origin, [self.cyl_solid(r, h)], style, container=container, predefined=predefined, object_type=object_type)
+        det = formes.detail_cylindre(self, cls, predefined, name, r, h, style)
+        p = self.product_detail(cls, name, storey, origin, det, [self.cyl_solid(r, h)], style, container=container, predefined=predefined, object_type=object_type)
         self.count(cls)
         if system:
             self.assign(system, [p])

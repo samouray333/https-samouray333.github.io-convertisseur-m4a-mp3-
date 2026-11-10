@@ -655,6 +655,7 @@ export function extractData(api: IfcAPI, m: number, fileName: string, progress: 
 interface BucketBuild {
   key: string;
   lot: LotId;
+  run: boolean;
   color: [number, number, number, number];
   pos: Float32Array[];
   nor: Float32Array[];
@@ -718,10 +719,11 @@ export function extractGeometry(api: IfcAPI, m: number, data: ModelData, buildBu
       if (buildBuffers && pos && nor) {
         const col = pg.color;
         const rgba: [number, number, number, number] = [round2(col.x), round2(col.y), round2(col.z), round2(col.w)];
-        const key: string = `${e.lot}|${rgba.join(',')}`;
+        const run: boolean = /segment|fitting/i.test(e.cls) && e.predefined !== 'JUNCTION';
+        const key: string = `${e.lot}|${run ? 'r' : 'e'}|${rgba.join(',')}`;
         let b = buckets.get(key);
         if (!b) {
-          b = { key, lot: e.lot, color: rgba, pos: [], nor: [], idx: [], vcount: 0, icount: 0, ranges: [] };
+          b = { key, lot: e.lot, run, color: rgba, pos: [], nor: [], idx: [], vcount: 0, icount: 0, ranges: [] };
           buckets.set(key, b);
         }
         const idx = new Uint32Array(index.length);
@@ -752,6 +754,7 @@ export function extractGeometry(api: IfcAPI, m: number, data: ModelData, buildBu
     out.push({
       key: b.key,
       lot: b.lot,
+      run: b.run,
       color: b.color,
       positions: concatF(b.pos, b.vcount * 3),
       normals: concatF(b.nor, b.vcount * 3),
@@ -789,7 +792,7 @@ function concatU(parts: Uint32Array[], len: number): Uint32Array {
 /** Chargement complet (worker ou tests). */
 export function loadIfc(api: IfcAPI, bytes: Uint8Array, fileName: string, buildBuffers: boolean, progress: Progress = () => {}): { data: ModelData; buckets: GeoBucket[] } {
   progress(2, 'Ouverture du fichier');
-  const m = api.OpenModel(bytes, { COORDINATE_TO_ORIGIN: true, CIRCLE_SEGMENTS: 12 } as any);
+  const m = api.OpenModel(bytes, { COORDINATE_TO_ORIGIN: true, CIRCLE_SEGMENTS: 20 } as any);
   try {
     progress(10, 'Lecture des objets');
     const data = extractData(api, m, fileName, progress);

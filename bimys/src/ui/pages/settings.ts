@@ -87,9 +87,10 @@ export class SettingsPage implements Page {
         <div class="grid">
           <label class="field">Thème<select data-s="theme"><option value="auto">Automatique (système)</option><option value="clair">Clair</option><option value="sombre">Sombre</option></select></label>
           <label class="field">Couleurs 3D<select data-s="couleurs"><option value="lot">Par lot (code couleur)</option><option value="ifc">Couleurs du fichier IFC</option></select></label>
-          <label class="field">Qualité graphique<select data-s="qualite"><option value="auto">Automatique (selon l'appareil)</option><option value="haute">Haute (ombrage d'ambiance, éclairage réaliste)</option><option value="standard">Standard (plus rapide, tablettes et vieux PC)</option></select></label>
+          <label class="field">Qualité graphique<select data-s="qualite"><option value="auto">Automatique (selon l'appareil)</option><option value="haute">Haute (ombres, reflets, éclairage réaliste)</option><option value="standard">Standard (plus rapide, tablettes et vieux PC)</option></select></label>
           <label class="field">Arêtes des objets<select data-b="aretes"><option value="1">Affichées</option><option value="0">Masquées</option></select></label>
           <label class="field">Grille au sol<select data-b="grille"><option value="1">Affichée</option><option value="0">Masquée</option></select></label>
+          <label class="field">Ombres portées (qualité haute)<select data-b="ombres"><option value="1">Activées</option><option value="0">Désactivées</option></select></label>
         </div>
       </div>
       <div class="card"><h2>${icon('lock')} Mode prof</h2>
@@ -114,6 +115,7 @@ export class SettingsPage implements Page {
     q<HTMLSelectElement>('[data-s=qualite]').value = s.qualite;
     q<HTMLSelectElement>('[data-b=aretes]').value = s.aretes ? '1' : '0';
     q<HTMLSelectElement>('[data-b=grille]').value = s.grille ? '1' : '0';
+    q<HTMLSelectElement>('[data-b=ombres]').value = s.ombres ? '1' : '0';
     this.inner.querySelectorAll<HTMLSelectElement>('[data-b]').forEach((x) => {
       x.addEventListener('change', async () => {
         await save({ [x.dataset.b!]: x.value === '1' } as any);
