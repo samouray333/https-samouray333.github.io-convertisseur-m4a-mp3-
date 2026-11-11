@@ -53,6 +53,17 @@ VIAddVersionKey /LANG=1036 "LegalCopyright" "(C) 2026 ${COMPANY}"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "French"
 
+!include "x64.nsh"
+
+Function .onInit
+  ; Application 64 bits : registre et Program Files en vue 64 bits.
+  SetRegView 64
+FunctionEnd
+
+Function un.onInit
+  SetRegView 64
+FunctionEnd
+
 Section "Transferys" SecMain
   SectionIn RO
   ; Ferme une instance en cours (mise à jour)
