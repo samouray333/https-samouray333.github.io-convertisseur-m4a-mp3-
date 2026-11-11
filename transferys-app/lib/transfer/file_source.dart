@@ -1,8 +1,27 @@
 // Source d'un fichier à envoyer. Abstraite pour gérer à la fois les fichiers
 // classiques (Windows) et les contenus Android (content://) sans copie.
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
+
+/// Lecteur positionnable d'une source (fichier classique ou descripteur Android).
+abstract class SourceReader {
+  Future<void> setPosition(int position);
+  Future<Uint8List> read(int count);
+  Future<void> close();
+}
+
+class RafReader implements SourceReader {
+  RafReader(this.raf);
+  final RandomAccessFile raf;
+  @override
+  Future<void> setPosition(int position) => raf.setPosition(position);
+  @override
+  Future<Uint8List> read(int count) => raf.read(count);
+  @override
+  Future<void> close() => raf.close();
+}
 
 abstract class FileSource {
   /// Chemin relatif reçu par l'autre appareil (ex. « Vacances/IMG_001.jpg »).
@@ -11,7 +30,7 @@ abstract class FileSource {
   DateTime get modified;
 
   /// Ouvre le fichier en lecture.
-  Future<RandomAccessFile> open();
+  Future<SourceReader> open();
 
   /// Libère les ressources natives éventuelles (descripteur Android).
   Future<void> release() async {}
@@ -32,7 +51,7 @@ class LocalFileSource extends FileSource {
   final DateTime modified;
 
   @override
-  Future<RandomAccessFile> open() => File(path).open(mode: FileMode.read);
+  Future<SourceReader> open() async => RafReader(await File(path).open(mode: FileMode.read));
 }
 
 /// Développe une liste de chemins (fichiers et dossiers) en sources, en

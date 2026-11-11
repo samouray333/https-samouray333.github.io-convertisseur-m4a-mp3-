@@ -90,7 +90,8 @@ class SendJob {
       } catch (_) {}
       job.status = job.failedCount > 0 ? TransferStatus.failed : TransferStatus.done;
       if (job.status == TransferStatus.failed) {
-        job.error ??= '${job.failedCount} fichier(s) n\'ont pas pu être envoyés.';
+        final first = job.files.where((x) => x.error != null).map((x) => x.error).firstOrNull;
+        job.error ??= '${job.failedCount} fichier(s) n\'ont pas pu être envoyés.${first != null ? ' Raison : $first' : ''}';
       }
     } on _Fatal catch (f) {
       job.status = f.status;
@@ -271,14 +272,15 @@ class SendJob {
     final f = job.files[index];
     f.status = TransferStatus.running;
     job.notify(force: true);
-    RandomAccessFile? raf;
+    SourceReader? raf;
     StreamingHasher? hasher;
     try {
       try {
         raf = await src.open();
       } catch (e) {
         f.status = TransferStatus.failed;
-        f.error = 'Fichier illisible : ${src.relPath}';
+        f.error = 'Fichier illisible sur cet appareil : ${e is FileSystemException ? e.message : e}';
+        await _reportFailure(f);
         return;
       }
       final file = raf;
@@ -330,6 +332,7 @@ class SendJob {
             if (integrityRetries > 1) {
               f.status = TransferStatus.failed;
               f.error = 'Fichier corrompu pendant le transfert (SHA-256 différent).';
+              await _reportFailure(f);
               return;
             }
             serverOffset = 0;
@@ -356,7 +359,8 @@ class SendJob {
         final data = await file.read(len);
         if (data.length != len) {
           f.status = TransferStatus.failed;
-          f.error = 'Le fichier a été modifié ou déplacé pendant l\'envoi.';
+          f.error = 'Le fichier a été modifié ou déplacé pendant l\'envoi (${data.length} octets lus au lieu de $len).';
+          await _reportFailure(f);
           return;
         }
         final base = confirmed;
@@ -419,6 +423,7 @@ class SendJob {
       if (_cancelled) return;
       f.status = TransferStatus.failed;
       f.error = e is TransferysException ? e.message : 'Erreur : $e';
+      await _reportFailure(f);
     } finally {
       hasher?.dispose();
       try {
@@ -426,6 +431,14 @@ class SendJob {
       } catch (_) {}
       await src.release();
     }
+  }
+
+  /// Informe le destinataire de la raison d'un échec (affichée chez lui).
+  Future<void> _reportFailure(TransferFile f) async {
+    try {
+      await _client?.json('POST', '/session/$_sid/file/${f.fileId}/fail',
+          body: {'message': f.error}, timeout: const Duration(seconds: 5));
+    } catch (_) {}
   }
 
   /// Ajoute au hachage la partie [base, upTo) du morceau en mémoire.

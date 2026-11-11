@@ -17,6 +17,7 @@ import '../core/models.dart';
 import '../core/settings.dart';
 import '../engine.dart';
 import '../platform/platform_hooks.dart';
+import '../transfer/fd_reader.dart';
 import '../transfer/file_source.dart';
 import '../transfer/receiver.dart';
 import '../transfer/server.dart';
@@ -58,14 +59,13 @@ class _FdFileSource extends FileSource {
   final _Request _req;
 
   @override
-  Future<RandomAccessFile> open() async {
+  Future<SourceReader> open() async {
     final fd = await _req('openFd', uri);
-    if (fd is! int || fd < 0) throw const FileSystemException('Fichier illisible');
-    try {
-      return await File('/proc/self/fd/$fd').open(mode: FileMode.read);
-    } finally {
-      await _req('closeFd', fd);
+    if (fd is! int || fd < 0) {
+      throw const FileSystemException('Android refuse l\'accès à ce fichier (autorisation retirée ou fichier supprimé)');
     }
+    // Lecture directe du descripteur (pas de réouverture par chemin).
+    return FdReader(fd);
   }
 }
 

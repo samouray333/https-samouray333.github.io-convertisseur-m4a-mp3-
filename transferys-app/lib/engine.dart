@@ -21,7 +21,7 @@ import 'transfer/sender.dart';
 import 'transfer/server.dart';
 import 'transport/transport.dart';
 
-const String appVersion = '1.0.0';
+const String appVersion = '1.0.1';
 
 /// Transport Wi-Fi local (v1).
 class WifiTransport implements Transport {

@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../transfer/fd_reader.dart';
 import '../transfer/file_source.dart';
 import 'platform_hooks.dart';
 
@@ -91,14 +92,10 @@ class ContentFileSource extends FileSource {
   final DateTime modified;
 
   @override
-  Future<RandomAccessFile> open() async {
+  Future<SourceReader> open() async {
     final fd = await AndroidBridge._ch.invokeMethod<int>('openFd', {'uri': uri});
     if (fd == null || fd < 0) throw const FileSystemException('Fichier illisible');
-    try {
-      return await File('/proc/self/fd/$fd').open(mode: FileMode.read);
-    } finally {
-      await AndroidBridge._ch.invokeMethod('closeFd', {'fd': fd});
-    }
+    return FdReader(fd);
   }
 }
 

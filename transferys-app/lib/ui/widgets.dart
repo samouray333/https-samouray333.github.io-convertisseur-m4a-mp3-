@@ -226,6 +226,11 @@ class _JobCardState extends State<JobCard> {
                           Text(f.relPath, overflow: TextOverflow.ellipsis, style: t.textTheme.bodyMedium),
                           const SizedBox(height: 3),
                           LinearProgressIndicator(value: f.progress.clamp(0, 1).toDouble(), minHeight: 3, color: statusColor(context, f.status)),
+                          if (f.error != null && f.status == TransferStatus.failed)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(f.error!, style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.error)),
+                            ),
                         ]),
                       ),
                       const SizedBox(width: 10),

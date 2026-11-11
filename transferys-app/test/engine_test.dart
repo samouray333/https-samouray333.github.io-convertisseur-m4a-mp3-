@@ -14,6 +14,10 @@ import 'package:transferys/core/models.dart';
 import 'package:transferys/core/settings.dart';
 import 'package:transferys/engine.dart';
 import 'package:transferys/platform/platform_hooks.dart';
+import 'dart:ffi';
+
+import 'package:ffi/ffi.dart';
+import 'package:transferys/transfer/fd_reader.dart';
 import 'package:transferys/transfer/file_source.dart';
 import 'package:transferys/transfer/job.dart';
 import 'package:transferys/transfer/server.dart';
@@ -143,6 +147,30 @@ class CuttableProxy {
       s.destroy();
     }
     _sockets.clear();
+  }
+}
+
+/// Comme un content:// Android : le fichier n'est lu QUE par son descripteur.
+class FdSource extends FileSource {
+  FdSource(this.path, this.relPath) : size = File(path).lengthSync(), modified = File(path).lastModifiedSync();
+  final String path;
+  @override
+  final String relPath;
+  @override
+  final int size;
+  @override
+  final DateTime modified;
+  static final _open = DynamicLibrary.process()
+      .lookupFunction<Int32 Function(Pointer<Utf8>, Int32), int Function(Pointer<Utf8>, int)>('open');
+  int opened = 0;
+  @override
+  Future<SourceReader> open() async {
+    final c = path.toNativeUtf8();
+    final fd = _open(c, 0); // O_RDONLY
+    malloc.free(c);
+    if (fd < 0) throw const FileSystemException('open a échoué');
+    opened++;
+    return FdReader(fd);
   }
 }
 
@@ -405,6 +433,52 @@ void main() {
     // ignore: avoid_print
     print('200 Mo en ${sw.elapsedMilliseconds} ms = ${(200000 / sw.elapsedMilliseconds).toStringAsFixed(1)} Mo/s');
   }, timeout: const Timeout(Duration(minutes: 5)));
+
+  test('source par descripteur natif (cas Android) + coupure', () async {
+    if (!Platform.isLinux) {
+      markTestSkipped('libc Linux/Android uniquement');
+      return;
+    }
+    await pairNodes(a, b);
+    final proxy = CuttableProxy(b.engine.port);
+    await proxy.start();
+    a.engine.discovery.forget(b.engine.identity.id);
+    a.engine.trust.get(b.engine.identity.id)!
+      ..lastAddress = '127.0.0.1'
+      ..lastPort = proxy.port;
+    final f1 = await makeFile(p.join(a.root.path, 'VID-WA0031.mp4'), 90 * 1024 * 1024 + 7, seed: 21);
+    final f2 = await makeFile(p.join(a.root.path, 'IMG-WA0001.jpg'), 300 * 1024, seed: 22);
+    final s1 = FdSource(f1.path, 'VID-WA0031.mp4');
+    final job = a.engine.send(b.engine.identity.id, [s1, FdSource(f2.path, 'IMG-WA0001.jpg')]);
+    while (job.transferredBytes < 30 * 1024 * 1024) {
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+    await proxy.cut();
+    await Future.delayed(const Duration(seconds: 2));
+    await proxy.start(onPort: proxy.port);
+    await waitJob(job);
+    expect(job.status, TransferStatus.done, reason: job.error);
+    expect(await sha(p.join(b.recvDir, 'VID-WA0031.mp4')), await sha(f1.path));
+    expect(await sha(p.join(b.recvDir, 'IMG-WA0001.jpg')), await sha(f2.path));
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('fichier illisible : la raison arrive chez le destinataire', () async {
+    await pairNodes(a, b);
+    final ok = await makeFile(p.join(a.root.path, 'ok.txt'), 1000);
+    final job = a.engine.send(b.engine.identity.id, [
+      LocalFileSource(ok.path),
+      LocalFileSource(p.join(a.root.path, 'disparu.mp4'), relPath: 'disparu.mp4', size: 5000, modified: DateTime.now()),
+    ]);
+    await waitJob(job);
+    expect(job.status, TransferStatus.failed);
+    expect(job.files[1].error, contains('Fichier illisible'));
+    await Future.delayed(const Duration(milliseconds: 500));
+    final recv = b.engine.jobs.first;
+    expect(recv.files[0].status, TransferStatus.done);
+    expect(recv.files[1].status, TransferStatus.failed);
+    expect(recv.files[1].error, contains('Fichier illisible'));
+    expect(recv.error, contains('Raison'));
+  });
 
   test('5 Go', () async {
     if (Platform.environment['TRANSFERYS_BIG'] != '1') {

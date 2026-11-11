@@ -152,6 +152,18 @@ class TransferServer {
           if (m == 'PUT') return await _putChunk(req, s, rf);
           if (m == 'GET') return await sendJson(req, 200, {'offset': rf.offset, 'done': rf.done, 'paused': s.pausedByReceiver});
         }
+        if (m == 'POST' && route.length == 5 && route[2] == 'file' && route[4] == 'fail') {
+          final rf = s.files[route[3]];
+          final j = await readJsonBody(req);
+          if (rf != null && !rf.done) {
+            await rf.discardPart();
+            rf.view
+              ..status = TransferStatus.failed
+              ..error = (j['message'] as String?) ?? 'Échec sur l\'appareil d\'origine.';
+            s.job.notify(force: true);
+          }
+          return await sendJson(req, 200, {'ok': true});
+        }
         if (m == 'POST' && route.length == 5 && route[2] == 'file' && route[4] == 'finish') {
           final rf = s.files[route[3]];
           if (rf == null) return await sendJson(req, 404, {'error': 'unknown_file'});
@@ -520,7 +532,11 @@ class TransferServer {
       job.status = job.failedCount > 0 || s.files.values.any((f) => !f.done && !f.skip)
           ? TransferStatus.failed
           : TransferStatus.done;
-      if (job.status == TransferStatus.failed) job.error ??= 'Certains fichiers n\'ont pas été reçus.';
+      if (job.status == TransferStatus.failed) {
+        final n = s.files.values.where((f) => !f.done && !f.skip).length;
+        final reason = s.files.values.map((f) => f.view.error).whereType<String>().firstOrNull;
+        job.error ??= '$n fichier(s) non reçu(s).${reason != null ? ' Raison indiquée par ${s.from.name} : $reason' : ''}';
+      }
     }
     job.notify(force: true);
     await delegate.onReceiveEnded(job);
