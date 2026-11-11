@@ -321,7 +321,7 @@ class AppState extends ChangeNotifier {
     Notifier.show('Appairage', '${p.peerName} veut s\'appairer : code ${p.code}', important: true);
     final c = PairingCodeController();
     _pairingDialogs[p.pairId] = c;
-    showPairingCodeDialog(ctx, p, c).then((cancelled) {
+    showPairingCodeDialog(ctx, p, c, () => engine.approvePairing(p.pairId)).then((cancelled) {
       _pairingDialogs.remove(p.pairId);
       if (cancelled == true) engine.cancelLocalPairing();
     });

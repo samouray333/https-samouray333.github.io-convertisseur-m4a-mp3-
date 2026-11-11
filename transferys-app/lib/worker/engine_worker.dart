@@ -270,6 +270,9 @@ Future<void> engineWorkerMain(List<Object?> args) async {
       case 'removeTrusted':
         await engine.removeTrusted(m['id'] as String);
         return null;
+      case 'approvePairing':
+        engine.approvePairing(m['pairId'] as String);
+        return null;
       case 'cancelLocalPairing':
         engine.server.cancelLocalPairing();
         return null;

@@ -25,7 +25,7 @@ import 'transfer/server.dart';
 import 'transfer/tunnel.dart';
 import 'transport/transport.dart';
 
-const String appVersion = '1.1.0';
+const String appVersion = '1.1.1';
 
 /// Transport Wi-Fi local (v1).
 class WifiTransport implements Transport {
@@ -197,6 +197,11 @@ class TransferysEngine implements ServerDelegate {
   Future<void> stop() async {
     _remoteTimer?.cancel();
     _tunnelGeneration++;
+    // Referme le port ouvert sur la box quand l'appli s'arrête.
+    if (remoteStatus.mapped) {
+      await _upnp.closePort(port).timeout(const Duration(seconds: 3), onTimeout: () {});
+      remoteStatus.mapped = false;
+    }
     await discovery.stop();
     await server.stop();
   }
@@ -231,6 +236,11 @@ class TransferysEngine implements ServerDelegate {
         'fingerprint': _identity.fingerprint,
         'port': port,
       };
+
+  /// Réponse donnée à un inconnu qui nous contacte depuis Internet : rien
+  /// (ni nom d'appareil, ni identifiant).
+  @override
+  Map<String, dynamic> publicInfoJson() => {'app': 'transferys'};
 
   /// Appareils visibles + appareils de confiance (même hors ligne).
   List<(Peer?, TrustedDevice?)> devices() {
@@ -338,7 +348,12 @@ class TransferysEngine implements ServerDelegate {
           continue;
         }
         final secret = randomToken(32);
-        final r3 = await c.json('POST', '/pair/confirm', body: {'pairId': pairId, 'code': typed, 'secret': secret});
+        // L'autre appareil attend que son utilisateur clique « Autoriser ».
+        final r3 = await c.json('POST', '/pair/confirm',
+            body: {'pairId': pairId, 'code': typed, 'secret': secret}, timeout: const Duration(minutes: 3, seconds: 10));
+        if (r3.error == 'refused') {
+          throw TransferysException(ErrorCode.pairingFailed, 'Appairage refusé (ou non autorisé à temps) sur $name.');
+        }
         if (!r3.ok) {
           throw TransferysException(ErrorCode.pairingFailed, 'Appairage refusé par $name (${r3.error ?? r3.status}).');
         }
@@ -366,6 +381,9 @@ class TransferysEngine implements ServerDelegate {
       c.close();
     }
   }
+
+  /// Bouton « Autoriser » du dialogue d'appairage.
+  void approvePairing(String pairId) => server.approveLocalPairing(pairId);
 
   Future<void> removeTrusted(String id) async {
     await _trust.remove(id);
@@ -526,6 +544,7 @@ class TransferysEngine implements ServerDelegate {
 
   @override
   bool consumePushToken(String deviceId, String token) {
+    _pushTokens.removeWhere((_, e) => DateTime.now().isAfter(e));
     final k = '$deviceId|$token';
     final exp = _pushTokens[k];
     if (exp == null || DateTime.now().isAfter(exp)) return false;

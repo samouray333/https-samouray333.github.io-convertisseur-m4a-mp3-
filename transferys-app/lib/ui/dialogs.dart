@@ -66,38 +66,68 @@ class PairingCodeController {
   Future<void> get closed => _close.future;
 }
 
-/// Renvoie true si l'utilisateur a annulé.
-Future<bool?> showPairingCodeDialog(BuildContext context, PairingPrompt p, PairingCodeController c) {
+/// Renvoie true si l'utilisateur a refusé.
+Future<bool?> showPairingCodeDialog(BuildContext context, PairingPrompt p, PairingCodeController c, VoidCallback onApprove) {
   return showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (ctx) {
-      final code = '${p.code.substring(0, 3)} ${p.code.substring(3)}';
-      return _AutoClose(
-        signal: c.closed,
-        child: AlertDialog(
-        icon: const Icon(Icons.verified_user_outlined, size: 40),
-        title: const Text('Code d\'appairage'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Saisissez ce code sur « ${p.peerName} » :', textAlign: TextAlign.center),
+    builder: (ctx) => _AutoClose(signal: c.closed, child: _PairingCodeDialog(prompt: p, onApprove: onApprove)),
+  );
+}
+
+class _PairingCodeDialog extends StatefulWidget {
+  const _PairingCodeDialog({required this.prompt, required this.onApprove});
+  final PairingPrompt prompt;
+  final VoidCallback onApprove;
+  @override
+  State<_PairingCodeDialog> createState() => _PairingCodeDialogState();
+}
+
+class _PairingCodeDialogState extends State<_PairingCodeDialog> {
+  bool _approved = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.prompt;
+    final t = Theme.of(context);
+    final code = '${p.code.substring(0, 3)} ${p.code.substring(3)}';
+    return AlertDialog(
+      icon: const Icon(Icons.verified_user_outlined, size: 40),
+      title: Text('« ${p.peerName} » veut s\'appairer'),
+      content: SizedBox(
+        width: 400,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(
+            _approved
+                ? 'Autorisé. Saisissez maintenant ce code sur « ${p.peerName} » :'
+                : 'Si c\'est bien vous qui lancez cet appairage, cliquez sur Autoriser, puis saisissez ce code sur « ${p.peerName} ».',
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 18),
           SelectableText(code,
-              style: Theme.of(ctx).textTheme.displayMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 6,
-                    color: Theme.of(ctx).colorScheme.primary,
-                  )),
+              style: t.textTheme.displayMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 6, color: t.colorScheme.primary)),
           const SizedBox(height: 14),
           Text(
-            'Ne communiquez ce code à personne d\'autre. Il garantit que vous vous connectez bien au bon appareil.',
+            'Un appareil de confiance peut vous envoyer des fichiers et parcourir vos dossiers partagés. Refusez si vous ne reconnaissez pas cet appareil.',
             textAlign: TextAlign.center,
-            style: Theme.of(ctx).textTheme.bodySmall,
+            style: t.textTheme.bodySmall,
           ),
         ]),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Annuler'))],
-      ));
-    },
-  );
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, true), child: Text(_approved ? 'Annuler' : 'Refuser')),
+        if (!_approved)
+          FilledButton.icon(
+            onPressed: () {
+              widget.onApprove();
+              setState(() => _approved = true);
+            },
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('Autoriser'),
+          ),
+      ],
+    );
+  }
 }
 
 /// Ferme la route du dialogue quand [signal] se termine (une seule fois, et

@@ -2,7 +2,7 @@
 
 Transfert de fichiers sans câble entre un PC Windows et un téléphone Android, dans les deux sens, sur le Wi-Fi local. Chiffré, sans serveur, sans Internet.
 
-Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.1.0
+Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.1.1
 
 ## Fonctionnalités
 
@@ -71,7 +71,7 @@ La compilation automatique (tests + installateur + version portable) est faite p
 ### Tests
 
 ```bash
-flutter test test/engine_test.dart test/remote_test.dart   # 22 scénarios réels entre deux instances
+flutter test test/   # 25 scénarios réels entre deux instances
 TRANSFERYS_BIG=1 flutter test test/engine_test.dart --name "5 Go"
 ```
 

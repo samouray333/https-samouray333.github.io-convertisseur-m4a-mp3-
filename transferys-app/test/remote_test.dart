@@ -37,7 +37,10 @@ class Node {
     );
     await engine.init();
     engine.settings.port = 0;
-    engine.onPairingPrompt = (pp) => lastPrompt = pp;
+    engine.onPairingPrompt = (pp) {
+      lastPrompt = pp;
+      engine.approvePairing(pp.pairId);
+    };
     engine.onIncoming = (r) async {
       incoming++;
       return accept;

@@ -57,6 +57,7 @@ class Node {
     engine.settings.port = port;
     engine.onPairingPrompt = (pp) {
       lastPrompt = pp;
+      engine.approvePairing(pp.pairId); // l'utilisateur clique « Autoriser »
       codes.add(pp);
     };
     engine.onIncoming = (r) async {

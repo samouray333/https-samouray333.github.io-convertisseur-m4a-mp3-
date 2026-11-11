@@ -319,6 +319,7 @@ class EngineProxy {
 
   Future<void> removeTrusted(String id) => _cmd('removeTrusted', {'id': id});
   void cancelLocalPairing() => _cmd('cancelLocalPairing', null);
+  void approvePairing(String pairId) => _cmd('approvePairing', {'pairId': pairId});
   Future<void> refreshDiscovery() => _cmd('discovery', {'action': 'refresh'});
   Future<void> restartDiscovery() => _cmd('discovery', {'action': 'restart'});
   Future<void> stop() => _cmd('stop', null).timeout(const Duration(seconds: 3), onTimeout: () => null);

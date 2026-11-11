@@ -33,6 +33,7 @@ abstract class ServerDelegate {
   Settings get settings;
   TrustStore get trust;
   Map<String, dynamic> infoJson();
+  Map<String, dynamic> publicInfoJson();
 
   /// Demande à l'utilisateur d'accepter ou refuser une réception.
   Future<bool> confirmIncoming(IncomingRequest r);
@@ -87,6 +88,11 @@ class _PairingState {
   final DateTime created = DateTime.now();
   String? code;
   int attempts = 0;
+
+  /// Décision de l'utilisateur de CET appareil (bouton Autoriser / Refuser).
+  /// Sans elle, aucun appairage : le code seul ne prouve rien, l'autre
+  /// appareil sait le calculer.
+  final approval = Completer<bool>();
 }
 
 class TransferServer {
@@ -263,9 +269,12 @@ class TransferServer {
   }
 
   Future<void> _info(HttpRequest req) {
-    final info = Map<String, dynamic>.from(delegate.infoJson());
+    final paired = _authenticate(req) != null;
+    // Inconnu venant d'Internet : on ne révèle ni le nom ni l'identifiant.
+    final local = isLocalAddress(remoteAddressOf(req));
+    final info = Map<String, dynamic>.from(paired || local ? delegate.infoJson() : delegate.publicInfoJson());
     // Indique à l'appelant s'il est toujours dans nos appareils de confiance.
-    info['paired'] = _authenticate(req) != null;
+    info['paired'] = paired;
     return sendJson(req, 200, info);
   }
 
@@ -280,7 +289,10 @@ class TransferServer {
     if (cur != null && DateTime.now().difference(cur.created) < pairingTimeout && cur.peerId != j['id']) {
       return sendJson(req, 409, {'error': 'busy'});
     }
-    if (cur != null) delegate.closePairingCode(cur.pairId, success: false);
+    if (cur != null) {
+      if (!cur.approval.isCompleted) cur.approval.complete(false);
+      delegate.closePairingCode(cur.pairId, success: false);
+    }
     final st = _PairingState(
       pairId: randomToken(12),
       peerId: j['id'] as String,
@@ -333,6 +345,16 @@ class TransferServer {
     }
     final secret = j['secret'] as String?;
     if (secret == null || secret.length < 32) return sendJson(req, 400, {'error': 'bad_secret'});
+    // Attente du clic « Autoriser » sur cet appareil.
+    final left = pairingTimeout - DateTime.now().difference(st.created);
+    final approved = await st.approval.future.timeout(left.isNegative ? Duration.zero : left, onTimeout: () => false);
+    if (!approved || !identical(_pairing, st)) {
+      if (identical(_pairing, st)) {
+        _pairing = null;
+        delegate.closePairingCode(st.pairId, success: false, message: 'Appairage non autorisé.');
+      }
+      return sendJson(req, 403, {'error': 'refused'});
+    }
     await delegate.trust.put(TrustedDevice(
       id: st.peerId,
       name: st.name,
@@ -353,15 +375,23 @@ class TransferServer {
     final st = _pairing;
     if (st != null && st.pairId == j['pairId']) {
       _pairing = null;
+      if (!st.approval.isCompleted) st.approval.complete(false);
       delegate.closePairingCode(st.pairId, success: false, message: 'Appairage annulé par ${st.name}.');
     }
     return sendJson(req, 200, {'ok': true});
   }
 
-  /// Annule l'appairage affiché localement (bouton « Annuler »).
+  /// L'utilisateur autorise l'appairage affiché (bouton « Autoriser »).
+  void approveLocalPairing(String pairId) {
+    final st = _pairing;
+    if (st != null && st.pairId == pairId && !st.approval.isCompleted) st.approval.complete(true);
+  }
+
+  /// Annule l'appairage affiché localement (bouton « Refuser »).
   void cancelLocalPairing() {
     final st = _pairing;
     _pairing = null;
+    if (st != null && !st.approval.isCompleted) st.approval.complete(false);
     if (st != null) delegate.closePairingCode(st.pairId, success: false);
   }
 

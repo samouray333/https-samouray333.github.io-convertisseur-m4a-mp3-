@@ -48,7 +48,7 @@ jobs:
         run: flutter analyze --no-fatal-infos
 
       - name: Tests du moteur sur Windows (appairage, 500 fichiers, coupure, reprise, doublons…)
-        run: flutter test test/engine_test.dart test/remote_test.dart -r expanded
+        run: flutter test test/engine_test.dart test/remote_test.dart test/security_test.dart -r expanded
 
       # Le chemin de travail GitHub est très long (nom du dépôt répété) :
       # Visual Studio dépasse la limite de 260 caractères. On compile depuis C:\tx.
