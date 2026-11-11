@@ -102,6 +102,29 @@ jobs:
           $c | Format-Table LocalAddress, LocalPort
           Stop-Process -Id $p.Id -Force
 
+      - name: Test de l'installateur (installation silencieuse, contrôles, désinstallation)
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $setup = (Resolve-Path "dist\Transferys-Setup-$v.exe").Path
+          Start-Process $setup -ArgumentList '/S' -Wait
+          $dir = "$env:ProgramFiles\Transferys"
+          if (-not (Test-Path "$dir\Transferys.exe")) { throw "Transferys.exe absent après installation" }
+          $u = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Transferys'
+          Write-Host "Applications et fonctionnalités : $($u.DisplayName) $($u.DisplayVersion) ($($u.Publisher))"
+          $fw = netsh advfirewall firewall show rule name="Transferys"
+          if ($LASTEXITCODE -ne 0) { throw "Règle de pare-feu absente" }
+          $fw | Select-String "Profil|Profiles|Action|Programme|Program"
+          if (-not (Test-Path 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\Transferys\command')) { throw "Menu clic droit absent" }
+          Write-Host "Clic droit : $((Get-ItemProperty 'Registry::HKEY_CURRENT_USER\Software\Classes\*\shell\Transferys\command').'(default)')"
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\SendTo\Transferys.lnk")) { throw "Raccourci Envoyer vers absent" }
+          Write-Host "Installation OK : exe, désinstallation, pare-feu, clic droit, Envoyer vers"
+          Start-Process "$dir\Uninstall.exe" -ArgumentList '/S' -Wait
+          Start-Sleep -Seconds 8
+          if (Test-Path "$dir\Transferys.exe") { throw "Désinstallation incomplète" }
+          if (Test-Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Transferys') { throw "Entrée de désinstallation restante" }
+          Write-Host "Désinstallation propre OK"
+
       - uses: actions/upload-artifact@v4
         with:
           name: Transferys-Windows-${{ steps.ver.outputs.version }}
