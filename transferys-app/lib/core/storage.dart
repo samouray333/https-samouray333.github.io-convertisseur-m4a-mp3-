@@ -8,6 +8,10 @@ class JsonFile {
   JsonFile(this.path);
   final String path;
 
+  /// Écritures sérialisées : deux transferts qui se terminent en même temps
+  /// ne doivent pas se marcher dessus sur le fichier temporaire.
+  Future<void> _queue = Future.value();
+
   /// Lit le fichier, ou renvoie [fallback] s'il n'existe pas / est corrompu.
   Future<dynamic> read({dynamic fallback}) async {
     try {
@@ -22,7 +26,13 @@ class JsonFile {
 
   /// Écrit via un fichier temporaire puis renommage, pour ne jamais laisser
   /// un JSON à moitié écrit.
-  Future<void> write(Object? data) async {
+  Future<void> write(Object? data) {
+    final next = _queue.then((_) => _write(data));
+    _queue = next.catchError((_) {});
+    return next;
+  }
+
+  Future<void> _write(Object? data) async {
     final f = File(path);
     await f.parent.create(recursive: true);
     final tmp = File('$path.tmp');

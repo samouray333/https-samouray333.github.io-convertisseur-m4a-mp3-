@@ -185,6 +185,8 @@ void main() {
   });
 
   tearDown(() async {
+    // Laisse le destinataire finir d'écrire son historique.
+    await Future.delayed(const Duration(milliseconds: 800));
     await a.shutdown();
     await b.shutdown();
     // Windows refuse de supprimer un fichier encore en cours d'écriture
