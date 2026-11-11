@@ -1,0 +1,110 @@
+name: Transferys - build Windows
+
+on:
+  push:
+    branches: ["claude/transferys**"]
+    paths:
+      - "transferys-app/**"
+      - ".github/workflows/transferys-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: transferys-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: transferys-app
+
+jobs:
+  windows:
+    name: Tests + installateur Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)\+'
+          $v = $line.Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Version : $v"
+
+      - name: Dépendances
+        run: flutter pub get
+
+      - name: Analyse du code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Tests du moteur sur Windows (appairage, 500 fichiers, coupure, reprise, doublons…)
+        run: flutter test test/engine_test.dart -r expanded
+
+      - name: Compilation Windows (release)
+        run: flutter build windows --release
+
+      - name: Installateur NSIS + version portable
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            $nsis = "${env:ProgramFiles(x86)}\NSIS"
+            if (-not (Test-Path "$nsis\makensis.exe")) { choco install nsis -y --no-progress | Out-Null }
+            $env:Path += ";$nsis"
+          }
+          $v = "${{ steps.ver.outputs.version }}"
+          $rel = (Resolve-Path build\windows\x64\runner\Release).Path
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $dist = (Resolve-Path dist).Path
+          makensis /V2 /DVERSION=$v "/DSRC=$rel" "/DOUTFILE=$dist\Transferys-Setup-$v.exe" windows\installer\transferys.nsi
+          $p = "$dist\Transferys-Portable-$v"
+          Copy-Item -Recurse $rel $p
+          Set-Content -Path "$p\LISEZ-MOI.txt" -Encoding UTF8 -Value @"
+          Transferys $v - version portable (aucune installation)
+          Double-cliquez sur Transferys.exe.
+          Au premier lancement, Windows demande d'autoriser Transferys dans le pare-feu :
+          cochez « Réseaux privés » puis Autoriser (sinon le téléphone ne pourra pas joindre le PC).
+          Pour le clic droit « Envoyer avec Transferys » et l'ajout automatique au pare-feu,
+          préférez l'installateur Transferys-Setup-$v.exe.
+          "@
+          Compress-Archive -Path "$p\*" -DestinationPath "$dist\Transferys-Portable-$v.zip"
+          Remove-Item -Recurse $p
+          Get-ChildItem $dist | Format-Table Name, Length
+
+      - name: Lancement de contrôle (l'exe démarre et reste ouvert)
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path build\windows\x64\runner\Release\Transferys.exe).Path
+          $p = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { throw "Transferys.exe s'est fermé (code $($p.ExitCode))" }
+          Write-Host "Transferys.exe tourne toujours après 15 s (PID $($p.Id))"
+          $c = Get-NetTCPConnection -State Listen -OwningProcess $p.Id -ErrorAction SilentlyContinue
+          $c | Format-Table LocalAddress, LocalPort
+          Stop-Process -Id $p.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Transferys-Windows-${{ steps.ver.outputs.version }}
+          path: transferys-app/dist/*
+
+      - name: Publication
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: transferys-v${{ steps.ver.outputs.version }}-r${{ github.run_number }}
+          name: Transferys ${{ steps.ver.outputs.version }} (Windows)
+          target_commitish: ${{ github.sha }}
+          files: transferys-app/dist/*
+          body: |
+            Transferys ${{ steps.ver.outputs.version }} pour Windows 10 / 11.
+            - Transferys-Setup : installateur (pare-feu, clic droit, Envoyer vers, raccourcis)
+            - Transferys-Portable : version sans installation
