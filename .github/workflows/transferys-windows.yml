@@ -50,8 +50,18 @@ jobs:
       - name: Tests du moteur sur Windows (appairage, 500 fichiers, coupure, reprise, doublons…)
         run: flutter test test/engine_test.dart -r expanded
 
-      - name: Compilation Windows (release)
-        run: flutter build windows --release
+      # Le chemin de travail GitHub est très long (nom du dépôt répété) :
+      # Visual Studio dépasse la limite de 260 caractères. On compile depuis C:\tx.
+      - name: Compilation Windows (release, chemin court)
+        shell: pwsh
+        run: |
+          if (Test-Path C:\tx) { Remove-Item -Recurse -Force C:\tx }
+          New-Item -ItemType Directory C:\tx | Out-Null
+          Get-ChildItem -Force | Where-Object { $_.Name -notin @('build', '.dart_tool') } | Copy-Item -Destination C:\tx -Recurse -Force
+          Set-Location C:\tx
+          flutter pub get
+          flutter build windows --release
+          New-Item -ItemType Directory -Force -Path build | Out-Null
 
       - name: Installateur NSIS + version portable
         shell: pwsh
@@ -62,10 +72,10 @@ jobs:
             $env:Path += ";$nsis"
           }
           $v = "${{ steps.ver.outputs.version }}"
-          $rel = (Resolve-Path build\windows\x64\runner\Release).Path
+          $rel = "C:\tx\build\windows\x64\runner\Release"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $dist = (Resolve-Path dist).Path
-          makensis /V2 /DVERSION=$v "/DSRC=$rel" "/DOUTFILE=$dist\Transferys-Setup-$v.exe" windows\installer\transferys.nsi
+          makensis /V2 /DVERSION=$v "/DSRC=$rel" "/DOUTFILE=$dist\Transferys-Setup-$v.exe" C:\tx\windows\installer\transferys.nsi
           $p = "$dist\Transferys-Portable-$v"
           Copy-Item -Recurse $rel $p
           Set-Content -Path "$p\LISEZ-MOI.txt" -Encoding UTF8 -Value @"
@@ -83,7 +93,7 @@ jobs:
       - name: Lancement de contrôle (l'exe démarre et reste ouvert)
         shell: pwsh
         run: |
-          $exe = (Resolve-Path build\windows\x64\runner\Release\Transferys.exe).Path
+          $exe = "C:\tx\build\windows\x64\runner\Release\Transferys.exe"
           $p = Start-Process $exe -PassThru
           Start-Sleep -Seconds 15
           if ($p.HasExited) { throw "Transferys.exe s'est fermé (code $($p.ExitCode))" }
