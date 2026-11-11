@@ -253,7 +253,7 @@ class _DeviceTile extends StatelessWidget {
     final app = context.read<AppState>();
     final t = Theme.of(context);
     final status = [
-      d.online ? 'En ligne' : 'Hors ligne',
+      d.peer != null ? 'En ligne' : (d.remote ? 'Joignable à distance' : 'Hors ligne'),
       d.isTrusted ? 'De confiance' : 'Nouvel appareil : appairage au premier envoi',
     ].join(' • ');
     return Card(
@@ -263,7 +263,7 @@ class _DeviceTile extends StatelessWidget {
         title: Text(d.name, style: t.textTheme.titleMedium),
         subtitle: Text(status),
         trailing: FilledButton.icon(
-          onPressed: (d.online || d.trusted?.lastAddress != null) ? () => app.sendTo(d) : null,
+          onPressed: (d.online || d.isTrusted) ? () => app.sendTo(d) : null,
           icon: Icon(d.isTrusted ? Icons.send_rounded : Icons.link_rounded, size: 18),
           label: Text(d.isTrusted || app.selection.isNotEmpty ? 'Envoyer' : 'Appairer'),
         ),

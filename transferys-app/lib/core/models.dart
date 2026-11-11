@@ -64,11 +64,18 @@ class TrustedDevice {
     required this.pairedAt,
     this.lastAddress,
     this.lastPort,
-  });
+    List<String>? remoteAddresses,
+    this.remotePort,
+  }) : remoteAddresses = remoteAddresses ?? [];
 
   final String id;
   String name;
   DevicePlatform platform;
+
+  /// Adresses joignables depuis Internet (IPv6 globales, IPv4 de la box),
+  /// apprises quand les deux appareils étaient sur le même réseau.
+  List<String> remoteAddresses;
+  int? remotePort;
 
   /// Empreinte SHA-256 du certificat TLS de cet appareil (épinglage).
   String fingerprint;
@@ -88,6 +95,8 @@ class TrustedDevice {
         'pairedAt': pairedAt.toIso8601String(),
         'lastAddress': lastAddress,
         'lastPort': lastPort,
+        'remoteAddresses': remoteAddresses,
+        'remotePort': remotePort,
       };
 
   factory TrustedDevice.fromJson(Map<String, dynamic> j) => TrustedDevice(
@@ -99,6 +108,8 @@ class TrustedDevice {
         pairedAt: DateTime.tryParse(j['pairedAt'] as String? ?? '') ?? DateTime.now(),
         lastAddress: j['lastAddress'] as String?,
         lastPort: j['lastPort'] as int?,
+        remoteAddresses: ((j['remoteAddresses'] as List?) ?? const []).cast<String>().toList(),
+        remotePort: j['remotePort'] as int?,
       );
 }
 

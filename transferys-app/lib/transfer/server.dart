@@ -9,11 +9,14 @@ import '../core/errors.dart';
 import '../core/models.dart';
 import '../core/settings.dart';
 import '../core/stores.dart';
+import '../network/net_utils.dart';
 import '../security/identity.dart';
 import '../security/pairing.dart';
 import 'job.dart';
 import 'protocol.dart';
+import 'fs_service.dart';
 import 'receiver.dart';
+import 'tunnel.dart';
 
 /// Code d'appairage à afficher sur cet appareil.
 class PairingPrompt {
@@ -39,6 +42,29 @@ abstract class ServerDelegate {
   void onReceiveStarted(TransferJob job);
   Future<void> onReceiveEnded(TransferJob job);
   Future<void> onFileSaved(String path);
+
+  // Accès à distance
+  FsService get fs;
+  TunnelHub get tunnels;
+  Map<String, Offer> get offers;
+  Future<Map<String, Object?>> remoteInfo();
+
+  /// Jeton donné à un appareil à qui on a demandé de nous envoyer des
+  /// fichiers : la réception est alors acceptée sans confirmation.
+  bool consumePushToken(String deviceId, String token);
+}
+
+/// Adresse distante normalisée (« ::ffff:192.168.1.5 » → « 192.168.1.5 »).
+String remoteAddressOf(HttpRequest req) {
+  final a = req.connectionInfo?.remoteAddress.address ?? '';
+  return a.startsWith('::ffff:') ? a.substring(7) : a;
+}
+
+bool isLocalAddress(String a) {
+  if (a == '127.0.0.1' || a == '::1') return true;
+  if (isPrivateIPv4(a)) return true;
+  final l = a.toLowerCase();
+  return l.startsWith('fe8') || l.startsWith('fc') || l.startsWith('fd');
 }
 
 class _PairingState {
@@ -79,11 +105,21 @@ class TransferServer {
   Future<void> start(int preferredPort) async {
     if (_server != null) return;
     final ctx = delegate.identity.serverContext();
+    // IPv4 + IPv6 sur le même port (l'IPv6 sert à l'accès à distance).
+    Future<HttpServer> bind(int port) async {
+      try {
+        return await HttpServer.bindSecure(InternetAddress.anyIPv6, port, ctx, v6Only: false);
+      } on SocketException catch (e) {
+        if (e.osError?.errorCode == 98 || e.osError?.errorCode == 10048 || e.message.contains('in use')) rethrow;
+        return HttpServer.bindSecure(InternetAddress.anyIPv4, port, ctx);
+      }
+    }
+
     try {
-      _server = await HttpServer.bindSecure(InternetAddress.anyIPv4, preferredPort, ctx, shared: false);
+      _server = await bind(preferredPort);
     } on SocketException {
       // Port déjà pris (autre logiciel) : port libre au hasard, annoncé par la découverte.
-      _server = await HttpServer.bindSecure(InternetAddress.anyIPv4, 0, ctx);
+      _server = await bind(0);
     }
     _server!.idleTimeout = const Duration(seconds: 60);
     _server!.autoCompress = false;
@@ -139,6 +175,9 @@ class TransferServer {
         return await sendJson(req, 401, {'error': 'not_paired'});
       }
       if (m == 'POST' && route.length == 1 && route[0] == 'session') return await _createSession(req, dev);
+      if (m == 'GET' && route.length == 1 && route[0] == 'remote') return await sendJson(req, 200, await delegate.remoteInfo());
+      if (route.isNotEmpty && route[0] == 'tunnel') return await _tunnel(req, dev, route);
+      if (route.isNotEmpty && route[0] == 'fs') return await _fs(req, dev, route);
       if (route.length >= 2 && route[0] == 'session') {
         final s = sessions[route[1]];
         if (s == null || s.from.id != dev.id) {
@@ -206,8 +245,8 @@ class TransferServer {
     final dev = delegate.trust.get(id);
     if (dev == null) return null;
     if (!constantTimeEquals(auth.substring(7), dev.secret)) return null;
-    final addr = req.connectionInfo?.remoteAddress.address;
-    if (addr != null) dev.lastAddress = addr;
+    final addr = remoteAddressOf(req);
+    if (addr.isNotEmpty && isLocalAddress(addr)) dev.lastAddress = addr;
     return dev;
   }
 
@@ -221,6 +260,10 @@ class TransferServer {
   // -------------------------------------------------------------- appairage
   Future<void> _pairHello(HttpRequest req) async {
     final j = await readJsonBody(req);
+    // L'appairage ne se fait que sur le réseau local, jamais depuis Internet.
+    if (!isLocalAddress(remoteAddressOf(req))) {
+      return sendJson(req, 403, {'error': 'pairing_remote'});
+    }
     final cur = _pairing;
     if (cur != null && DateTime.now().difference(cur.created) < pairingTimeout && cur.peerId != j['id']) {
       return sendJson(req, 409, {'error': 'busy'});
@@ -285,7 +328,7 @@ class TransferServer {
       fingerprint: st.fingerprint,
       secret: secret,
       pairedAt: DateTime.now(),
-      lastAddress: req.connectionInfo?.remoteAddress.address,
+      lastAddress: remoteAddressOf(req),
       lastPort: st.port,
     ));
     _pairing = null;
@@ -329,7 +372,24 @@ class TransferServer {
 
     final infos = list.map((e) => IncomingFileInfo.fromJson((e as Map).cast<String, dynamic>())).toList();
     final settings = delegate.settings;
-    final receiveDir = settings.receiveDir;
+    var receiveDir = settings.receiveDir;
+    var autoAccept = false;
+    // Dépôt dans un dossier partagé ouvert en écriture (explorateur distant).
+    final target = j['target'];
+    if (target is Map) {
+      try {
+        final shareId = target['share'] as String;
+        if (!delegate.fs.writable(shareId)) {
+          return await sendJson(req, 403, {'error': 'read_only', 'message': 'Ce dossier est en lecture seule.'});
+        }
+        receiveDir = delegate.fs.resolve(shareId, (target['path'] as String?) ?? '');
+        autoAccept = true;
+      } on FsException catch (e) {
+        return await sendJson(req, 404, {'error': e.code, 'message': e.message});
+      }
+    }
+    final token = j['token'] as String?;
+    if (token != null && delegate.consumePushToken(dev.id, token)) autoAccept = true;
     final job = TransferJob(
       id: sid,
       direction: TransferDirection.receive,
@@ -344,7 +404,7 @@ class TransferServer {
     }
     sessions[sid] = s;
 
-    final decision = _decide(s, settings);
+    final decision = _decide(s, settings, autoAccept: autoAccept);
     s.pendingDecision = decision;
     final r = await decision;
     s.pendingDecision = null;
@@ -356,7 +416,7 @@ class TransferServer {
     return sendJson(req, r['status'] as int? ?? 403, r);
   }
 
-  Future<Map<String, dynamic>> _decide(ReceiveSession s, Settings settings) async {
+  Future<Map<String, dynamic>> _decide(ReceiveSession s, Settings settings, {bool autoAccept = false}) async {
     try {
       await Directory(s.receiveDir).create(recursive: true);
     } catch (e) {
@@ -371,7 +431,7 @@ class TransferServer {
       return {'accepted': false, 'status': 507, 'error': 'disk_full', 'needed': need, 'free': free};
     }
 
-    if (settings.confirmBeforeReceive) {
+    if (settings.confirmBeforeReceive && !autoAccept) {
       final req = IncomingRequest(sessionId: s.id, from: s.from, files: s.files.values.map((f) => f.info).toList());
       bool ok;
       try {
@@ -541,6 +601,111 @@ class TransferServer {
     job.notify(force: true);
     await delegate.onReceiveEnded(job);
     Future.delayed(const Duration(minutes: 10), () => sessions.remove(s.id));
+  }
+
+  // ------------------------------------------------- accès à distance
+  Future<void> _tunnel(HttpRequest req, TrustedDevice dev, List<String> route) async {
+    if (req.method == 'GET' && route.length == 2 && route[1] == 'wait') {
+      final cmds = await delegate.tunnels.wait(dev.id);
+      return sendJson(req, 200, {'commands': cmds});
+    }
+    if (req.method == 'POST' && route.length == 2 && route[1] == 'reply') {
+      final j = await readJsonBody(req);
+      delegate.tunnels.reply(dev.id, j['id'] as String, j['result'], j['error'] as String?);
+      return sendJson(req, 200, {'ok': true});
+    }
+    return sendJson(req, 404, {'error': 'not_found'});
+  }
+
+  /// Chemin local demandé, via un partage (lecture) ou une offre.
+  String _fsPath(Map<String, String> q, TrustedDevice dev) {
+    final offer = q['offer'];
+    if (offer != null) {
+      final o = delegate.offers[offer];
+      if (o == null || o.deviceId != dev.id) throw FsException('not_found', 'Proposition expirée.');
+      final path = o.paths[q['file']];
+      if (path == null) throw FsException('not_found', 'Fichier inconnu.');
+      return path;
+    }
+    return delegate.fs.resolve(q['share'] ?? '', q['path'] ?? '');
+  }
+
+  Future<void> _fs(HttpRequest req, TrustedDevice dev, List<String> route) async {
+    final q = req.uri.queryParameters;
+    try {
+      if (req.method == 'GET' && route.length == 2) {
+        switch (route[1]) {
+          case 'roots':
+            return await sendJson(req, 200, {'roots': [for (final r in delegate.fs.roots()) r.toJson()]});
+          case 'list':
+            final l = await delegate.fs.list(q['share'] ?? '', q['path'] ?? '');
+            return await sendJson(req, 200, {'entries': [for (final e in l) e.toJson()]});
+          case 'walk':
+            final w = await delegate.fs.walk(q['share'] ?? '', q['path'] ?? '');
+            return await sendJson(req, 200, {
+              'files': [for (final f in w) {'path': f.$1, 'size': f.$2, 'modified': f.$3.millisecondsSinceEpoch}],
+            });
+          case 'read':
+            final path = _fsPath(q, dev);
+            final offset = int.tryParse(q['offset'] ?? '') ?? 0;
+            final len = (int.tryParse(q['len'] ?? '') ?? chunkSize).clamp(0, chunkSize);
+            final data = await FsService.readRange(path, offset, len);
+            _offerProgress(q, dev, offset + data.length);
+            final r = req.response;
+            r.statusCode = 200;
+            r.headers.contentType = ContentType.binary;
+            r.headers.set('x-file-size', '${await File(path).length()}');
+            r.contentLength = data.length;
+            r.add(data);
+            return await r.close();
+          case 'hash':
+            final path = _fsPath(q, dev);
+            return await sendJson(req, 200, {'sha256': await FsService.sha256Of(path)});
+        }
+      }
+      if (req.method == 'POST' && route.length == 4 && route[1] == 'offer' && route[3] == 'done') {
+        final j = await readJsonBody(req);
+        final o = delegate.offers[route[2]];
+        if (o != null && o.deviceId == dev.id) {
+          final f = o.job.files.where((x) => x.fileId == j['fileId']).firstOrNull;
+          if (f != null) {
+            final ok = j['ok'] == true;
+            f.status = ok ? TransferStatus.done : TransferStatus.failed;
+            if (ok) f.transferred = f.size;
+            f.error = j['error'] as String?;
+          }
+          if (j['finished'] == true) {
+            o.job.status = o.job.files.every((x) => x.status == TransferStatus.done) ? TransferStatus.done : TransferStatus.failed;
+            if (o.job.status == TransferStatus.failed) {
+              o.job.error ??= (j['error'] as String?) ?? 'Certains fichiers n\'ont pas été téléchargés par ${dev.name}.';
+            }
+            delegate.offers.remove(o.token);
+            o.job.notify(force: true);
+            await delegate.onReceiveEnded(o.job);
+          } else {
+            o.job.notify(force: true);
+          }
+        }
+        return await sendJson(req, 200, {'ok': true});
+      }
+      return await sendJson(req, 404, {'error': 'not_found'});
+    } on FsException catch (e) {
+      return sendJson(req, e.code == 'forbidden' ? 403 : 404, {'error': e.code, 'message': e.message});
+    } on FileSystemException catch (e) {
+      return sendJson(req, 500, {'error': 'read_failed', 'message': e.osError?.message ?? e.message});
+    }
+  }
+
+  void _offerProgress(Map<String, String> q, TrustedDevice dev, int upTo) {
+    final o = delegate.offers[q['offer']];
+    if (o == null) return;
+    final f = o.job.files.where((x) => x.fileId == q['file']).firstOrNull;
+    if (f == null) return;
+    f.status = TransferStatus.running;
+    if (upTo > f.transferred) f.transferred = upTo;
+    o.job.status = TransferStatus.running;
+    o.job.speed.add(o.job.transferredBytes);
+    o.job.notify();
   }
 
   /// Erreur lisible pour l'interface si le serveur n'a pas pu démarrer.

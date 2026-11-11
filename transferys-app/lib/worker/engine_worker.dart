@@ -44,6 +44,9 @@ class _ProxyHooks extends PlatformHooks {
 
   @override
   Future<void> networkStarted() async => _notify('networkStarted', null);
+
+  @override
+  Future<void> remoteMode(bool active) async => _notify('remoteMode', active);
 }
 
 /// Fichier Android lu via un descripteur ouvert par le fil principal.
@@ -153,6 +156,8 @@ Future<void> engineWorkerMain(List<Object?> args) async {
           for (final d in engine.devices())
             {'peer': d.$1 == null ? null : peerJson(d.$1!), 'trusted': d.$2 == null ? null : trustedJson(d.$2!)},
         ],
+        'reachable': [for (final t in engine.trust.all) if (engine.isReachable(t.id)) t.id],
+        'remoteStatus': engine.remoteStatus.toJson(),
         'trusted': [for (final t in engine.trust.all) trustedJson(t)],
         'jobs': [for (final j in engine.jobs) j.toJson()],
         if (hKey != lastHistoryKey) 'history': [for (final e in h) e.toJson()],
@@ -198,7 +203,9 @@ Future<void> engineWorkerMain(List<Object?> args) async {
           ..autoStart = s.autoStart
           ..minimizeToTray = s.minimizeToTray
           ..explorerMenu = s.explorerMenu
-          ..onboardingDone = s.onboardingDone;
+          ..onboardingDone = s.onboardingDone
+          ..remoteAccess = s.remoteAccess
+          ..shares = s.shares;
         await engine.saveSettings();
         return null;
       case 'probe':
@@ -223,8 +230,25 @@ Future<void> engineWorkerMain(List<Object?> args) async {
                 relPath: s['relPath'] as String, size: s['size'] as int, modified: mod));
           }
         }
+        if (m['share'] != null || m['smart'] == true) {
+          await engine.upload(m['deviceId'] as String, sources, share: m['share'] as String?, path: (m['path'] as String?) ?? '');
+          return null;
+        }
         final job = engine.send(m['deviceId'] as String, sources);
         return job.id;
+      case 'roots':
+        return [for (final r in await engine.remoteRoots(m['deviceId'] as String)) r.toJson()];
+      case 'list':
+        return [
+          for (final e in await engine.remoteList(m['deviceId'] as String, m['share'] as String, m['path'] as String))
+            e.toJson()
+        ];
+      case 'download':
+        await engine.download(m['deviceId'] as String, m['share'] as String, (m['paths'] as List).cast<String>());
+        return null;
+      case 'refreshRemote':
+        await engine.refreshRemote();
+        return null;
       case 'job':
         final j = engine.jobs.where((x) => x.id == m['id']).firstOrNull;
         switch (m['action']) {
@@ -248,6 +272,10 @@ Future<void> engineWorkerMain(List<Object?> args) async {
         return null;
       case 'cancelLocalPairing':
         engine.server.cancelLocalPairing();
+        return null;
+      case 'resolveAll':
+        await Future.wait([for (final t in engine.trust.all) engine.resolve(t.id)]);
+        scheduleSnap();
         return null;
       case 'discovery':
         switch (m['action']) {

@@ -2,7 +2,7 @@
 
 Transfert de fichiers sans câble entre un PC Windows et un téléphone Android, dans les deux sens, sur le Wi-Fi local. Chiffré, sans serveur, sans Internet.
 
-Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.0.0
+Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.1.0
 
 ## Fonctionnalités
 
@@ -16,6 +16,8 @@ Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.0.0
 - Windows : glisser-déposer, zone de notification, démarrage avec Windows, notifications, clic droit « Envoyer avec Transferys », « Envoyer vers », instance unique
 - Android : sélecteurs natifs sans copie (lecture directe des `content://`), menu Partager, service au premier plan avec verrous Wi-Fi et processeur, galerie mise à jour, permissions expliquées
 - Historique avec « Ouvrir le fichier » / « Ouvrir le dossier », thème clair / sombre, guide de démarrage
+- **Accès à distance (v1.1, 100 % gratuit, sans serveur)** : ouverture automatique du port sur la box (UPnP IGD) + IPv6 ; les adresses Internet sont échangées pendant que les appareils sont sur le même Wi-Fi ; l'appairage reste interdit depuis Internet
+- **Explorateur de dossiers partagés** dans les deux sens (onglet Parcourir), lecture seule ou dépôt autorisé par dossier ; un téléphone en 4G (injoignable) garde un canal inverse ouvert vers le PC (long polling), toutes les données passent par des connexions ouvertes par le téléphone
 
 ## Organisation du code (`lib/`)
 
@@ -23,8 +25,8 @@ Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.0.0
 |---|---|
 | `core/` | Modèles, réglages, historique, appareils de confiance, formats FR, erreurs en français |
 | `security/` | Identité TLS de l'appareil (`identity.dart`), protocole d'appairage par code (`pairing.dart`) |
-| `network/` | Découverte UDP (`discovery.dart`), adresses locales, QR code |
-| `transfer/` | Protocole HTTPS, serveur et réception (`server.dart`, `receiver.dart`), envoi (`sender.dart`), client épinglé, SHA-256 en isolate (`hasher.dart`) |
+| `network/` | Découverte UDP (`discovery.dart`), UPnP IGD (`upnp.dart`), adresses locales, QR code |
+| `transfer/` | Protocole HTTPS, serveur et réception (`server.dart`, `receiver.dart`), envoi (`sender.dart`), téléchargement distant (`downloader.dart`), dossiers partagés (`fs_service.dart`), canal inverse (`tunnel.dart`), lecture Android par descripteur (`fd_reader.dart`), client épinglé, SHA-256 en isolate (`hasher.dart`) |
 | `transport/` | Interface `Transport` : le Wi-Fi est l'implémentation v1, le Bluetooth (v2) s'y branchera sans toucher au reste |
 | `worker/` | Le moteur tourne dans un isolate dédié (`engine_worker.dart`), l'interface le pilote via `engine_proxy.dart` |
 | `platform/` | Android (`android_bridge.dart` + Kotlin), Windows (`windows_integration.dart`), notifications et ouverture de fichiers |
@@ -69,7 +71,7 @@ La compilation automatique (tests + installateur + version portable) est faite p
 ### Tests
 
 ```bash
-flutter test test/engine_test.dart                       # 15 scénarios réels entre deux instances
+flutter test test/engine_test.dart test/remote_test.dart   # 22 scénarios réels entre deux instances
 TRANSFERYS_BIG=1 flutter test test/engine_test.dart --name "5 Go"
 ```
 

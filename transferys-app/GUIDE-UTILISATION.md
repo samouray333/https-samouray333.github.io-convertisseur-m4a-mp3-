@@ -2,16 +2,16 @@
 
 ## 1. Installer sur le PC Windows
 
-1. Double-cliquez sur **Transferys-Setup-1.0.0.exe**.
+1. Double-cliquez sur **Transferys-Setup-1.1.0.exe**.
 2. Si Windows affiche « Windows a protégé votre ordinateur » : cliquez sur **Informations complémentaires** puis **Exécuter quand même** (l'installateur n'est pas signé par un certificat payant).
 3. Acceptez la demande d'autorisation (droits administrateur : c'est ce qui permet d'ouvrir Transferys dans le pare-feu).
 4. Suivant, Suivant, Terminer. Transferys se lance.
 
-Version portable (sans installation) : dézippez **Transferys-Portable-1.0.0.zip** et lancez `Transferys.exe`. Au premier lancement, Windows demande l'accès réseau : cochez **Réseaux privés** puis **Autoriser**.
+Version portable (sans installation) : dézippez **Transferys-Portable-1.1.0.zip** et lancez `Transferys.exe`. Au premier lancement, Windows demande l'accès réseau : cochez **Réseaux privés** puis **Autoriser**.
 
 ## 2. Installer sur le téléphone Android
 
-1. Copiez **Transferys-1.0.0.apk** sur le téléphone (câble, mail, Drive…) et touchez-le.
+1. Copiez **Transferys-1.1.0.apk** sur le téléphone (câble, mail, Drive…) et touchez-le.
 2. Si Android bloque : autorisez « Installer des applis inconnues » pour l'appli qui ouvre l'APK (Fichiers, Chrome…).
 3. Ouvrez Transferys et suivez les 3 écrans du guide (donnez un nom : « Tel Quentin »).
 4. Acceptez les **notifications** (pour voir la progression).
@@ -49,6 +49,19 @@ S'ils ne se voient pas : sur le PC, **Ajouter > Mon QR code** ; sur le télépho
 ## 7. Réglages utiles
 
 Nom de l'appareil, dossier de réception, thème clair/sombre, confirmation avant réception, gestion des doublons (renommer / remplacer / ignorer), lancement au démarrage de Windows, appareils de confiance (retirer un appareil à tout moment).
+
+## 8. Accès à distance en 4G (gratuit, sans serveur)
+
+Une seule fois, à la maison :
+1. **Freebox** : Freebox OS (mafreebox.freebox.fr) > Paramètres de la Freebox > Mode avancé > **UPnP IGD** > Activer.
+2. Si votre adresse IP est « partagée » (abonnements Free récents) : espace abonné Free > Ma Freebox > **Demander une adresse IP fixe V4 full-stack** (gratuit, actif sous 30 min environ).
+3. Sur le PC : Réglages > Accès à distance > **Autoriser l'accès depuis l'extérieur**. Il doit afficher « Port ouvert sur Freebox Server ».
+4. Sur le téléphone : Réglages > **Rester joignable par mon PC en 4G** (accepter « ne pas limiter la batterie »).
+5. Laissez les deux appareils ouverts quelques secondes sur le même Wi-Fi : ils échangent leurs adresses.
+
+Ensuite, même en 4G : le PC (allumé, Transferys ouvert) apparaît « Joignable à distance ». Vous pouvez lui envoyer des fichiers, parcourir ses dossiers partagés (onglet **Parcourir**), et le PC peut parcourir ceux du téléphone et lui envoyer des fichiers.
+
+Dossiers partagés : Réglages > Dossiers partagés > Ajouter un dossier. L'interrupteur **Dépôt** autorise l'autre appareil à y déposer des fichiers (sinon lecture seule).
 
 ## Problèmes fréquents
 

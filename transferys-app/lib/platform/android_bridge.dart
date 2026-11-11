@@ -63,6 +63,8 @@ class AndroidBridge {
 
   static Future<void> acquireNetworkLocks() => _ch.invokeMethod('acquireLocks');
 
+  static Future<void> remoteMode(bool active) => _ch.invokeMethod('remoteMode', {'active': active});
+
   static Future<void> serviceUpdate({required bool active, String? title, String? text, int? percent}) =>
       _ch.invokeMethod('service', {'active': active, 'title': title, 'text': text, 'percent': percent});
 
@@ -112,4 +114,7 @@ class AndroidHooks extends PlatformHooks {
 
   @override
   Future<void> networkStarted() => AndroidBridge.acquireNetworkLocks().catchError((_) {});
+
+  @override
+  Future<void> remoteMode(bool active) => AndroidBridge.remoteMode(active).catchError((_) {});
 }

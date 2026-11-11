@@ -33,7 +33,11 @@ class SendJob {
     required this.resolveAddress,
     this.reconnectWindow = const Duration(minutes: 10),
     this.onActivity,
+    this.sessionExtra,
   });
+
+  /// Champs ajoutés à la demande d'envoi (dossier cible, jeton de demande).
+  final Map<String, Object?>? sessionExtra;
 
   final TransferJob job;
   final List<FileSource> sources;
@@ -162,6 +166,7 @@ class SendJob {
   // --------------------------------------------------------------- session
   Future<void> _openSession() async {
     final body = {
+      ...?sessionExtra,
       'sessionId': _sid,
       'files': [
         for (var i = 0; i < sources.length; i++)
@@ -209,6 +214,8 @@ class SendJob {
         throw _Fatal(TransferStatus.cancelled, 'Transfert annulé par ${job.peerName}.');
       case 'unknown_session':
         throw _SessionLost();
+      case 'read_only':
+        throw _Fatal(TransferStatus.failed, 'Ce dossier de ${job.peerName} est en lecture seule.');
       case 'write_failed':
         throw _Fatal(TransferStatus.failed,
             'Impossible d\'écrire sur ${job.peerName} : ${r.body['message'] ?? 'dossier de réception inaccessible'}.');

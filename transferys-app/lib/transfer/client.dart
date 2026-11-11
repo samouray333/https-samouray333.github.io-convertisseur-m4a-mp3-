@@ -125,5 +125,23 @@ class PeerClient {
     }
   }
 
+  /// GET binaire (lecture d'un morceau de fichier distant).
+  Future<(int, Uint8List)> getBytes(String path, Map<String, String> query,
+      {Duration timeout = const Duration(seconds: 90), void Function(HttpClientRequest)? onRequest}) async {
+    try {
+      final req = await _http.openUrl('GET', _uri(path, query)).timeout(connectTimeout + const Duration(seconds: 4));
+      onRequest?.call(req);
+      _headers(req);
+      final res = await req.close().timeout(timeout);
+      final b = BytesBuilder(copy: false);
+      await for (final d in res.timeout(const Duration(seconds: 30))) {
+        b.add(d);
+      }
+      return (res.statusCode, b.takeBytes());
+    } catch (e) {
+      _wrap(e);
+    }
+  }
+
   void close({bool force = true}) => _http.close(force: force);
 }

@@ -2,6 +2,20 @@
 import 'models.dart';
 import 'storage.dart';
 
+/// Dossier partagé pour l'accès à distance.
+class SharedFolder {
+  SharedFolder({required this.path, required this.name, this.writable = false});
+  final String path;
+  String name;
+
+  /// L'autre appareil peut y déposer des fichiers.
+  bool writable;
+
+  Map<String, dynamic> toJson() => {'path': path, 'name': name, 'writable': writable};
+  factory SharedFolder.fromJson(Map<String, dynamic> j) =>
+      SharedFolder(path: j['path'] as String, name: j['name'] as String? ?? 'Dossier', writable: j['writable'] as bool? ?? false);
+}
+
 class Settings {
   Settings({
     required this.deviceName,
@@ -14,7 +28,9 @@ class Settings {
     this.explorerMenu = true,
     this.onboardingDone = false,
     this.port = defaultPort,
-  });
+    this.remoteAccess = false,
+    List<SharedFolder>? shares,
+  }) : shares = shares ?? [];
 
   static const int defaultPort = 53518;
 
@@ -37,6 +53,13 @@ class Settings {
   bool onboardingDone;
   int port;
 
+  /// Accès à distance (4G) : PC = ouverture du port sur la box ;
+  /// téléphone = rester joignable par le PC.
+  bool remoteAccess;
+
+  /// Dossiers que les appareils de confiance peuvent parcourir.
+  List<SharedFolder> shares;
+
   Map<String, dynamic> toJson() => {
         'deviceName': deviceName,
         'receiveDir': receiveDir,
@@ -48,6 +71,8 @@ class Settings {
         'explorerMenu': explorerMenu,
         'onboardingDone': onboardingDone,
         'port': port,
+        'remoteAccess': remoteAccess,
+        'shares': shares.map((e) => e.toJson()).toList(),
       };
 
   static Settings fromJson(Map<String, dynamic> j, Settings defaults) => Settings(
@@ -65,6 +90,10 @@ class Settings {
         explorerMenu: j['explorerMenu'] as bool? ?? true,
         onboardingDone: j['onboardingDone'] as bool? ?? false,
         port: (j['port'] as num?)?.toInt() ?? defaultPort,
+        remoteAccess: j['remoteAccess'] as bool? ?? false,
+        shares: ((j['shares'] as List?) ?? const [])
+            .map((e) => SharedFolder.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
       );
 }
 

@@ -173,6 +173,16 @@ class MainActivity : FlutterActivity() {
                 }
                 result.success(null)
             }
+            "remoteMode" -> {
+                val active = call.argument<Boolean>("active") ?: false
+                val i = Intent(this, TransferService::class.java)
+                i.action = if (active) TransferService.ACTION_REMOTE_ON else TransferService.ACTION_REMOTE_OFF
+                try {
+                    if (active) ContextCompat.startForegroundService(this, i)
+                    else if (TransferService.running) startService(i)
+                } catch (_: Exception) {}
+                result.success(null)
+            }
             "requestNotifications" -> {
                 if (Build.VERSION.SDK_INT >= 33 &&
                     ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED

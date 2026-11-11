@@ -24,13 +24,16 @@ import 'dialogs.dart';
 
 /// Un appareil affiché dans la liste (visible et/ou de confiance).
 class DeviceEntry {
-  DeviceEntry(this.peer, this.trusted);
+  DeviceEntry(this.peer, this.trusted, {this.remote = false});
+
+  /// Joignable via Internet (accès à distance) alors qu'il n'est pas sur ce réseau.
+  final bool remote;
   final Peer? peer;
   final TrustedDevice? trusted;
   String get id => peer?.id ?? trusted!.id;
   String get name => trusted?.name ?? peer!.name;
   DevicePlatform get platform => trusted?.platform ?? peer!.platform;
-  bool get online => peer != null;
+  bool get online => peer != null || remote;
   bool get isTrusted => trusted != null;
 }
 
@@ -86,6 +89,9 @@ class AppState extends ChangeNotifier {
     networkError = engine.startError;
     await _refreshAddresses();
     _addrTimer = Timer.periodic(const Duration(seconds: 10), (_) => _refreshAddresses());
+    // Vérifie régulièrement quels appareils de confiance sont joignables (y compris à distance).
+    Timer.periodic(const Duration(seconds: 60), (_) => engine.resolveAll().catchError((_) {}));
+    unawaited(engine.resolveAll().catchError((_) {}));
     if (isAndroid) {
       AndroidBridge.init();
       AndroidBridge.onShared = (items) {
@@ -147,7 +153,10 @@ class AppState extends ChangeNotifier {
 
   // ------------------------------------------------------------- appareils
   List<DeviceEntry> get devices {
-    final list = engine.devices().map((e) => DeviceEntry(e.$1, e.$2)).toList();
+    final list = engine
+        .devices()
+        .map((e) => DeviceEntry(e.$1, e.$2, remote: e.$1 == null && e.$2 != null && engine.reachable.contains(e.$2!.id)))
+        .toList();
     list.sort((a, b) {
       if (a.online != b.online) return a.online ? -1 : 1;
       if (a.isTrusted != b.isTrusted) return a.isTrusted ? -1 : 1;
@@ -161,6 +170,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     await _refreshAddresses();
     await engine.refreshDiscovery();
+    await engine.resolveAll().catchError((_) {});
     networkError = engine.discoveryError ?? engine.startError;
     await Future.delayed(const Duration(milliseconds: 1500));
     scanning = false;
@@ -244,9 +254,6 @@ class AppState extends ChangeNotifier {
       if (d.peer == null) return;
       trusted = await pairWith(d.peer!);
       if (trusted == null) return;
-    } else if (!d.online && trusted.lastAddress == null) {
-      toast('${d.name} n\'est pas visible sur le réseau. Ouvrez Transferys dessus, sur le même Wi-Fi.');
-      return;
     }
     try {
       await engine.send(trusted.id, List.of(selection));
@@ -343,6 +350,51 @@ class AppState extends ChangeNotifier {
       } else if (job.status == TransferStatus.failed || job.status == TransferStatus.rejected) {
         Notifier.show('Envoi interrompu', job.error ?? 'L\'envoi vers ${job.peerName} a échoué.');
       }
+    }
+  }
+
+  // ------------------------------------------------- dossiers partagés
+  Future<void> addShare() async {
+    final dir = await chooseFolder();
+    if (dir == null) return;
+    if (settings.shares.any((s) => s.path == dir)) {
+      toast('Ce dossier est déjà partagé.');
+      return;
+    }
+    final name = dir.split(RegExp(r'[\\/]')).where((e) => e.isNotEmpty).lastOrNull ?? dir;
+    await updateSettings((s) => s.shares = [...s.shares, SharedFolder(path: dir, name: name)]);
+  }
+
+  Future<void> removeShare(SharedFolder f) =>
+      updateSettings((s) => s.shares = s.shares.where((x) => x.path != f.path).toList());
+
+  Future<void> setShareWritable(SharedFolder f, bool v) => updateSettings((s) {
+        s.shares = [
+          for (final x in s.shares) x.path == f.path ? SharedFolder(path: x.path, name: x.name, writable: v) : x,
+        ];
+      });
+
+  /// Choix d'un dossier (Android : accès à tous les fichiers si nécessaire).
+  Future<String?> chooseFolder() async {
+    if (isAndroid) {
+      final dir = await AndroidBridge.pickDirectory();
+      if (dir == null) return null;
+      if (!await AndroidBridge.hasAllFilesAccess()) {
+        toast('Pour partager ce dossier, autorisez « Accès à tous les fichiers » pour Transferys.');
+        await AndroidBridge.requestAllFilesAccess();
+        await Future.delayed(const Duration(seconds: 1));
+        if (!await AndroidBridge.hasAllFilesAccess()) return null;
+      }
+      return dir;
+    }
+    return getDirectoryPath(confirmButtonText: 'Partager ce dossier');
+  }
+
+  Future<void> setRemoteAccess(bool v) async {
+    await updateSettings((s) => s.remoteAccess = v);
+    if (v && isAndroid && !await AndroidBridge.ignoringBatteryOptimizations()) {
+      toast('Conseillé : autorisez Transferys à ignorer l\'optimisation de batterie, sinon Android coupera l\'accès à distance.');
+      await AndroidBridge.requestIgnoreBatteryOptimizations();
     }
   }
 

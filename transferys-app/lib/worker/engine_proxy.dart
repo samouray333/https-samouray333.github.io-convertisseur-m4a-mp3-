@@ -9,7 +9,9 @@ import '../core/errors.dart';
 import '../core/models.dart';
 import '../core/settings.dart';
 import '../platform/android_bridge.dart';
+import '../engine.dart' show RemoteStatus;
 import '../platform/platform_hooks.dart';
+import '../transfer/fs_service.dart';
 import '../transfer/file_source.dart';
 import '../transfer/job.dart';
 import '../transfer/receiver.dart';
@@ -56,6 +58,8 @@ class EngineProxy {
   bool discoveryRunning = false;
   String? discoveryError;
   List<(Peer?, TrustedDevice?)> _devices = const [];
+  Set<String> reachable = const {};
+  RemoteStatus remoteStatus = RemoteStatus();
   final trust = TrustView();
   late final history = HistoryView(this);
   final jobs = <TransferJob>[];
@@ -69,7 +73,7 @@ class EngineProxy {
 
   Stream<void> get changes => _changes.stream;
   List<(Peer?, TrustedDevice?)> devices() => _devices;
-  bool isOnline(String id) => _devices.any((d) => d.$1?.id == id);
+  bool isOnline(String id) => _devices.any((d) => d.$1?.id == id) || reachable.contains(id);
 
   /// Démarre l'isolate moteur et attend son premier état.
   Future<void> start({required String dataDir, required Settings defaults}) async {
@@ -149,6 +153,8 @@ class EngineProxy {
         ),
     ];
     trust.all = [for (final t in (s['trusted'] as List)) trustedFromJson(t as Map)];
+    reachable = ((s['reachable'] as List?) ?? const []).cast<String>().toSet();
+    if (s['remoteStatus'] is Map) remoteStatus = RemoteStatus.fromJson(s['remoteStatus'] as Map);
     final js = s['jobs'] as List;
     final seen = <String>{};
     jobs.clear();
@@ -229,6 +235,8 @@ class EngineProxy {
         );
       case 'networkStarted':
         hooks.networkStarted();
+      case 'remoteMode':
+        hooks.remoteMode(data as bool);
       case 'pairingPrompt':
         final m = data as Map;
         onPairingPrompt?.call(PairingPrompt(
@@ -266,9 +274,14 @@ class EngineProxy {
     }
   }
 
-  Future<void> send(String deviceId, List<FileSource> sources) async {
+  /// Envoi : direct si l'appareil est joignable, sinon via le canal inverse.
+  /// Avec [share], dépôt dans un dossier partagé de l'autre appareil.
+  Future<void> send(String deviceId, List<FileSource> sources, {String? share, String path = ''}) async {
     await _cmd('send', {
       'deviceId': deviceId,
+      'smart': true,
+      'share': share,
+      'path': path,
       'sources': [
         for (final s in sources)
           {
@@ -281,6 +294,22 @@ class EngineProxy {
       ],
     });
   }
+
+  Future<List<RemoteRoot>> remoteRoots(String deviceId) async {
+    final r = await _cmd('roots', {'deviceId': deviceId});
+    return [for (final x in (r as List)) RemoteRoot.fromJson(x as Map)];
+  }
+
+  Future<List<RemoteEntry>> remoteList(String deviceId, String share, String path) async {
+    final r = await _cmd('list', {'deviceId': deviceId, 'share': share, 'path': path});
+    return [for (final x in (r as List)) RemoteEntry.fromJson(x as Map)];
+  }
+
+  Future<void> download(String deviceId, String share, List<String> paths) =>
+      _cmd('download', {'deviceId': deviceId, 'share': share, 'paths': paths});
+
+  Future<void> refreshRemote() => _cmd('refreshRemote', null);
+  Future<void> resolveAll() => _cmd('resolveAll', null);
 
   void clearFinishedJobs() {
     jobs.removeWhere((j) => !j.isActive);

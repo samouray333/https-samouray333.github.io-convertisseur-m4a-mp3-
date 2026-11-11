@@ -15,6 +15,9 @@ abstract class PlatformHooks {
 
   /// Appelé au démarrage du réseau (Android : verrou multicast Wi-Fi).
   Future<void> networkStarted() async {}
+
+  /// Accès à distance actif (Android : service au premier plan permanent).
+  Future<void> remoteMode(bool active) async {}
 }
 
 class DefaultPlatformHooks extends PlatformHooks {

@@ -10,6 +10,7 @@
     <!-- Transferts en arrière-plan, écran éteint -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- QR code -->
@@ -61,7 +62,11 @@
         <service
             android:name=".TransferService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Accès à distance : rester joignable par le PC de l'utilisateur pour parcourir et échanger ses fichiers personnels (connexion directe, sans serveur)." />
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"
