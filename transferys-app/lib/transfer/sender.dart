@@ -180,6 +180,7 @@ class SendJob {
     };
     // Long délai : le destinataire doit peut-être accepter (2 min max).
     final r = await _client!.json('POST', '/session', body: body, timeout: const Duration(minutes: 3));
+    if (r.status >= 500 && r.error == 'internal') throw const HttpException('Erreur temporaire du destinataire');
     if (r.ok && r.body['accepted'] == true) {
       for (final a in (r.body['files'] as List)) {
         final m = (a as Map).cast<String, dynamic>();
@@ -326,6 +327,7 @@ class SendJob {
           final r = await _withReconnect(() async {
             final r = await _client!.json('POST', '/session/$_sid/file/${f.fileId}/finish', body: {'sha256': digest});
             if (r.error == 'unknown_session') throw _SessionLost();
+            if (r.status >= 500 && r.error == 'internal') throw const HttpException('Erreur temporaire du destinataire');
             return r;
           }, fileLabel: f);
           if (r.ok) {
@@ -380,6 +382,8 @@ class SendJob {
                 job.notify();
               });
           if (r.error == 'unknown_session') throw _SessionLost();
+          // Erreur interne passagère (appli fermée en plein morceau…) : on réessaie.
+          if (r.status >= 500 && r.error == 'internal') throw const HttpException('Erreur temporaire du destinataire');
           return r;
         }, fileLabel: f);
         _currentReq = null;

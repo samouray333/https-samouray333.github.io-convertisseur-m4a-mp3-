@@ -124,11 +124,15 @@ class TransferServer {
     _server!.idleTimeout = const Duration(seconds: 60);
     _server!.autoCompress = false;
     boundPort = _server!.port;
+    _stopping = false;
     _server!.listen(_handle, onError: (_) {});
     _janitor = Timer.periodic(const Duration(minutes: 5), (_) => _cleanup());
   }
 
+  bool _stopping = false;
+
   Future<void> stop() async {
+    _stopping = true;
     _janitor?.cancel();
     for (final s in sessions.values) {
       await s.closeAll();
@@ -232,6 +236,14 @@ class TransferServer {
       await req.drain<void>().catchError((_) {});
       return await sendJson(req, 404, {'error': 'not_found'});
     } catch (e) {
+      // Appli en cours de fermeture : on coupe sans répondre, l'autre
+      // appareil reprendra quand on sera de retour.
+      if (_stopping) {
+        try {
+          (await req.response.detachSocket(writeHeaders: false)).destroy();
+        } catch (_) {}
+        return;
+      }
       try {
         await sendJson(req, 500, {'error': 'internal', 'message': '$e'});
       } catch (_) {}
