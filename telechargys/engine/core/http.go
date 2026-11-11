@@ -399,6 +399,10 @@ func (m *Manager) runHTTP(ctx context.Context, d *Download) error {
 		return m.finishFile(d) // tout était déjà téléchargé
 	}
 
+	if free := diskFree(d.Dir); free >= 0 && d.Size > 0 && d.Size-d.dlCount.Load() > free {
+		resp.Body.Close()
+		return fmt.Errorf("espace disque insuffisant : il manque %s", humanSize(d.Size-d.dlCount.Load()-free))
+	}
 	f, err := os.OpenFile(m.partPath(d), os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		resp.Body.Close()

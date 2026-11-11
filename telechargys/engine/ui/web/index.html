@@ -13,18 +13,19 @@
   <header id="top">
     <div class="brand"><img src="icon.svg" alt=""><span>Telechargys</span></div>
     <div class="tools" id="tools">
-      <button class="tb primary" data-act="add" title="Ajouter une adresse (Ctrl+N)"><i data-i="plus"></i><span>Ajouter</span></button>
+      <button class="tb primary" data-act="add" title="Nouveau téléchargement (Ctrl+N)"><i data-i="plus"></i><span>Nouveau</span></button>
       <span class="sep"></span>
-      <button class="tb" data-act="resume" title="Reprendre la sélection"><i data-i="play"></i><span>Reprendre</span></button>
-      <button class="tb" data-act="pause" title="Mettre en pause la sélection"><i data-i="pause"></i><span>Pause</span></button>
-      <button class="tb" data-act="remove" title="Supprimer la sélection (Suppr)"><i data-i="trash"></i><span>Supprimer</span></button>
+      <button class="tb ico" data-act="resume" title="Reprendre la sélection"><i data-i="play"></i><span>Reprendre</span></button>
+      <button class="tb ico" data-act="pause" title="Mettre en pause la sélection"><i data-i="pause"></i><span>Pause</span></button>
+      <button class="tb ico" data-act="remove" title="Supprimer la sélection (Suppr)"><i data-i="trash"></i><span>Supprimer</span></button>
       <span class="sep"></span>
-      <button class="tb" data-act="startAll" title="Tout démarrer"><i data-i="playAll"></i><span>Tout démarrer</span></button>
-      <button class="tb" data-act="pauseAll" title="Tout arrêter"><i data-i="stop"></i><span>Tout arrêter</span></button>
+      <button class="tb ico" data-act="startAll" title="Tout démarrer"><i data-i="playAll"></i><span>Tout démarrer</span></button>
+      <button class="tb ico" data-act="pauseAll" title="Tout arrêter"><i data-i="stop"></i><span>Tout arrêter</span></button>
       <span class="sep"></span>
       <button class="tb" data-act="batch" title="Téléchargement par lot"><i data-i="batch"></i><span>Lot</span></button>
       <button class="tb" data-act="grab" title="Aspirateur de site"><i data-i="spider"></i><span>Aspirateur</span></button>
       <button class="tb" data-act="queues" title="Files d'attente et planificateur"><i data-i="clock"></i><span>Planificateur</span></button>
+      <button class="tb" data-act="stats" title="Statistiques"><i data-i="chart"></i><span>Statistiques</span></button>
       <button class="tb only-android" data-act="browser" title="Navigateur intégré"><i data-i="globe"></i><span>Navigateur</span></button>
       <button class="tb" data-act="settings" title="Réglages"><i data-i="gear"></i><span>Réglages</span></button>
     </div>
@@ -34,24 +35,33 @@
   <div id="body">
     <nav id="side"></nav>
     <main id="main">
+      <div id="dash">
+        <div class="tile speedt"><small>Vitesse</small><b id="dSpeed">0 o/s</b><span id="dSpeedSub">au repos</span><canvas id="dSpark"></canvas></div>
+        <div class="tile"><small>En cours</small><b id="dActive">0</b><span id="dActiveSub">aucun en attente</span></div>
+        <div class="tile click" data-act="stats" title="Voir les statistiques"><small>Aujourd'hui</small><b id="dToday">0 o</b><span id="dTodaySub">0 fichier</span></div>
+        <div class="tile"><small>Espace libre</small><b id="dDisk">…</b><span id="dDiskSub">dossier de téléchargement</span></div>
+      </div>
       <div id="chips"></div>
-      <div id="listHead" class="row head">
-        <div data-sort="fileName">Nom</div><div data-sort="size">Taille</div><div data-sort="progress">Progression</div>
-        <div data-sort="speed">Vitesse</div><div data-sort="eta">Restant</div><div data-sort="status">État</div><div data-sort="addedAt">Ajouté</div>
+      <div class="listwrap">
+        <div id="listHead" class="row head">
+          <div data-sort="fileName">Nom</div><div data-sort="size">Taille</div><div data-sort="progress">Progression</div>
+          <div data-sort="speed">Vitesse</div><div data-sort="eta">Restant</div><div data-sort="status">État</div><div data-sort="addedAt">Ajouté</div>
+        </div>
+        <div id="list" tabindex="0"></div>
+        <div id="empty" hidden>
+          <img src="icon.svg" alt="">
+          <h2>Aucun téléchargement ici</h2>
+          <p>Colle une adresse avec <b>Nouveau</b>, ou dépose un lien dans cette fenêtre.</p>
+          <button class="btn primary" data-act="add">Nouveau téléchargement</button>
+        </div>
+        <section id="detail" hidden></section>
       </div>
-      <div id="list" tabindex="0"></div>
-      <div id="empty" hidden>
-        <img src="icon.svg" alt="">
-        <h2>Aucun téléchargement ici</h2>
-        <p>Colle une adresse avec <b>Ajouter</b>, ou dépose un lien dans cette fenêtre.</p>
-        <button class="btn primary" data-act="add">Ajouter une adresse</button>
-      </div>
-      <section id="detail" hidden></section>
     </main>
   </div>
   <footer id="status">
     <span id="stActive">Aucun téléchargement en cours</span>
     <span class="grow"></span>
+    <span id="stDisk"></span>
     <button id="limitBtn" class="lim" title="Limiteur de débit global"><i data-i="gauge"></i><span id="limitTxt">Débit illimité</span></button>
     <span id="stSpeed" class="speed">0 o/s</span>
   </footer>

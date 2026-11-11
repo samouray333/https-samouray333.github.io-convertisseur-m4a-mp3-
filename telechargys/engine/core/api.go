@@ -144,13 +144,14 @@ type State struct {
 	Categories []Category  `json:"categories"`
 	Queues     []*Queue    `json:"queues"`
 	Downloads  []*Download `json:"downloads"`
+	Rate       int64       `json:"rate"` // débit maximal appliqué en ce moment (0 = illimité)
 }
 
 func (m *Manager) State() State {
 	dl := m.List()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return State{Version: Version, Platform: m.Platform, Settings: m.S, Categories: m.Cats, Queues: m.Queues, Downloads: dl}
+	return State{Version: Version, Platform: m.Platform, Settings: m.S, Categories: m.Cats, Queues: m.Queues, Downloads: dl, Rate: m.global.Rate()}
 }
 
 func (m *Manager) SetSettings(s Settings) {
@@ -191,6 +192,45 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, info)
 	case p[0] == "update" && len(p) == 2 && p[1] == "download" && r.Method == "POST":
 		res(m.DownloadUpdate())
+	case p[0] == "stats":
+		writeJSON(w, m.StatsView())
+	case p[0] == "file" && len(p) == 2:
+		m.serveFile(w, r, p[1])
+	case p[0] == "disk":
+		m.mu.Lock()
+		dir := m.S.DownloadDir
+		m.mu.Unlock()
+		if q := r.URL.Query().Get("dir"); q != "" {
+			dir = q
+		}
+		for dir != "" && diskFree(dir) < 0 && filepath.Dir(dir) != dir { // dossier pas encore créé : on remonte
+			dir = filepath.Dir(dir)
+		}
+		writeJSON(w, map[string]int64{"free": diskFree(dir)})
+	case p[0] == "check" && r.Method == "POST":
+		var in struct {
+			URLs []string `json:"urls"`
+			AddReq
+		}
+		if err := body(r, &in); err != nil || len(in.URLs) == 0 || len(in.URLs) > 500 {
+			fail(w, 400, errors.New("liste d'adresses invalide (500 au maximum)"))
+			return
+		}
+		writeJSON(w, m.CheckLinks(r.Context(), in.URLs, in.AddReq))
+	case p[0] == "remote":
+		writeJSON(w, m.RemoteInfo())
+	case p[0] == "sendpeer" && r.Method == "POST":
+		var in struct {
+			URL     string `json:"url"`
+			Referer string `json:"referer"`
+		}
+		body(r, &in)
+		name, err := m.SendToPeer(r.Context(), strings.TrimSpace(in.URL), in.Referer)
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]string{"fileName": name})
 	case p[0] == "ping":
 		writeJSON(w, map[string]string{"app": "telechargys", "version": Version})
 	case p[0] == "state":
@@ -271,6 +311,13 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			res(m.Remove(id, in.DeleteFile))
 		case "refresh":
 			res(m.Refresh(id, in.URL))
+		case "unzip":
+			dst, err := m.Unzip(id)
+			if err != nil {
+				fail(w, 400, err)
+				return
+			}
+			writeJSON(w, map[string]string{"dir": dst})
 		case "refreshwait":
 			m.WaitRefresh(id, in.On)
 			ok()
@@ -542,6 +589,7 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	case p[0] == "export":
 		st := m.State()
 		st.Settings.UpdateToken = "" // le jeton ne part jamais dans une sauvegarde
+		st.Settings.RemoteCode, st.Settings.PeerCode = "", ""
 		w.Header().Set("Content-Disposition", `attachment; filename="telechargys-sauvegarde.json"`)
 		writeJSON(w, st)
 	case p[0] == "import" && r.Method == "POST":
@@ -562,10 +610,14 @@ func (m *Manager) Import(st State) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if st.Settings.MaxConn > 0 {
-		dir, tok := m.S.DownloadDir, m.S.UpdateToken
+		dir, tok, rc, pc, ron := m.S.DownloadDir, m.S.UpdateToken, m.S.RemoteCode, m.S.PeerCode, m.S.RemoteOn
 		m.S = st.Settings
 		if m.S.UpdateToken == "" {
 			m.S.UpdateToken = tok
+		}
+		m.S.RemoteCode, m.S.RemoteOn = rc, ron // une sauvegarde restaurée n'ouvre jamais la réception réseau
+		if m.S.PeerCode == "" {
+			m.S.PeerCode = pc
 		}
 		if m.Platform == "android" || m.S.DownloadDir == "" {
 			m.S.DownloadDir = dir

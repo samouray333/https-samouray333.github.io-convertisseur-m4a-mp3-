@@ -107,14 +107,22 @@ async function openAdd(pre) {
     if (!start) toast('Ajouté à la file « ' + (S.queues.find(q => q.id === r.queue) || {}).name + ' ».');
   }
   const later = h('button', { class: 'btn' }, 'Plus tard');
+  const toPeer = S.settings.peerHost ? h('button', { class: 'btn', html: icon('send'), title: 'Lancer ce téléchargement sur ton autre appareil' }, shell.android ? 'Envoyer au PC' : 'Envoyer à l\'autre appareil') : null;
   const m = modal({
     title: 'Nouveau téléchargement',
     body: [F('Adresse', url), info, F('Nom du fichier', name), qf,
       h('div', { class: 'rowf' }, F('Catégorie', cat), F('File d\'attente', queue)),
       shell.android ? null : F('Enregistrer dans', folderField(dir)), adv],
-    ok: 'Télécharger', onok: () => submit(true), extra: later,
+    ok: 'Télécharger', onok: () => submit(true), extra: [toPeer, later],
   });
   later.onclick = async () => { try { if (await submit(false) !== false) m.close(); } catch (e) { fail(e); } };
+  if (toPeer) toPeer.onclick = async () => {
+    const u = url.value.trim();
+    if (!/^(https?|ftp):\/\//i.test(u)) { toast('Adresse invalide.', 'err'); return; }
+    toPeer.disabled = true;
+    if (await sendPeer(u, adv.values().referer)) m.close();
+    toPeer.disabled = false;
+  };
   if (pre.url) probe();
 }
 
@@ -195,13 +203,34 @@ function openBatch(text, ctx) {
   const upd = () => { const n = urls().length; cnt.textContent = n ? `${n} adresse${n > 1 ? 's' : ''} reconnue${n > 1 ? 's' : ''}` : 'Aucune adresse reconnue'; };
   list.oninput = upd; upd();
   const gen = h('button', { class: 'btn', onclick: async () => { try { const r = await api('POST', 'batch', { pattern: pat.value }); list.value = (list.value.trim() ? list.value.trim() + '\n' : '') + r.urls.join('\n'); upd(); } catch (e) { fail(e); } } }, 'Générer');
+  const report = h('div', {});
+  const checkBtn = h('button', { class: 'btn', html: icon('check') }, 'Vérifier les liens');
+  checkBtn.onclick = async () => {
+    const u = urls(); if (!u.length) { toast('Aucune adresse à vérifier.', 'err'); return; }
+    if (u.length > 500) { toast('500 adresses au maximum pour la vérification.', 'err'); return; }
+    checkBtn.disabled = true; report.innerHTML = '<p class="hint" style="margin:8px 0"><span class="spin"></span> Vérification de ' + u.length + ' adresse' + (u.length > 1 ? 's' : '') + '…</p>';
+    try {
+      const res = await api('POST', 'check', { urls: u, referer: ctx.referer || '', cookies: ctx.cookies || '' });
+      const ok = res.filter(r => r.ok), dead = res.filter(r => !r.ok);
+      const total = ok.reduce((a, r) => a + (r.size > 0 ? r.size : 0), 0), unknown = ok.filter(r => r.size <= 0).length;
+      const drop = dead.length ? h('button', { class: 'btn small', onclick: () => { const bad = new Set(dead.map(r => r.url)); list.value = urls().filter(x => !bad.has(x)).join('\n'); upd(); drop.remove(); } }, `Retirer les ${dead.length} lien${dead.length > 1 ? 's' : ''} mort${dead.length > 1 ? 's' : ''}`) : null;
+      report.replaceChildren(
+        h('div', { class: 'info' }, h('span', {}, h('b', {}, `${ok.length} lien${ok.length > 1 ? 's' : ''} valide${ok.length > 1 ? 's' : ''}`), dead.length ? h('b', { style: 'color:var(--danger)' }, `, ${dead.length} inaccessible${dead.length > 1 ? 's' : ''}`) : ''),
+          h('span', {}, 'Taille totale : ', h('b', {}, fmtSize(total) + (unknown ? ` (+ ${unknown} de taille inconnue)` : ''))),
+          V.free >= 0 ? h('span', {}, total > V.free ? '⚠ Espace disque insuffisant' : `Espace libre : ${fmtSize(V.free)}`) : '', drop || ''),
+        h('div', { class: 'scroll', style: 'max-height:180px;margin-bottom:10px' }, h('table', { class: 'tbl' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Fichier'), h('th', {}, 'Taille'), h('th', {}, 'État'))),
+          h('tbody', {}, res.map(r => h('tr', {}, h('td', { title: r.url }, r.name || r.url), h('td', {}, r.ok ? (r.size > 0 ? fmtSize(r.size) : '?') : ''), h('td', { class: r.ok ? 'ok' : 'ko', title: r.error || '' }, r.ok ? 'Disponible' : (r.error || 'Inaccessible'))))))));
+    } catch (e) { report.replaceChildren(); fail(e); }
+    checkBtn.disabled = false;
+  };
   const imp = h('input', { type: 'file', accept: '.txt,text/plain', hidden: true, onchange: async () => { if (imp.files[0]) { list.value += '\n' + await imp.files[0].text(); upd(); } } });
   modal({
     title: ctx.urls ? 'Liens envoyés par le navigateur' : 'Téléchargement par lot', wide: true,
     body: [F('Motif numéroté', h('div', { class: 'inbtn noenter' }, pat, gen), 'Exemples : [1-50], [001-120] (avec zéros), [a-f], [0-100:10] (de 10 en 10).'),
-      F('Liste d\'adresses', list), cnt, imp,
+      F('Liste d\'adresses', list), cnt, report, imp,
       h('div', { class: 'rowf' }, F('File d\'attente', queue), h('div', {}, h('label', { class: 'check', style: 'margin-top:22px' }, start, 'Démarrer la file tout de suite')))],
-    extra: h('button', { class: 'btn', onclick: () => imp.click() }, 'Importer un fichier .txt'),
+    extra: [h('button', { class: 'btn', onclick: () => imp.click() }, 'Importer un fichier .txt'), checkBtn],
     ok: 'Ajouter à la file',
     onok: async () => {
       const u = urls(); if (!u.length) { toast('Aucune adresse à ajouter.', 'err'); return false; }
@@ -313,10 +342,17 @@ function openSettings(tab) {
 
   const panes = {
     general: ['Général', () => [
-      F('Thème', theme),
+      h('div', { class: 'rowf' }, F('Thème', theme), F('Affichage de la liste', (() => { const x = Sel([['comfort', 'Confortable'], ['compact', 'Compact (plus de lignes)']], s.density || 'comfort'); x.onchange = () => { s.density = x.value; document.documentElement.dataset.density = x.value; }; return x; })())),
+      F('Couleur', (() => {
+        const cols = [['emeraude', '#0e9f6e', 'Émeraude'], ['ocean', '#2472e8', 'Océan'], ['violet', '#7c4ddb', 'Violet'], ['corail', '#e2553c', 'Corail'], ['ambre', '#c98206', 'Ambre']];
+        const box = h('div', { class: 'swatches' });
+        const draw = () => box.replaceChildren(...cols.map(([id, col, name]) => h('div', { class: 'swatch' + ((s.accent || 'emeraude') === id ? ' on' : ''), style: 'background:' + col, title: name, onclick: () => { s.accent = id; document.documentElement.dataset.accent = id; draw(); drawSpark(); } })));
+        draw(); return box;
+      })()),
       shell.android ? h('p', { class: 'hint' }, 'Les fichiers sont enregistrés dans Téléchargements/Telechargys, rangés par catégorie.') : F('Dossier de téléchargement', folderField(dirIn), 'Chaque catégorie y a son sous-dossier.'),
       F('Si le fichier existe déjà', dup),
       chk('showAddDialog', 'Afficher la fenêtre « Nouveau téléchargement » pour chaque lien capté'),
+      chk('autoUnzip', 'Décompresser automatiquement les archives .zip une fois téléchargées'),
       chk('notifyDone', 'Notification quand un téléchargement est terminé'),
       shell.android ? null : chk('soundDone', 'Petit son à la fin d\'un téléchargement'),
       chk('autoResume', 'Reprendre automatiquement les téléchargements interrompus au lancement'),
@@ -331,6 +367,17 @@ function openSettings(tab) {
       F('Navigateur simulé (User-Agent)', txt('userAgent')),
       F('Relancer automatiquement les téléchargements en erreur', (() => { const x = Sel([['0', 'Jamais'], ['1', 'Après 1 minute'], ['5', 'Après 5 minutes'], ['15', 'Après 15 minutes'], ['60', 'Après 1 heure']], String(s.autoRetryMin || 0)); x.onchange = () => { s.autoRetryMin = +x.value; }; return x; })(), 'Utile pour les coupures réseau et les serveurs saturés (5 essais au maximum).'),
       chk('hlsToMp4', 'Convertir les flux vidéo HLS / DASH en fichier MP4 (sans réencodage)'),
+      (() => {
+        const ls = s.limitSched = s.limitSched || { enabled: false, start: '09:00', stop: '18:00', rate: 1048576 };
+        const lim = limitField(ls.rate || 1048576);
+        const sync = () => { ls.rate = lim.val(); };
+        lim.addEventListener('input', sync); lim.addEventListener('change', sync);
+        const body = h('div', { hidden: !ls.enabled },
+          h('div', { class: 'rowf' }, F('De', I({ type: 'time', value: ls.start || '09:00', oninput: e => { ls.start = e.target.value; } })), F('À', I({ type: 'time', value: ls.stop || '18:00', oninput: e => { ls.stop = e.target.value; } })), F('Débit maximum', lim)),
+          h('p', { class: 'hint' }, 'Exemple : limiter en journée pour garder la connexion fluide, et télécharger à fond la nuit. La plage peut passer minuit (22:00 à 06:00).'));
+        return h('div', { class: 'card', style: 'margin-top:12px' },
+          h('label', { class: 'check', style: 'margin:0 0 4px' }, h('input', { type: 'checkbox', checked: !!ls.enabled, onchange: e => { ls.enabled = e.target.checked; body.hidden = !ls.enabled; } }), h('b', {}, 'Limiteur planifié : débit réduit sur une plage horaire')), body);
+      })(),
     ]],
     cats: ['Catégories', () => {
       const box = h('div', {});
@@ -361,6 +408,37 @@ function openSettings(tab) {
       E && E.openExtension ? h('button', { class: 'btn', style: 'margin-bottom:12px', onclick: () => E.openExtension() }, 'Ouvrir le dossier de l\'extension') : null,
       shell.desktop ? F('Analyse après téléchargement (antivirus)', txt('antivirusCmd', '"C:\\Program Files\\Windows Defender\\MpCmdRun.exe" -Scan -ScanType 3 -File %f'), 'Commande lancée sur chaque fichier terminé ; %f est remplacé par le chemin du fichier.') : null,
     ]],
+    peer: ['Appareils', () => {
+      const box = h('div', {});
+      const infoBox = h('div', {});
+      async function drawInfo() {
+        if (!s.remoteOn) { infoBox.replaceChildren(); return; }
+        infoBox.replaceChildren(h('p', { class: 'hint', style: 'margin:6px 0' }, 'Enregistre les réglages pour activer la réception, puis rouvre cet onglet pour voir l\'adresse et le code.'));
+        try {
+          const r = await api('GET', 'remote');
+          if (!r.on || !r.port) return;
+          infoBox.replaceChildren(h('div', { class: 'card' },
+            h('p', { style: 'margin:0 0 6px' }, 'À saisir sur l\'autre appareil (Réglages > Appareils) :'),
+            h('dl', { class: 'kv', style: 'grid-template-columns:90px 1fr;font-size:14px' },
+              h('dt', {}, 'Adresse'), h('dd', {}, (r.addrs && r.addrs.length ? r.addrs.map(a => a + ':' + r.port).join('  ou  ') : 'adresse introuvable : vérifie le Wi-Fi')),
+              h('dt', {}, 'Code'), h('dd', { class: 'bigcode' }, r.code)),
+            S.platform === 'windows' ? h('p', { class: 'hint', style: 'margin:8px 0 0' }, 'Windows peut demander d\'autoriser Telechargys sur le réseau : accepte pour les réseaux privés.') : null));
+        } catch (e) {}
+      }
+      box.append(
+        h('p', { class: 'hint', style: 'margin:0 0 10px' }, 'Relie ton téléphone et ton ordinateur : envoie un lien de l\'un à l\'autre, sur ton Wi-Fi, sans passer par Internet. Seule l\'action « ajouter un téléchargement » est possible à distance, et il faut le code.'),
+        h('div', { class: 'card' },
+          h('h4', {}, 'Recevoir sur cet appareil'),
+          h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !!s.remoteOn, onchange: e => { s.remoteOn = e.target.checked; drawInfo(); } }), 'Accepter les liens envoyés par mon autre appareil'),
+          infoBox),
+        h('div', { class: 'card' },
+          h('h4', {}, 'Envoyer vers mon autre appareil'),
+          h('div', { class: 'rowf' }, F('Adresse de l\'autre appareil', I({ value: s.peerHost || '', placeholder: '192.168.1.20:47700', spellcheck: false, inputMode: 'url', oninput: e => { s.peerHost = e.target.value.trim(); } })),
+            F('Son code', I({ value: s.peerCode || '', placeholder: 'ABCD-EFGH', spellcheck: false, autocapitalize: 'characters', oninput: e => { s.peerCode = e.target.value.trim(); } }))),
+          h('p', { class: 'hint', style: 'margin:0' }, 'Une fois rempli, un bouton « Envoyer » apparaît dans la fenêtre Nouveau téléchargement. À utiliser sur ton Wi-Fi personnel.')));
+      drawInfo();
+      return box;
+    }],
     upd: ['Mises à jour', () => [
       h('p', { class: 'hint', style: 'margin:0 0 10px' }, `Version installée : ${S.version}. Les nouvelles versions viennent de ton dépôt GitHub privé (onglet Releases).`),
       chk('autoUpdate', 'Rechercher une nouvelle version au démarrage'),
@@ -403,4 +481,46 @@ async function saveExport(path, name) {
     const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' })), download: name });
     document.body.append(a); a.click(); a.remove();
   } catch (e) { fail(e); }
+}
+
+// ---------- statistiques ----------
+async function openStats() {
+  let st;
+  try { st = await api('GET', 'stats'); } catch (e) { fail(e); return; }
+  const T = (label, val, sub) => h('div', { class: 'tile' }, h('small', {}, label), h('b', {}, val), h('span', {}, sub || ''));
+  const files = n => `${n} fichier${n > 1 ? 's' : ''}`;
+  const cv = h('canvas', { style: 'height:190px' });
+  const tip = h('div', { class: 'hint', style: 'margin:6px 0 0;min-height:18px' }, 'Survole une barre pour voir le détail du jour.');
+  const m = modal({
+    title: 'Statistiques', wide: true,
+    body: [h('div', { class: 'stats' },
+      T('Aujourd\'hui', fmtSize(st.today.bytes), files(st.today.files)), T('7 derniers jours', fmtSize(st.week.bytes), files(st.week.files)), T('30 derniers jours', fmtSize(st.month.bytes), files(st.month.files)),
+      T('Total', fmtSize(st.totalBytes), files(st.totalFiles) + (st.since ? ' depuis le ' + new Date(st.since).toLocaleDateString('fr-FR') : '')),
+      T('Vitesse record', fmtSpeed(st.peakSpeed), 'tous téléchargements cumulés'),
+      T('Moyenne par jour', fmtSize(Math.round(st.month.bytes / 30)), 'sur 30 jours')),
+      h('div', { class: 'cap' }, 'Volume téléchargé par jour (30 jours)'), cv, tip],
+  });
+  const days = st.days;
+  function draw(hover) {
+    const dpr = devicePixelRatio, w = cv.width = cv.clientWidth * dpr, hh = cv.height = 190 * dpr, g = cv.getContext('2d');
+    g.clearRect(0, 0, w, hh);
+    const max = Math.max(1, ...days.map(d => d.bytes)), pad = 8 * dpr, base = hh - 22 * dpr, bw = (w - pad * 2) / days.length;
+    g.font = `${10.5 * dpr}px system-ui`; g.textAlign = 'center';
+    days.forEach((d, i) => {
+      const x = pad + i * bw, bh = d.bytes / max * (base - 14 * dpr);
+      g.fillStyle = i === hover ? cssv('--accent2') : cssv('--accent');
+      g.globalAlpha = d.bytes ? 1 : .18;
+      const r = Math.min(4 * dpr, bw / 3), y = base - Math.max(bh, 2 * dpr);
+      g.beginPath(); g.roundRect(x + bw * .16, y, bw * .68, base - y, [r, r, 0, 0]); g.fill();
+      g.globalAlpha = 1;
+      if (i % 5 === 4 || i === days.length - 1) { g.fillStyle = cssv('--mute'); g.fillText(d.date.slice(8) + '/' + d.date.slice(5, 7), x + bw / 2, hh - 6 * dpr); }
+    });
+  }
+  setTimeout(() => draw(-1), 40);
+  cv.onmousemove = e => {
+    const r = cv.getBoundingClientRect(), i = Math.max(0, Math.min(days.length - 1, Math.floor((e.clientX - r.left - 8) / ((r.width - 16) / days.length))));
+    const d = days[i]; draw(i);
+    tip.textContent = `${new Date(d.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} : ${fmtSize(d.bytes)}, ${files(d.files)}`;
+  };
+  cv.onmouseleave = () => draw(-1);
 }

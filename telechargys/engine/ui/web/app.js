@@ -54,6 +54,8 @@ const ICONS = {
   refresh: 'M4 12a8 8 0 0114-5l2-2v6h-6l2-2a5 5 0 10-1 7', link: 'M10 14a4 4 0 005 0l3-3a4 4 0 00-6-6l-1 1M14 10a4 4 0 00-5 0l-3 3a4 4 0 006 6l1-1',
   info: 'M12 8h.01M11 12h1v5h1M12 3a9 9 0 100 18 9 9 0 000-18z', up: 'M12 19V5M6 11l6-6 6 6', down: 'M12 5v14M6 13l6 6 6-6', share: 'M12 3v12M7 8l5-5 5 5M5 14v6h14v-6',
   globe: 'M12 3a9 9 0 100 18 9 9 0 000-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18', check: 'M5 12l5 5 9-10', copy: 'M9 9h11v11H9zM5 15V4h11', queue: 'M4 6h12M4 12h12M4 18h7M19 9v9M16 15l3 3 3-3',
+  chart: 'M4 20V10M10 20V4M16 20v-8M22 20H2', eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 100 6 3 3 0 000-6z',
+  unzip: 'M4 4h16v16H4zM12 4v3M12 9v2M12 13v2M10 15h4v3h-4z', send: 'M21 3L10 14M21 3l-7 18-4-7-7-4z',
 };
 function icon(n) { return `<svg class="ic" viewBox="0 0 24 24"><path d="${ICONS[n] || ''}"/></svg>`; }
 function paintIcons(root) { $$('i[data-i]', root).forEach(i => { i.outerHTML = icon(i.dataset.i); }); }
@@ -206,7 +208,7 @@ function fillRow(r, d) {
   if (q['.name span'].textContent !== d.fileName) { q['.name span'].textContent = d.fileName; r.title = d.fileName; }
   const size = d.size > 0 ? fmtSize(d.size) : (d.downloaded > 0 ? fmtSize(d.downloaded) : '?');
   q['.size'].textContent = size;
-  q['.bar'].className = 'bar' + (d.status === 'paused' || d.status === 'queued' ? ' paused' : d.status === 'error' ? ' error' : '') + ((p < 0 && run) || d.status === 'merging' ? ' ind' : '');
+  q['.bar'].className = 'bar' + (d.status === 'paused' || d.status === 'queued' ? ' paused' : d.status === 'error' ? ' error' : d.status === 'completed' ? ' done' : run ? ' run' : '') + ((p < 0 && run) || d.status === 'merging' ? ' ind' : '');
   q['.bar i'].style.width = (p < 0 ? 0 : p) + '%';
   q['.prog b'].textContent = p < 0 ? '' : Math.floor(p) + ' %';
   q['.spd'].textContent = run ? fmtSpeed(d.speed) : '';
@@ -259,11 +261,47 @@ function updateStatus() {
   for (const d of S.dls.values()) { if (d.status === 'downloading' || d.status === 'merging') { n++; sp += d.speed || 0; } else if (d.status === 'queued') w++; }
   $('#stActive').textContent = n ? `${n} téléchargement${n > 1 ? 's' : ''} en cours` + (w ? ` · ${w} en attente` : '') : (w ? `${w} en attente` : 'Aucun téléchargement en cours');
   $('#stSpeed').textContent = fmtSpeed(sp);
-  const on = S.settings.speedLimitOn && S.settings.speedLimit > 0;
-  $('#limitBtn').classList.toggle('on', !!on);
-  $('#limitTxt').textContent = on ? 'Limité à ' + fmtSpeed(S.settings.speedLimit) : 'Débit illimité';
+  const on = V.rate > 0, sched = S.settings.limitSched || {};
+  $('#limitBtn').classList.toggle('on', on);
+  $('#limitTxt').textContent = on ? 'Limité à ' + fmtSpeed(V.rate) + (sched.enabled && V.rate === sched.rate && !(S.settings.speedLimitOn && S.settings.speedLimit === V.rate) ? ' (plage horaire)' : '') : 'Débit illimité';
   document.title = n ? `${fmtSpeed(sp)} · Telechargys` : 'Telechargys';
+  V.speedNow = sp; V.activeNow = n; V.waitNow = w;
+  $('#dSpeed').textContent = fmtSpeed(sp);
+  $('#dSpeedSub').textContent = n ? (on ? 'débit limité' : 'pleine vitesse') : 'au repos';
+  $('#dActive').textContent = String(n);
+  $('#dActiveSub').textContent = w ? `${w} en attente` : 'aucun en attente';
 }
+// tableau de bord : courbe de vitesse, volume du jour, espace disque
+V.spark = []; V.rate = 0; V.stats = null; V.free = -1;
+function drawSpark() {
+  const c = $('#dSpark'); if (!c || !c.clientWidth) return;
+  const dpr = devicePixelRatio, w = c.width = c.clientWidth * dpr, hh = c.height = c.clientHeight * dpr, g = c.getContext('2d');
+  g.clearRect(0, 0, w, hh);
+  const a = V.spark, n = 60, max = Math.max(1, ...a) * 1.25;
+  if (!a.some(v => v > 0)) return;
+  const X = i => (i + n - a.length) / (n - 1) * w, Y = v => hh - 3 * dpr - v / max * (hh - 10 * dpr);
+  g.beginPath(); g.moveTo(X(0), hh); a.forEach((v, i) => g.lineTo(X(i), Y(v))); g.lineTo(w, hh); g.closePath();
+  const gr = g.createLinearGradient(0, 0, 0, hh); gr.addColorStop(0, cssv('--accent') + '55'); gr.addColorStop(1, cssv('--accent') + '00');
+  g.fillStyle = gr; g.fill();
+  g.beginPath(); a.forEach((v, i) => (i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))));
+  g.strokeStyle = cssv('--accent'); g.lineWidth = 2 * dpr; g.lineJoin = 'round'; g.stroke();
+}
+setInterval(() => { V.spark.push(V.speedNow || 0); if (V.spark.length > 60) V.spark.shift(); drawSpark(); }, 1000);
+async function refreshDash() {
+  try {
+    const [st, dk] = await Promise.all([api('GET', 'stats'), api('GET', 'disk')]);
+    V.stats = st; V.free = dk.free;
+    $('#dToday').textContent = fmtSize(st.today.bytes);
+    $('#dTodaySub').textContent = `${st.today.files} fichier${st.today.files > 1 ? 's' : ''} · ${fmtSize(st.week.bytes)} sur 7 jours`;
+    const low = dk.free >= 0 && dk.free < 2 * 1073741824;
+    $('#dDisk').textContent = dk.free < 0 ? '?' : fmtSize(dk.free);
+    $('#dDisk').style.color = low ? cssv('--danger') : '';
+    $('#dDiskSub').textContent = low ? 'presque plein !' : 'dossier de téléchargement';
+    $('#stDisk').textContent = dk.free < 0 ? '' : `${fmtSize(dk.free)} libres`;
+    $('#stDisk').classList.toggle('low', low);
+  } catch (e) {}
+}
+setInterval(() => refreshDash(), 6000);
 
 // ---------- sélection ----------
 function select(id, ev) {
@@ -290,6 +328,8 @@ function renderDetail() {
   const acts = [];
   if (d.status === 'completed') {
     acts.push(B('Ouvrir', 'file', () => shell.openFile(path), 'primary'));
+    if (previewKind(d)) acts.push(B('Aperçu', 'eye', () => openPreview(d)));
+    if (ext(d.fileName) === 'zip') acts.push(B('Décompresser', 'unzip', () => unzip(d)));
     if (shell.desktop || shell.android) acts.push(B('Dossier', 'folder', () => shell.showInFolder(path)));
     if (shell.android) acts.push(B('Partager', 'share', () => shell.share(path)));
     acts.push(B('Retélécharger', 'refresh', () => act('restart', [d.id])));
@@ -383,7 +423,7 @@ function confirmRemove(ids) {
 const ACTIONS = {
   add: () => openAdd(), resume: () => act('start', selIds()), pause: () => act('pause', selIds()), remove: () => confirmRemove(selIds()),
   startAll: () => act('startAll', []), pauseAll: () => act('pauseAll', []), batch: () => openBatch(), grab: () => openGrab(), queues: () => openQueues(),
-  settings: () => openSettings(), browser: () => shell.openBrowser(''), menu: ev => openMenu(ev),
+  settings: () => openSettings(), browser: () => shell.openBrowser(''), menu: ev => openMenu(ev), stats: () => openStats(),
 };
 function openMenu() {
   showCtx([
@@ -391,7 +431,7 @@ function openMenu() {
     ['Tout démarrer', 'playAll', ACTIONS.startAll], ['Tout arrêter', 'stop', ACTIONS.pauseAll], null,
     shell.android ? ['Navigateur intégré', 'globe', ACTIONS.browser] : null,
     ['Téléchargement par lot', 'batch', ACTIONS.batch], ['Aspirateur de site', 'spider', ACTIONS.grab], ['Files et planificateur', 'clock', ACTIONS.queues], null,
-    ['Effacer les terminés de la liste', 'trash', () => act('removeCompleted', [])], ['Réglages', 'gear', ACTIONS.settings],
+    ['Statistiques', 'chart', ACTIONS.stats], ['Effacer les terminés de la liste', 'trash', () => act('removeCompleted', [])], ['Réglages', 'gear', ACTIONS.settings],
   ], innerWidth - 240, 50);
 }
 function showCtx(items, x, y) {
@@ -407,6 +447,9 @@ function rowMenu(d, x, y) {
   const ids = selIds(), path = joinPath(d.dir, d.fileName), done = d.status === 'completed';
   showCtx([
     done ? ['Ouvrir', 'file', () => shell.openFile(path)] : null,
+    done && previewKind(d) ? ['Aperçu dans Telechargys', 'eye', () => openPreview(d)] : false,
+    done && ext(d.fileName) === 'zip' ? ['Décompresser ici', 'unzip', () => unzip(d)] : false,
+    !done && S.settings.peerHost ? ['Envoyer à mon autre appareil', 'send', () => sendPeer(d.url, d.referer)] : false,
     done && (shell.desktop || shell.android) ? ['Ouvrir le dossier', 'folder', () => shell.showInFolder(path)] : false,
     done && shell.android ? ['Partager', 'share', () => shell.share(path)] : false,
     !done ? ['Reprendre', 'play', () => act('start', ids)] : false,
@@ -480,11 +523,13 @@ function onEvent(ev) {
       updateStatus(); break;
     case 'removed': S.dls.delete(d); V.rows.delete(d); V.sel.delete(d); V.hist.delete(d); scheduleList(); renderSide(); updateStatus(); break;
     case 'settings': S.settings = d; applyTheme(); updateStatus(); break;
+    case 'rate': V.rate = d; updateStatus(); break;
     case 'categories': S.categories = d; renderSide(); break;
     case 'queues': S.queues = d; renderSide(); break;
     case 'notify':
       toast(d.body, d.kind === 'error' ? 'err' : '', d.title);
       if (d.kind === 'done' && S.settings.soundDone && !shell.android) beep();
+      if (d.kind === 'done') refreshDash();
       break;
     case 'queueDone': toast(`La file « ${d.name} » est terminée.`); break;
     case 'updateAvailable': toastAction(`Telechargys ${d.latest} est disponible (tu as la ${d.current}).`, 'Voir la mise à jour', () => openUpdate(d), 'Mise à jour'); break;
@@ -522,6 +567,9 @@ function applyTheme() {
   const t = S.settings.theme || 'auto';
   const sysDark = typeof window.tySystemDark === 'boolean' ? window.tySystemDark : matchMedia('(prefers-color-scheme: dark)').matches;
   document.documentElement.dataset.theme = t === 'auto' ? (sysDark ? 'dark' : 'light') : t;
+  document.documentElement.dataset.accent = S.settings.accent || 'emeraude';
+  document.documentElement.dataset.density = S.settings.density || 'comfort';
+  drawSpark();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
@@ -536,10 +584,11 @@ async function load() {
   const st = await api('GET', 'state');
   S.version = st.version; S.platform = st.platform; S.settings = st.settings; S.categories = st.categories; S.queues = st.queues;
   S.dls = new Map((st.downloads || []).map(d => [d.id, d]));
-  V.rows.clear();
+  V.rows.clear(); V.rate = st.rate || 0;
   document.body.classList.toggle('android', S.platform === 'android');
   applyTheme(); renderSideNow(); renderList(); updateStatus(); connect();
   setTimeout(checkClipboard, 800);
+  refreshDash();
 }
 
 // ---------- interactions globales ----------
@@ -683,3 +732,32 @@ async function onUpdateEvent(d) {
   }
 }
 window.openUpdate = openUpdate;
+
+// ---------- aperçu intégré (vidéo, son, image, texte) ----------
+const PREVIEW = { video: ['mp4', 'webm', 'm4v', 'mov', 'ogv'], audio: ['mp3', 'm4a', 'ogg', 'opus', 'wav', 'flac', 'aac'], image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif'], text: ['txt', 'csv', 'json', 'log', 'md', 'xml', 'srt', 'vtt', 'ini'] };
+function previewKind(d) { const e = ext(d.fileName); for (const k in PREVIEW) if (PREVIEW[k].includes(e)) return k; return ''; }
+async function openPreview(d) {
+  const kind = previewKind(d); if (!kind) return;
+  const src = `/api/file/${d.id}?token=${encodeURIComponent(TOKEN)}`;
+  let el;
+  if (kind === 'video') el = h('video', { src, controls: true, autoplay: true, playsInline: true });
+  else if (kind === 'audio') el = h('audio', { src, controls: true, autoplay: true });
+  else if (kind === 'image') el = h('img', { src, alt: d.fileName });
+  else {
+    let txt = '';
+    try { const r = await fetch(src, { headers: { Range: 'bytes=0-262143' } }); txt = await r.text(); } catch (e) { fail(e); return; }
+    el = h('pre', { class: 'path', style: 'margin:0 0 8px;max-height:60vh;overflow:auto;white-space:pre-wrap;font:12.5px ui-monospace,Consolas,monospace' }, txt + (d.size > 262144 ? '\n… (début du fichier)' : ''));
+    modal({ title: d.fileName, body: el, wide: true });
+    return;
+  }
+  el.onerror = () => toast('Ce fichier ne peut pas être lu ici (format non pris en charge par le lecteur intégré). Utilise « Ouvrir ».', 'err');
+  const m = modal({ title: d.fileName, body: el, wide: true });
+  $('.dlg', m).classList.add('media');
+}
+async function unzip(d) {
+  toast('Décompression en cours…');
+  try { const r = await api('POST', `downloads/${d.id}/unzip`, {}); if (shell.desktop) shell.showInFolder(r.dir); } catch (e) { fail(e); }
+}
+async function sendPeer(url, referer) {
+  try { const r = await api('POST', 'sendpeer', { url, referer: referer || '' }); toast(r.fileName || url, '', 'Envoyé à l\'autre appareil'); return true; } catch (e) { fail(e); return false; }
+}

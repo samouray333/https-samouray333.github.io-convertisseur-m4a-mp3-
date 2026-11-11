@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const Version = "1.3.0"
+const Version = "1.4.0"
 
 // États d'un téléchargement.
 const (
@@ -175,6 +175,14 @@ type Settings struct {
 	VideoButton     bool        `json:"videoButton"`     // extension : bouton sur les vidéos
 	AutoUpdate      bool        `json:"autoUpdate"`      // rechercher les mises à jour au démarrage
 	UpdateToken     string      `json:"updateToken"`     // jeton GitHub en lecture seule (dépôt privé)
+	AutoUnzip       bool        `json:"autoUnzip"`       // décompresser les .zip une fois téléchargés
+	LimitSched      LimitSched  `json:"limitSched"`      // débit réduit sur une plage horaire
+	RemoteOn        bool        `json:"remoteOn"`        // recevoir des liens d'un autre appareil du réseau local
+	RemoteCode      string      `json:"remoteCode"`      // code à saisir sur l'autre appareil
+	PeerHost        string      `json:"peerHost"`        // adresse de l'autre appareil (envoi)
+	PeerCode        string      `json:"peerCode"`        // son code
+	Accent          string      `json:"accent"`          // couleur du thème
+	Density         string      `json:"density"`         // comfort ou compact
 }
 
 const defaultUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"

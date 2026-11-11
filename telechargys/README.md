@@ -37,7 +37,15 @@ Même moteur et même interface sur les deux plateformes, 100 % local : pas de s
 | Commande antivirus sur chaque fichier terminé | oui | non |
 | Sauvegarde / restauration (JSON), export de l'historique (CSV) | oui | oui |
 | Mises à jour automatiques depuis le dépôt GitHub privé, fichier vérifié (SHA-256) | oui | oui |
-| Thème clair / sombre | oui | oui |
+| Thème clair / sombre, 5 couleurs au choix, affichage confortable ou compact | oui | oui |
+| Tableau de bord : vitesse en direct, volume du jour, espace disque libre | oui | oui |
+| Aperçu intégré : lire une vidéo ou un son, voir une image ou un texte sans quitter l'appli | oui | oui |
+| Statistiques : volume par jour sur 30 jours, totaux, vitesse record | oui | oui |
+| Décompression des archives .zip (automatique ou à la demande) | oui | oui |
+| Limiteur planifié : débit réduit sur une plage horaire | oui | oui |
+| Vérification des liens d'un lot avant de lancer (tailles, total, liens morts) | oui | oui |
+| Alerte si l'espace disque ne suffit pas | oui | oui |
+| Envoyer un lien à son autre appareil sur le Wi-Fi (téléphone vers PC, PC vers téléphone) | oui | oui |
 
 ### Limites assumées
 
@@ -54,6 +62,17 @@ Même moteur et même interface sur les deux plateformes, 100 % local : pas de s
 - **Windows (portable)** : tout reste dans le dossier dézippé (`donnees\`, `Téléchargements\`), grâce au fichier `portable.txt` posé à côté du programme.
 - **Android** : `Téléchargements/Telechargys/<Catégorie>`. Données de l'appli dans son espace privé.
 - Fichier en cours : `nom.ext.tlpart` à côté du fichier final (dossier `nom.ext.tlparts` pour un flux vidéo).
+
+## Envoi entre appareils (réseau local)
+
+Réglages > Appareils. L'appareil qui **reçoit** active « Accepter les liens » : il écoute alors sur le port 47700 du réseau
+local et affiche son adresse et un code. L'appareil qui **envoie** saisit cette adresse et ce code ; un bouton « Envoyer »
+apparaît dans la fenêtre Nouveau téléchargement. Rien ne passe par Internet.
+
+Sécurité : désactivé par défaut ; à distance on ne peut qu'ajouter un téléchargement (le reste de l'appli n'est pas
+exposé) ; chaque demande est signée avec le code (HMAC-SHA256), datée et utilisable une seule fois ; 8 mauvais essais
+bloquent l'appareil fautif 10 minutes ; le code n'est jamais inclus dans les sauvegardes. Les cookies ne sont pas
+transmis. À utiliser sur un Wi-Fi personnel.
 
 ## Version Windows native
 
@@ -99,6 +118,7 @@ telechargys/
   engine/                     moteur commun, écrit en Go
     core/                     téléchargement segmenté (http.go), HLS (hls.go), DASH et fusion (dash.go), FTP (ftp.go),
                               files et planificateur (manager.go), aspirateur (grab.go), mises à jour (update.go),
+                              statistiques, décompression, limiteur planifié, envoi entre appareils, aperçu (extras.go),
                               API locale + sécurité (api.go), tests (*_test.go)
     ui/web/                   interface (HTML / CSS / JS sans dépendance), embarquée dans le moteur
     cmd/telechargys-win/      application Windows native (WebView2, zone de notification, notifications)

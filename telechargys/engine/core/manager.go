@@ -28,33 +28,37 @@ type persisted struct {
 	Categories []Category  `json:"categories"`
 	Queues     []*Queue    `json:"queues"`
 	Downloads  []*Download `json:"downloads"`
+	Stats      Stats       `json:"stats"`
 }
 
 // Manager : cœur de l'application.
 type Manager struct {
-	mu         sync.Mutex
-	dataDir    string
-	Platform   string // windows, android, linux...
-	Token      string
-	S          Settings
-	Cats       []Category
-	Queues     []*Queue
-	dls        map[string]*Download
-	subs       map[chan Event]struct{}
-	dirty      bool
-	global     *Limiter
-	client     *http.Client
-	blocked    bool
-	autoP      map[string]bool // mis en pause automatiquement (réseau)
-	grabs      map[string]*GrabJob
-	pairs      map[string]*pairReq
-	refreshID  string    // téléchargement qui attend une nouvelle adresse (lien expiré)
+	mu          sync.Mutex
+	dataDir     string
+	Platform    string // windows, android, linux...
+	Token       string
+	S           Settings
+	Cats        []Category
+	Queues      []*Queue
+	dls         map[string]*Download
+	subs        map[chan Event]struct{}
+	dirty       bool
+	global      *Limiter
+	client      *http.Client
+	blocked     bool
+	autoP       map[string]bool // mis en pause automatiquement (réseau)
+	grabs       map[string]*GrabJob
+	pairs       map[string]*pairReq
+	refreshID   string // téléchargement qui attend une nouvelle adresse (lien expiré)
 	upd         *UpdateInfo
+	stats       Stats
+	remote      *remote
+	peakWin     int64
 	updBusy     bool
 	updNotified string
-	refreshTil time.Time // fin de l'attente
-	orderSeq   int64
-	stop       chan struct{}
+	refreshTil  time.Time // fin de l'attente
+	orderSeq    int64
+	stop        chan struct{}
 	// OnEvent : rappel optionnel (utilisé par la coque Android).
 	OnEvent func(Event)
 }
@@ -65,7 +69,8 @@ func NewManager(dataDir, defaultDownloadDir, platform string) (*Manager, error) 
 		return nil, err
 	}
 	m := &Manager{dataDir: dataDir, Platform: platform, dls: map[string]*Download{}, subs: map[chan Event]struct{}{},
-		autoP: map[string]bool{}, grabs: map[string]*GrabJob{}, pairs: map[string]*pairReq{}, stop: make(chan struct{})}
+		autoP: map[string]bool{}, grabs: map[string]*GrabJob{}, pairs: map[string]*pairReq{}, stop: make(chan struct{}),
+		remote: &remote{fails: map[string][]time.Time{}, seen: map[string]time.Time{}}}
 	m.S = defaultSettings(defaultDownloadDir)
 	m.Cats = defaultCategories()
 	m.Queues = defaultQueues()
@@ -115,6 +120,7 @@ func NewManager(dataDir, defaultDownloadDir, platform string) (*Manager, error) 
 
 func (m *Manager) loadPersisted(p *persisted) {
 	m.Token = p.Token
+	m.stats = p.Stats
 	m.S = p.Settings
 	if len(p.Categories) > 0 {
 		m.Cats = p.Categories
@@ -148,11 +154,8 @@ func (m *Manager) applySettings() {
 	if m.S.UserAgent == "" {
 		m.S.UserAgent = defaultUA
 	}
-	if m.S.SpeedLimitOn && m.S.SpeedLimit > 0 {
-		m.global.SetRate(m.S.SpeedLimit)
-	} else {
-		m.global.SetRate(0)
-	}
+	m.global.SetRate(m.effectiveRate(time.Now()))
+	m.syncRemote()
 	tr := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		MaxIdleConnsPerHost:   32,
@@ -277,6 +280,7 @@ func (m *Manager) loop() {
 		}
 		var ps []prog
 		active := false
+		var totalSpeed int64
 		for _, d := range m.dls {
 			if d.Status != StDownloading && d.Status != StMerging {
 				continue
@@ -287,6 +291,10 @@ func (m *Manager) loop() {
 			if inst < 0 {
 				inst = 0
 			}
+			if d.Kind != "hls" || d.Status == StDownloading {
+				m.addBytes(cur - d.lastDl)
+			}
+			totalSpeed += d.Speed
 			d.lastDl = cur
 			d.Speed = (d.Speed*7 + inst*3) / 10
 			d.Downloaded = cur
@@ -312,12 +320,16 @@ func (m *Manager) loop() {
 		if len(ps) > 0 {
 			m.emit("progress", ps)
 		}
+		if totalSpeed > m.stats.PeakSpeed {
+			m.stats.PeakSpeed = totalSpeed
+		}
 		if n == 40 || n%172800 == 40 { // 20 s après le lancement, puis une fois par jour
 			go m.autoCheckUpdate()
 		}
 		if n%40 == 0 { // toutes les 20 s
 			m.checkSchedules()
 			m.checkAutoRetry(time.Now())
+			m.applyRate()
 		}
 		var data []byte
 		if (m.dirty || active) && n%6 == 0 {
@@ -332,7 +344,7 @@ func (m *Manager) loop() {
 }
 
 func (m *Manager) marshalState() []byte {
-	p := persisted{Token: m.Token, Settings: m.S, Categories: m.Cats, Queues: m.Queues}
+	p := persisted{Token: m.Token, Settings: m.S, Categories: m.Cats, Queues: m.Queues, Stats: m.stats}
 	for _, d := range m.dls {
 		p.Downloads = append(p.Downloads, m.snap(d))
 	}
@@ -586,6 +598,10 @@ func (m *Manager) startLocked(id string) error {
 		m.mu.Lock()
 		d.Speed, d.Conns = 0, 0
 		d.Downloaded = d.dlCount.Load()
+		if d.Kind != "hls" { // derniers octets reçus depuis le dernier relevé
+			m.addBytes(d.dlCount.Load() - d.lastDl)
+			d.lastDl = d.dlCount.Load()
+		}
 		paused := d.Status != StDownloading && d.Status != StMerging // pause/suppression demandée
 		var note map[string]any
 		if !paused {
@@ -598,6 +614,7 @@ func (m *Manager) startLocked(id string) error {
 				d.Status = StCompleted
 				d.CompletedAt = time.Now().UnixMilli()
 				d.AutoRetries, d.ErrorAt = 0, 0
+				m.addFile()
 				if d.Size < 0 || d.Kind == "hls" {
 					d.Size = d.Downloaded
 				}
@@ -611,8 +628,12 @@ func (m *Manager) startLocked(id string) error {
 		}
 		close(done)
 		av := m.S.AntivirusCmd
+		unzip := m.S.AutoUnzip && !paused && err == nil && extOf(d.FileName) == "zip"
 		m.pump()
 		m.mu.Unlock()
+		if unzip {
+			go m.Unzip(d.ID)
+		}
 		if !paused && err == nil && av != "" {
 			go runPostCommand(av, filepath.Join(d.Dir, d.FileName))
 		}

@@ -289,3 +289,18 @@ func expandBatch(pattern string, limit int) ([]string, error) {
 	}
 	return out, nil
 }
+
+// humanSize : "1,5 Go".
+func humanSize(n int64) string {
+	u := []string{"o", "Ko", "Mo", "Go", "To"}
+	v := float64(n)
+	i := 0
+	for v >= 1024 && i < 4 {
+		v /= 1024
+		i++
+	}
+	if i == 0 {
+		return fmt.Sprintf("%d o", n)
+	}
+	return strings.Replace(fmt.Sprintf("%.1f %s", v, u[i]), ".", ",", 1)
+}
