@@ -37,7 +37,10 @@ bool isNetworkError(Object e) =>
     e is SocketException ||
     e is HttpException ||
     e is TimeoutException ||
-    e is TlsException && e is! HandshakeException ||
+    // Coupure pendant la poignée de main TLS (fréquent sous Windows quand
+    // l'autre appareil ferme ou perd le Wi-Fi). Un certificat différent est
+    // détecté avant, dans PeerClient, et converti en certificateChanged.
+    e is TlsException ||
     (e is TransferysException &&
         (e.code == ErrorCode.unreachable ||
             e.code == ErrorCode.refused ||
@@ -59,9 +62,9 @@ bool isDiskFull(Object e) {
 /// Traduit une exception réseau en message compréhensible.
 TransferysException describeNetworkError(Object e, {String peerName = 'l\'appareil', bool peerWasVisible = false}) {
   if (e is TransferysException) return e;
-  if (e is HandshakeException || e is TlsException) {
-    return TransferysException(ErrorCode.certificateChanged,
-        'La connexion sécurisée avec $peerName a échoué. Si l\'appli a été réinstallée, retirez-le des appareils de confiance puis appairez-le à nouveau.',
+  if (e is TlsException) {
+    return TransferysException(ErrorCode.unreachable,
+        'La connexion sécurisée avec $peerName a été interrompue. Vérifiez que Transferys est ouvert dessus et que le Wi-Fi fonctionne.',
         details: e);
   }
   if (e is SocketException) {

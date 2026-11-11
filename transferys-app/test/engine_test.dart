@@ -159,8 +159,18 @@ void main() {
   tearDown(() async {
     await a.shutdown();
     await b.shutdown();
-    await a.root.delete(recursive: true);
-    await b.root.delete(recursive: true);
+    // Windows refuse de supprimer un fichier encore en cours d'écriture
+    // (historique écrit juste après la fin) : on réessaie un peu plus tard.
+    for (final d in [a.root, b.root]) {
+      for (var i = 0; i < 20; i++) {
+        try {
+          if (d.existsSync()) await d.delete(recursive: true);
+          break;
+        } on FileSystemException {
+          await Future.delayed(const Duration(milliseconds: 250));
+        }
+      }
+    }
   });
 
   test('appairage par code + mauvais code', () async {
@@ -274,7 +284,7 @@ void main() {
     }
     await b.shutdown(); // appli fermée / téléphone redémarré
     await Future.delayed(const Duration(seconds: 2));
-    expect(job.isActive, isTrue);
+    expect(job.isActive, isTrue, reason: '${job.status} ${job.error}');
     await b.boot(port: port); // même dossier de données, même port
     await waitJob(job);
     expect(job.status, TransferStatus.done, reason: job.error);
