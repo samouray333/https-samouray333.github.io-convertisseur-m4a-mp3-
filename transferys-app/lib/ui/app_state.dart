@@ -21,6 +21,7 @@ import '../transfer/receiver.dart';
 import '../transfer/server.dart';
 import '../worker/engine_proxy.dart';
 import 'dialogs.dart';
+import 'screens/destination_picker.dart';
 
 /// Un appareil affiché dans la liste (visible et/ou de confiance).
 class DeviceEntry {
@@ -240,6 +241,14 @@ class AppState extends ChangeNotifier {
 
   // ------------------------------------------------------------------ envoi
   /// Envoie la sélection à [d] (appairage d'abord si nécessaire).
+  /// Demander le dossier d'arrivée à chaque envoi (interrupteur de l'écran Envoyer).
+  bool chooseDestination = false;
+
+  void setChooseDestination(bool v) {
+    chooseDestination = v;
+    notifyListeners();
+  }
+
   Future<void> sendTo(DeviceEntry d) async {
     var trusted = d.trusted;
     if (selection.isEmpty) {
@@ -255,8 +264,16 @@ class AppState extends ChangeNotifier {
       trusted = await pairWith(d.peer!);
       if (trusted == null) return;
     }
+    RemoteDestination? dest;
+    if (chooseDestination) {
+      final ctx = navKey.currentContext;
+      if (ctx == null) return;
+      dest = await showDestinationPicker(ctx, this, trusted);
+      if (dest == null) return; // annulé
+    }
     try {
-      await engine.send(trusted.id, List.of(selection));
+      await engine.send(trusted.id, List.of(selection), share: dest?.share, path: dest?.path ?? '');
+      if (dest?.share != null) toast('Envoi vers « ${dest!.label} ».');
       selection.clear();
       tab = 1;
       notifyListeners();
@@ -299,21 +316,25 @@ class AppState extends ChangeNotifier {
   }
 
   // -------------------------------------------------------------- réception
-  Future<bool> _onIncoming(IncomingRequest r) async {
+  Future<IncomingDecision> _onIncoming(IncomingRequest r) async {
     if (isWindows) await showMainWindow();
     final n = r.files.length;
     Notifier.show('Demande de réception', '${r.from.name} veut vous envoyer $n fichier(s) (${formatSize(r.totalSize)}).',
         important: true);
     final ctx = navKey.currentContext;
-    if (ctx == null) return false;
-    final (ok, always) = await showIncomingDialog(ctx, r);
-    if (always) {
-      await engine.setAutoAccept(r.from.id, true);
-      toast('Les prochains envois de ${r.from.name} arriveront sans confirmation.');
+    if (ctx == null) return IncomingDecision.rejected;
+    final a = await showIncomingDialog(ctx, r, chooseReceiveDir);
+    if (a.always) await engine.setAutoAccept(r.from.id, true);
+    if (a.dirForDevice) await engine.setDeviceFolder(r.from.id, a.dir);
+    if (a.always || a.dirForDevice) {
+      toast([
+        if (a.always) 'Les prochains envois de ${r.from.name} arriveront sans confirmation.',
+        if (a.dirForDevice) 'Ils seront enregistrés dans ${a.dir}.',
+      ].join(' '));
     }
-    if (ok) tab = 1;
+    if (a.accept) tab = 1;
     notifyListeners();
-    return ok;
+    return IncomingDecision(a.accept, dir: a.dir);
   }
 
   final _pairingDialogs = <String, PairingCodeController>{};

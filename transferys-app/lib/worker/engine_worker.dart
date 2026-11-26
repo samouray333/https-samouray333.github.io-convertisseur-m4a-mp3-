@@ -126,8 +126,10 @@ Future<void> engineWorkerMain(List<Object?> args) async {
       'files': [
         for (final f in r.files) {'fileId': f.fileId, 'relPath': f.relPath, 'size': f.size},
       ],
+      'destination': r.destination,
     });
-    return res == true;
+    if (res is Map) return IncomingDecision(res['accept'] == true, dir: res['dir'] as String?);
+    return IncomingDecision(res == true);
   };
   engine.onPairingPrompt = (PairingPrompt p) => notify('pairingPrompt', {
         'pairId': p.pairId,
@@ -267,6 +269,9 @@ Future<void> engineWorkerMain(List<Object?> args) async {
       case 'clearHistory':
         await engine.history.clear();
         scheduleSnap();
+        return null;
+      case 'setFolder':
+        await engine.setTrustedFolder(m['id'] as String, m['dir'] as String?);
         return null;
       case 'setAutoAccept':
         await engine.setTrustedAutoAccept(m['id'] as String, m['value'] as bool);

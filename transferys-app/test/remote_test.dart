@@ -15,6 +15,7 @@ import 'package:transferys/network/upnp.dart';
 import 'package:transferys/platform/platform_hooks.dart';
 import 'package:transferys/transfer/file_source.dart';
 import 'package:transferys/transfer/job.dart';
+import 'package:transferys/transfer/receiver.dart';
 import 'package:transferys/transfer/server.dart';
 
 class Node {
@@ -25,6 +26,7 @@ class Node {
   late TransferysEngine engine;
   PairingPrompt? lastPrompt;
   bool accept = true;
+  String? chosenDir; // « Enregistrer dans… » simulé
   int incoming = 0;
   String get recvDir => p.join(root.path, 'recu');
 
@@ -45,7 +47,7 @@ class Node {
     };
     engine.onIncoming = (r) async {
       incoming++;
-      return accept;
+      return IncomingDecision(accept, dir: chosenDir);
     };
     await engine.start();
   }
@@ -211,10 +213,13 @@ void main() {
 
       // Envoyer du PC vers le téléphone : le téléphone vient télécharger.
       final doc = await mk(p.join(pc.root.path, 'facture.pdf'), 3 * 1024 * 1024, 9);
+      // Le téléphone choisit « Enregistrer dans… » à la réception.
+      phone.chosenDir = p.join(phone.root.path, 'Documents', 'Factures');
       await pc.engine.sendSmart(tel, [LocalFileSource(doc.path)]);
       final sent = await waitFor(pc.engine, (j) => j.direction == TransferDirection.send);
       expect(sent.status, TransferStatus.done, reason: sent.error);
-      expect(await sha(p.join(phone.recvDir, 'facture.pdf')), await sha(doc.path));
+      expect(await sha(p.join(phone.root.path, 'Documents', 'Factures', 'facture.pdf')), await sha(doc.path));
+      phone.chosenDir = null;
       expect(phone.incoming, 1); // le téléphone a confirmé la réception
 
       // Dépôt direct dans un dossier du téléphone ouvert en écriture.

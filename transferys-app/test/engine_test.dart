@@ -21,6 +21,7 @@ import 'package:ffi/ffi.dart';
 import 'package:transferys/transfer/fd_reader.dart';
 import 'package:transferys/transfer/file_source.dart';
 import 'package:transferys/transfer/job.dart';
+import 'package:transferys/transfer/receiver.dart';
 import 'package:transferys/transfer/server.dart';
 
 class TestHooks extends DefaultPlatformHooks {
@@ -41,6 +42,7 @@ class Node {
   final hooks = TestHooks();
   final codes = StreamController<PairingPrompt>.broadcast();
   bool accept = true;
+  String? chosenDir; // « Enregistrer dans… » simulé
   PairingPrompt? lastPrompt;
   int incomingCount = 0;
 
@@ -64,7 +66,7 @@ class Node {
     };
     engine.onIncoming = (r) async {
       incomingCount++;
-      return accept;
+      return IncomingDecision(accept, dir: chosenDir);
     };
     final err = await engine.start();
     expect(err, isNull);
@@ -524,6 +526,35 @@ void main() {
     await b.shutdown();
     await b.boot(port: 0);
     expect(b.engine.trust.get(a.engine.identity.id)!.autoAccept, isTrue);
+  });
+
+  test('dossier attitré à un appareil (avec tri) et « Enregistrer dans… »', () async {
+    await pairNodes(a, b);
+    b.engine.settings.sortMode = SortMode.typeDevice;
+    final attitre = p.join(b.root.path, 'Images', 'Telephone');
+    await b.engine.setTrustedFolder(a.engine.identity.id, attitre);
+    final pdf = await makeFile(p.join(a.root.path, 'cours.pdf'), 4000, seed: 3);
+    var job = await waitJob(a.engine.send(b.engine.identity.id, [LocalFileSource(pdf.path)]));
+    expect(job.status, TransferStatus.done, reason: job.error);
+    // Dossier attitré : tri par type, sans répéter le nom de l'appareil.
+    expect(File(p.join(attitre, 'Documents', 'cours.pdf')).existsSync(), isTrue);
+
+    // « Enregistrer dans… » à la réception : dossier choisi, sans tri.
+    final choisi = p.join(b.root.path, 'Bureau', 'A trier');
+    b.chosenDir = choisi;
+    final big = await makeFile(p.join(a.root.path, 'video.mp4'), 12 * 1024 * 1024, seed: 4);
+    job = await waitJob(a.engine.send(b.engine.identity.id, [LocalFileSource(pdf.path), LocalFileSource(big.path)]));
+    expect(job.status, TransferStatus.done, reason: job.error);
+    expect(await sha(p.join(choisi, 'cours.pdf')), await sha(pdf.path));
+    expect(await sha(p.join(choisi, 'video.mp4')), await sha(big.path));
+    await Future.delayed(const Duration(milliseconds: 300));
+    expect(b.engine.history.entries.first.folder, choisi);
+
+    // Retour au dossier habituel.
+    b.chosenDir = null;
+    await b.engine.setTrustedFolder(a.engine.identity.id, null);
+    job = await waitJob(a.engine.send(b.engine.identity.id, [LocalFileSource(pdf.path)]));
+    expect(File(p.join(b.recvDir, 'PC Bureau', 'Documents', 'cours.pdf')).existsSync(), isTrue);
   });
 
   test('5 Go', () async {

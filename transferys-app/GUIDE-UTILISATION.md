@@ -2,16 +2,16 @@
 
 ## 1. Installer sur le PC Windows
 
-1. Double-cliquez sur **Transferys-Setup-2.0.0.exe**.
+1. Double-cliquez sur **Transferys-Setup-2.1.0.exe**.
 2. Si Windows affiche « Windows a protégé votre ordinateur » : cliquez sur **Informations complémentaires** puis **Exécuter quand même** (l'installateur n'est pas signé par un certificat payant).
 3. Acceptez la demande d'autorisation (droits administrateur : c'est ce qui permet d'ouvrir Transferys dans le pare-feu).
 4. Suivant, Suivant, Terminer. Transferys se lance.
 
-Version portable (sans installation) : dézippez **Transferys-Portable-2.0.0.zip** et lancez `Transferys.exe`. Au premier lancement, Windows demande l'accès réseau : cochez **Réseaux privés** puis **Autoriser**.
+Version portable (sans installation) : dézippez **Transferys-Portable-2.1.0.zip** et lancez `Transferys.exe`. Au premier lancement, Windows demande l'accès réseau : cochez **Réseaux privés** puis **Autoriser**.
 
 ## 2. Installer sur le téléphone Android
 
-1. Copiez **Transferys-2.0.0.apk** sur le téléphone (câble, mail, Drive…) et touchez-le.
+1. Copiez **Transferys-2.1.0.apk** sur le téléphone (câble, mail, Drive…) et touchez-le.
 2. Si Android bloque : autorisez « Installer des applis inconnues » pour l'appli qui ouvre l'APK (Fichiers, Chrome…).
 3. Ouvrez Transferys et suivez les 3 écrans du guide (donnez un nom : « Tel Quentin »).
 4. Acceptez les **notifications** (pour voir la progression).
@@ -44,6 +44,13 @@ S'ils ne se voient pas : sur le PC, **Ajouter > Mon QR code** ; sur le télépho
 
 - Au moment d'accepter, cochez **Toujours accepter de « Tel Quentin »** : les envois suivants de cet appareil arriveront directement.
 - Ou Réglages > Appareils de confiance > interrupteur à côté de l'appareil (activable / désactivable à tout moment).
+
+## 5 bis (suite). Choisir le dossier de destination
+
+Trois façons :
+- **À l'envoi** : sur l'écran Envoyer, activez **Choisir le dossier d'arrivée**, puis touchez l'appareil. Choisissez son dossier habituel, ou un de ses dossiers partagés avec « Dépôt » activé (on peut descendre dans les sous-dossiers), puis **Envoyer ici**.
+- **À la réception** : dans la fenêtre « … veut vous envoyer », bouton **Changer** à côté de « Enregistrer dans ». Cochez « Toujours enregistrer ici… » pour garder ce dossier pour cet appareil.
+- **Un dossier par appareil** : Réglages > Appareils de confiance > **Dossier de réception** > Changer (bouton ↶ pour revenir au dossier habituel). Fonctionne aussi avec « Toujours accepter ».
 
 ## 5 ter. Tri automatique
 

@@ -65,7 +65,7 @@ class EngineProxy {
   final jobs = <TransferJob>[];
   final _jobById = <String, TransferJob>{};
 
-  Future<bool> Function(IncomingRequest r)? onIncoming;
+  Future<IncomingDecision> Function(IncomingRequest r)? onIncoming;
   void Function(PairingPrompt p)? onPairingPrompt;
   void Function(String pairId, bool success, String? message)? onPairingClosed;
   void Function(TransferJob job)? onJobEnded;
@@ -194,6 +194,7 @@ class EngineProxy {
         final req = IncomingRequest(
           sessionId: m['sessionId'] as String,
           from: from,
+          destination: m['destination'] as String?,
           files: [
             for (final f in (m['files'] as List))
               IncomingFileInfo(
@@ -205,7 +206,9 @@ class EngineProxy {
           ],
         );
         final cb = onIncoming;
-        return cb == null ? false : await cb(req);
+        if (cb == null) return {'accept': false};
+        final d = await cb(req);
+        return {'accept': d.accept, 'dir': d.dir};
       case 'askCode':
         final m = data as Map;
         final cb = _askCode;
@@ -318,6 +321,7 @@ class EngineProxy {
   }
 
   Future<void> removeTrusted(String id) => _cmd('removeTrusted', {'id': id});
+  Future<void> setDeviceFolder(String id, String? dir) => _cmd('setFolder', {'id': id, 'dir': dir});
   Future<void> setAutoAccept(String id, bool value) => _cmd('setAutoAccept', {'id': id, 'value': value});
   Future<void> renameTrusted(String id, String name) => _cmd('renameTrusted', {'id': id, 'name': name});
   void cancelLocalPairing() => _cmd('cancelLocalPairing', null);

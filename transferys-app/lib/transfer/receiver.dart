@@ -34,10 +34,31 @@ class IncomingFileInfo {
       );
 }
 
+/// Réponse de l'utilisateur à une demande de réception.
+class IncomingDecision {
+  const IncomingDecision(this.accept, {this.dir});
+  final bool accept;
+
+  /// Dossier choisi pour CE transfert (null = dossier prévu).
+  final String? dir;
+  static const rejected = IncomingDecision(false);
+}
+
+/// Dossier de réception d'un appareil et tri à appliquer.
+(String, SortMode) receiveTargetFor(TrustedDevice d, String defaultDir, SortMode mode) {
+  final own = d.receiveDir;
+  if (own == null) return (defaultDir, mode);
+  // Dossier attitré : le nom de l'appareil serait redondant.
+  return (own, mode == SortMode.typeDevice ? SortMode.type : mode);
+}
+
 /// Demande de réception présentée à l'utilisateur.
 class IncomingRequest {
-  IncomingRequest({required this.sessionId, required this.from, required this.files});
+  IncomingRequest({required this.sessionId, required this.from, required this.files, this.destination});
   final String sessionId;
+
+  /// Dossier où les fichiers seront enregistrés si l'utilisateur ne change rien.
+  final String? destination;
   final TrustedDevice from;
   final List<IncomingFileInfo> files;
   int get totalSize => files.fold(0, (a, f) => a + f.size);
@@ -142,11 +163,13 @@ class ReceiveSession {
   });
 
   /// Tri automatique (désactivé pour un dépôt dans un dossier précis).
-  final SortMode sortMode;
+  SortMode sortMode;
   final String id;
   final TrustedDevice from;
   final TransferJob job;
-  final String receiveDir;
+
+  /// Modifiable tant que le transfert n'a pas commencé (« Enregistrer dans… »).
+  String receiveDir;
   final files = <String, ReceiveFile>{};
   bool accepted = false;
   bool cancelled = false;
@@ -173,6 +196,11 @@ class ReceiveSession {
   /// Prépare les fichiers : chemins cibles, doublons « ignorer », reprise.
   Future<void> prepare(DuplicateMode mode) async {
     for (final rf in files.values) {
+      // Remise à zéro (la préparation peut être refaite après un changement de dossier).
+      rf.skip = false;
+      rf.offset = 0;
+      rf.view.status = TransferStatus.waiting;
+      rf.view.savedPath = null;
       final parts = sortedParts(sanitizeRelPath(rf.info.relPath), sortMode, sanitizeComponent(from.name));
       rf.targetPath = p.joinAll([receiveDir, ...parts]);
       rf.partPath = p.join(partialDir, '${partKey(from.id, rf.info)}.part');

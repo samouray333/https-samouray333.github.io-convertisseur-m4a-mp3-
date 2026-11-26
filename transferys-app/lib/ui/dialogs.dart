@@ -7,51 +7,107 @@ import 'package:flutter/services.dart';
 import '../core/format.dart';
 import '../transfer/receiver.dart';
 import '../transfer/server.dart';
+import 'brand.dart';
 import 'widgets.dart';
 
 // ------------------------------------------------------ demande de réception
-/// Résultat : (accepté, toujours accepter de cet appareil).
-Future<(bool, bool)> showIncomingDialog(BuildContext context, IncomingRequest r) async {
+/// Réponse à une demande de réception.
+class IncomingAnswer {
+  IncomingAnswer({required this.accept, this.always = false, this.dir, this.dirForDevice = false});
+  final bool accept;
+
+  /// Toujours accepter de cet appareil.
+  final bool always;
+
+  /// Dossier choisi pour ce transfert (null = dossier prévu).
+  final String? dir;
+
+  /// Utiliser ce dossier pour tous les envois de cet appareil.
+  final bool dirForDevice;
+}
+
+/// [pickFolder] ouvre le sélecteur de dossier du système.
+Future<IncomingAnswer> showIncomingDialog(BuildContext context, IncomingRequest r, Future<String?> Function() pickFolder) async {
   var always = false;
+  var forDevice = false;
+  String? dir;
   final res = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (c) => StatefulBuilder(builder: (c, setSt) {
+      final t = Theme.of(c);
+      final cs = t.colorScheme;
       final files = r.files;
-      final shown = files.take(6).toList();
+      final shown = files.take(5).toList();
+      final where = dir ?? r.destination ?? '';
       return AlertDialog(
         icon: Align(widthFactor: 1, child: PlatformAvatar(platform: r.from.platform, size: 48)),
         title: Text('${r.from.name} veut vous envoyer'),
         content: SizedBox(
-          width: 420,
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${files.length} fichier${files.length > 1 ? 's' : ''}, ${formatSize(r.totalSize)}', style: Theme.of(c).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            for (final f in shown)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${files.length} fichier${files.length > 1 ? 's' : ''}, ${formatSize(r.totalSize)}', style: t.textTheme.titleMedium),
+              const SizedBox(height: 10),
+              for (final f in shown)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(children: [
+                    FileBadge(name: f.relPath, size: 28),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(f.relPath, overflow: TextOverflow.ellipsis)),
+                    Text(formatSize(f.size), style: t.textTheme.bodySmall),
+                  ]),
+                ),
+              if (files.length > shown.length)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('… et ${files.length - shown.length} autre(s)', style: t.textTheme.bodySmall),
+                ),
+              const SizedBox(height: 14),
+              // Dossier d'arrivée
+              Container(
+                padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+                decoration: BoxDecoration(color: cs.surfaceContainerLow, borderRadius: BorderRadius.circular(Radii.item)),
                 child: Row(children: [
-                  FileBadge(name: f.relPath, size: 28),
+                  Icon(Icons.folder_rounded, color: cs.primary),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(f.relPath, overflow: TextOverflow.ellipsis)),
-                  Text(formatSize(f.size), style: Theme.of(c).textTheme.bodySmall),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Enregistrer dans', style: t.textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant)),
+                      Text(where, maxLines: 2, overflow: TextOverflow.ellipsis, style: t.textTheme.titleSmall),
+                      if (dir == null)
+                        Text('Rangés automatiquement par type si le tri est activé.',
+                            style: t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                    ]),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final d = await pickFolder();
+                      if (d != null) setSt(() => dir = d);
+                    },
+                    child: const Text('Changer'),
+                  ),
                 ]),
               ),
-            if (files.length > shown.length)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('… et ${files.length - shown.length} autre(s)', style: Theme.of(c).textTheme.bodySmall),
+              if (dir != null)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: forDevice,
+                  onChanged: (v) => setSt(() => forDevice = v ?? false),
+                  title: Text('Toujours enregistrer ici ce qui vient de ${r.from.name}'),
+                ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: always,
+                onChanged: (v) => setSt(() => always = v ?? false),
+                title: Text('Toujours accepter de ${r.from.name}'),
+                subtitle: const Text('Modifiable dans Réglages, Appareils de confiance.'),
               ),
-            const SizedBox(height: 10),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              value: always,
-              onChanged: (v) => setSt(() => always = v ?? false),
-              title: Text('Toujours accepter de ${r.from.name}'),
-              subtitle: const Text('Modifiable dans Réglages, Appareils de confiance.'),
-            ),
-          ]),
+            ]),
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Refuser')),
@@ -65,7 +121,7 @@ Future<(bool, bool)> showIncomingDialog(BuildContext context, IncomingRequest r)
     }),
   );
   final ok = res ?? false;
-  return (ok, ok && always);
+  return IncomingAnswer(accept: ok, always: ok && always, dir: ok ? dir : null, dirForDevice: ok && dir != null && forDevice);
 }
 
 // --------------------------------------------- affichage du code (récepteur)

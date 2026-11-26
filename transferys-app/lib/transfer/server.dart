@@ -37,7 +37,7 @@ abstract class ServerDelegate {
   Map<String, dynamic> publicInfoJson();
 
   /// Demande à l'utilisateur d'accepter ou refuser une réception.
-  Future<bool> confirmIncoming(IncomingRequest r);
+  Future<IncomingDecision> confirmIncoming(IncomingRequest r);
   void showPairingCode(PairingPrompt prompt);
   void closePairingCode(String pairId, {required bool success, String? message});
   Future<int?> freeSpace(String dir);
@@ -415,7 +415,7 @@ class TransferServer {
 
     final infos = list.map((e) => IncomingFileInfo.fromJson((e as Map).cast<String, dynamic>())).toList();
     final settings = delegate.settings;
-    var receiveDir = settings.receiveDir;
+    var (receiveDir, sortMode) = receiveTargetFor(dev, settings.receiveDir, settings.sortMode);
     var autoAccept = false;
     // Dépôt dans un dossier partagé ouvert en écriture (explorateur distant).
     final target = j['target'];
@@ -433,7 +433,7 @@ class TransferServer {
     }
     final token = j['token'] as String?;
     if (token != null && delegate.consumePushToken(dev.id, token)) autoAccept = true;
-    final sortMode = target is Map ? SortMode.none : settings.sortMode;
+    if (target is Map) sortMode = SortMode.none;
     if (dev.autoAccept) autoAccept = true;
     final job = TransferJob(
       id: sid,
@@ -477,14 +477,35 @@ class TransferServer {
     }
 
     if (settings.confirmBeforeReceive && !autoAccept) {
-      final req = IncomingRequest(sessionId: s.id, from: s.from, files: s.files.values.map((f) => f.info).toList());
-      bool ok;
+      final req = IncomingRequest(
+        sessionId: s.id,
+        from: s.from,
+        files: s.files.values.map((f) => f.info).toList(),
+        destination: s.receiveDir,
+      );
+      IncomingDecision d;
       try {
-        ok = await delegate.confirmIncoming(req).timeout(decisionTimeout, onTimeout: () => false);
+        d = await delegate.confirmIncoming(req).timeout(decisionTimeout, onTimeout: () => IncomingDecision.rejected);
       } catch (_) {
-        ok = false;
+        d = IncomingDecision.rejected;
       }
-      if (!ok) return {'accepted': false, 'status': 403, 'error': 'rejected'};
+      if (!d.accept) return {'accepted': false, 'status': 403, 'error': 'rejected'};
+      // « Enregistrer dans… » : autre dossier pour ce transfert, sans tri.
+      if (d.dir != null && d.dir != s.receiveDir) {
+        try {
+          await Directory(d.dir!).create(recursive: true);
+        } catch (_) {
+          return {'accepted': false, 'status': 500, 'error': 'write_failed', 'message': 'Dossier inaccessible : ${d.dir}'};
+        }
+        s.receiveDir = d.dir!;
+        s.sortMode = SortMode.none;
+        s.job.folder = d.dir;
+        await s.prepare(settings.duplicateMode);
+        final free2 = await delegate.freeSpace(s.receiveDir);
+        if (free2 != null && free2 < s.bytesNeeded + diskMargin) {
+          return {'accepted': false, 'status': 507, 'error': 'disk_full', 'needed': s.bytesNeeded, 'free': free2};
+        }
+      }
     }
 
     s.accepted = true;

@@ -274,7 +274,7 @@ class _OrbitState extends State<_Orbit> with SingleTickerProviderStateMixin {
       final compact = w < 420;
       final bubble = compact ? 52.0 : 60.0;
       final labelW = compact ? 96.0 : 112.0;
-      final labelH = compact ? 22.0 : 40.0;
+      final labelH = compact ? 26.0 : 48.0;
       final core = compact ? 28.0 : 34.0; // rayon du disque central
       // L'anneau extérieur laisse la place des étiquettes en bas et sur les côtés.
       final rMax = math.min(w / 2 - labelW / 2 + 4, h / 2 - bubble / 2 - labelH);
@@ -548,6 +548,20 @@ class _SelectionZone extends StatelessWidget {
             Expanded(child: actions[i]),
           ],
         ]),
+        const SizedBox(height: 10),
+        Material(
+          color: Colors.transparent,
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.only(left: 4),
+            secondary: Icon(Icons.drive_file_move_rounded, color: cs.primary),
+            title: const Text('Choisir le dossier d\'arrivée'),
+            subtitle: Text(app.chooseDestination
+                ? 'Vous choisirez le dossier sur l\'autre appareil au moment d\'envoyer.'
+                : 'Sinon : son dossier de réception habituel.'),
+            value: app.chooseDestination,
+            onChanged: app.setChooseDestination,
+          ),
+        ),
       ]),
     );
   }
