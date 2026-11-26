@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 
 import '../core/errors.dart';
 import '../core/models.dart';
+import '../core/sorting.dart';
 import 'client.dart';
 import 'file_utils.dart';
 import 'hasher.dart';
@@ -43,7 +44,11 @@ class DownloadJob {
     this.onFileSaved,
     this.onFileDone,
     this.reconnectWindow = const Duration(minutes: 10),
+    this.sortMode = SortMode.none,
   });
+
+  /// Tri automatique (seulement vers le dossier de réception).
+  final SortMode sortMode;
 
   final TransferJob job;
   final List<RemoteFile> files;
@@ -168,7 +173,7 @@ class DownloadJob {
 
   Future<bool> _one(RemoteFile rf, TransferFile f) async {
     f.status = TransferStatus.running;
-    final parts = sanitizeRelPath(rf.relPath);
+    final parts = sortedParts(sanitizeRelPath(rf.relPath), sortMode, sanitizeComponent(job.peerName));
     final target = p.joinAll([destDir, ...parts]);
     if (duplicateMode == DuplicateMode.skip && await File(target).exists()) {
       f

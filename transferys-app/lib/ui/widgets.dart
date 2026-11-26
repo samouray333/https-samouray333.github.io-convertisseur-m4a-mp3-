@@ -1,31 +1,53 @@
 // Composants réutilisables de l'interface.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
 
 import '../core/format.dart';
 import '../core/models.dart';
+import '../core/sorting.dart';
 import '../transfer/job.dart';
+import 'brand.dart';
 
-IconData iconForFile(String name) {
-  final ext = p.extension(name).toLowerCase();
-  const img = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.bmp', '.svg', '.raw', '.dng'};
-  const vid = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.3gp', '.wmv'};
-  const aud = {'.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg', '.opus', '.wma'};
-  const arc = {'.zip', '.rar', '.7z', '.tar', '.gz', '.xz'};
-  const doc = {'.doc', '.docx', '.odt', '.txt', '.rtf', '.md'};
-  if (img.contains(ext)) return Icons.image_outlined;
-  if (vid.contains(ext)) return Icons.movie_outlined;
-  if (aud.contains(ext)) return Icons.music_note_outlined;
-  if (arc.contains(ext)) return Icons.folder_zip_outlined;
-  if (ext == '.pdf') return Icons.picture_as_pdf_outlined;
-  if (ext == '.apk') return Icons.android;
-  if (ext == '.xlsx' || ext == '.xls' || ext == '.csv' || ext == '.ods') return Icons.table_chart_outlined;
-  if (doc.contains(ext)) return Icons.description_outlined;
-  return Icons.insert_drive_file_outlined;
+/// Icône et teinte par catégorie (mêmes catégories que le tri automatique).
+(IconData, Color) categoryStyle(String category) => switch (category) {
+      'Photos' => (Icons.image_rounded, const Color(0xFF1E9E6A)),
+      'Vidéos' => (Icons.movie_rounded, const Color(0xFF7C4DFF)),
+      'Musique' => (Icons.music_note_rounded, const Color(0xFFE0457B)),
+      'Documents' => (Icons.description_rounded, brandBlue),
+      'Archives' => (Icons.folder_zip_rounded, const Color(0xFFD98A0B)),
+      'Applications' => (Icons.apps_rounded, const Color(0xFF00897B)),
+      _ => (Icons.insert_drive_file_rounded, const Color(0xFF6E7A94)),
+    };
+
+IconData iconForFile(String name) => categoryStyle(categoryFor(name)).$1;
+
+IconData platformIcon(DevicePlatform p) => switch (p) {
+      DevicePlatform.windows => Icons.computer_rounded,
+      DevicePlatform.android => Icons.smartphone_rounded,
+      DevicePlatform.linux => Icons.laptop_rounded,
+      DevicePlatform.other => Icons.devices_other_rounded,
+    };
+
+/// Pastille de type de fichier (couleur = catégorie).
+class FileBadge extends StatelessWidget {
+  const FileBadge({super.key, required this.name, this.size = 38});
+  final String name;
+  final double size;
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color) = categoryStyle(categoryFor(name));
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(size * 0.3)),
+      child: Icon(icon, color: color, size: size * 0.55),
+    );
+  }
 }
 
 class PlatformAvatar extends StatelessWidget {
-  const PlatformAvatar({super.key, required this.platform, this.size = 40, this.online = true});
+  const PlatformAvatar({super.key, required this.platform, this.size = 44, this.online = true});
   final DevicePlatform platform;
   final double size;
   final bool online;
@@ -33,40 +55,25 @@ class PlatformAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final icon = switch (platform) {
-      DevicePlatform.windows => Icons.computer_rounded,
-      DevicePlatform.android => Icons.smartphone_rounded,
-      DevicePlatform.linux => Icons.laptop_rounded,
-      DevicePlatform.other => Icons.devices_other_rounded,
-    };
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: online ? cs.primaryContainer : cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(size * 0.3),
-      ),
-      child: Icon(icon, size: size * 0.55, color: online ? cs.onPrimaryContainer : cs.onSurfaceVariant),
+      decoration: BoxDecoration(color: online ? cs.primary : cs.surfaceContainerHigh, shape: BoxShape.circle),
+      child: Icon(platformIcon(platform), size: size * 0.5, color: online ? cs.onPrimary : cs.outline),
     );
   }
 }
 
+/// Titre de section : sobre, en casse normale.
 class SectionTitle extends StatelessWidget {
   const SectionTitle(this.text, {super.key, this.trailing});
   final String text;
   final Widget? trailing;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
+        padding: const EdgeInsets.fromLTRB(6, 22, 6, 10),
         child: Row(children: [
-          Expanded(
-            child: Text(text,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                    )),
-          ),
+          Expanded(child: Text(text, style: Theme.of(context).textTheme.titleLarge)),
           if (trailing != null) trailing!,
         ]),
       );
@@ -81,15 +88,26 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
+    final cs = t.colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
       child: Column(children: [
-        Icon(icon, size: 52, color: t.colorScheme.outline),
-        const SizedBox(height: 12),
-        Text(title, style: t.textTheme.titleMedium, textAlign: TextAlign.center),
-        const SizedBox(height: 6),
-        Text(text, style: t.textTheme.bodyMedium?.copyWith(color: t.colorScheme.onSurfaceVariant), textAlign: TextAlign.center),
-        if (action != null) ...[const SizedBox(height: 14), action!],
+        Container(
+          width: 84,
+          height: 84,
+          decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.10), shape: BoxShape.circle),
+          child: Icon(icon, size: 40, color: cs.primary),
+        ),
+        const SizedBox(height: 16),
+        Text(title, style: t.textTheme.titleLarge, textAlign: TextAlign.center),
+        if (text.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Text(text, style: t.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant), textAlign: TextAlign.center),
+          ),
+        ],
+        if (action != null) ...[const SizedBox(height: 16), action!],
       ]),
     );
   }
@@ -99,7 +117,7 @@ Color statusColor(BuildContext context, TransferStatus s) {
   final cs = Theme.of(context).colorScheme;
   switch (s) {
     case TransferStatus.done:
-      return Colors.green.shade600;
+      return okGreen;
     case TransferStatus.failed:
     case TransferStatus.rejected:
       return cs.error;
@@ -108,14 +126,69 @@ Color statusColor(BuildContext context, TransferStatus s) {
       return cs.outline;
     case TransferStatus.paused:
     case TransferStatus.reconnecting:
-      return Colors.orange.shade700;
+      return warnAmber;
     default:
       return cs.primary;
   }
 }
 
-/// Carte d'un transfert : progression globale et par fichier, vitesse,
-/// temps restant, pause / reprise / annulation.
+/// Anneau de progression avec le pourcentage (ou une icône d'état) au centre.
+class ProgressRing extends StatelessWidget {
+  const ProgressRing({super.key, required this.value, required this.color, this.size = 56, this.icon});
+  final double? value;
+  final Color color;
+  final double size;
+  final IconData? icon;
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(alignment: Alignment.center, children: [
+        CustomPaint(
+          size: Size.square(size),
+          painter: _RingPainter(value: value, color: color, track: t.colorScheme.outlineVariant.withValues(alpha: 0.7)),
+        ),
+        if (icon != null)
+          Icon(icon, color: color, size: size * 0.42)
+        else if (value != null)
+          Text('${(value! * 100).floor()}', style: t.textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w800)),
+      ]),
+    );
+  }
+}
+
+class _RingPainter extends CustomPainter {
+  _RingPainter({required this.value, required this.color, required this.track});
+  final double? value;
+  final Color color;
+  final Color track;
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 5.0;
+    final rect = Offset.zero & size;
+    final r = rect.deflate(stroke / 2);
+    canvas.drawArc(r, 0, 2 * math.pi, false, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..color = track);
+    final v = (value ?? 0.12).clamp(0.0, 1.0);
+    if (v > 0) {
+      canvas.drawArc(r, -math.pi / 2, 2 * math.pi * v, false, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round
+        ..color = color);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter o) => o.value != value || o.color != color;
+}
+
+/// Carte d'un transfert : anneau de progression, vitesse, temps restant,
+/// pause / reprise / annulation, détail par fichier.
 class JobCard extends StatefulWidget {
   const JobCard({super.key, required this.job, this.onOpenFolder});
   final TransferJob job;
@@ -131,125 +204,134 @@ class _JobCardState extends State<JobCard> {
   Widget build(BuildContext context) {
     final j = widget.job;
     final t = Theme.of(context);
+    final cs = t.colorScheme;
     final send = j.direction == TransferDirection.send;
     final speed = j.bytesPerSecond;
     final eta = j.eta;
     final active = j.isActive;
     final cur = j.currentFile;
-    final subtitle = StringBuffer('${j.doneCount}/${j.files.length} fichier(s) • ${formatSize(j.transferredBytes)} / ${formatSize(j.totalSize)}');
+    final color = statusColor(context, j.status);
+    final IconData? ringIcon = switch (j.status) {
+      TransferStatus.done => Icons.check_rounded,
+      TransferStatus.failed || TransferStatus.rejected => Icons.priority_high_rounded,
+      TransferStatus.cancelled => Icons.close_rounded,
+      TransferStatus.paused => Icons.pause_rounded,
+      TransferStatus.reconnecting => Icons.wifi_find_rounded,
+      _ => null,
+    };
+    final line2 = StringBuffer('${formatSize(j.transferredBytes)} sur ${formatSize(j.totalSize)}');
     if (j.status == TransferStatus.running && speed > 0) {
-      subtitle.write(' • ${formatSpeed(speed)}');
-      if (eta != null) subtitle.write(' • reste ${formatDuration(eta)}');
+      line2.write(', ${formatSpeed(speed)}');
+      if (eta != null) line2.write(', reste ${formatDuration(eta)}');
     }
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(send ? Icons.north_east_rounded : Icons.south_west_rounded, color: t.colorScheme.primary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${send ? 'Envoi vers' : 'Réception depuis'} ${j.peerName}',
-                    style: t.textTheme.titleMedium, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text(
-                  j.remotePaused ? 'En pause (demandée par ${j.peerName})' : j.status.label,
-                  style: t.textTheme.labelLarge?.copyWith(color: statusColor(context, j.status)),
+    final statusText = j.remotePaused
+        ? 'En pause sur ${j.peerName}'
+        : (j.status == TransferStatus.waiting && send ? 'En attente d\'acceptation' : j.status.label);
+
+    return Zone(
+      padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          ProgressRing(value: j.status == TransferStatus.waiting ? null : j.progress, color: color, icon: ringIcon),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Icon(send ? Icons.north_east_rounded : Icons.south_west_rounded, size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text('${send ? 'Vers' : 'De'} ${j.peerName}', style: t.textTheme.titleMedium, overflow: TextOverflow.ellipsis),
                 ),
               ]),
-            ),
-            if (active && j.status != TransferStatus.waiting) ...[
-              if (j.status == TransferStatus.paused && !j.remotePaused)
-                IconButton(tooltip: 'Reprendre', onPressed: j.resume, icon: const Icon(Icons.play_arrow_rounded))
-              else if (j.status != TransferStatus.paused)
-                IconButton(tooltip: 'Mettre en pause', onPressed: j.pause, icon: const Icon(Icons.pause_rounded)),
-            ],
-            if (active)
-              IconButton(tooltip: 'Annuler', onPressed: () => _confirmCancel(context), icon: const Icon(Icons.close_rounded)),
-            if (!active && !send && j.folder != null && widget.onOpenFolder != null)
-              IconButton(tooltip: 'Ouvrir le dossier', onPressed: () => widget.onOpenFolder!(j), icon: const Icon(Icons.folder_open_rounded)),
-          ]),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: j.status == TransferStatus.waiting ? null : j.progress.clamp(0, 1).toDouble(),
-                minHeight: 8,
-                color: statusColor(context, j.status),
+              const SizedBox(height: 2),
+              Text(
+                '$statusText, ${j.doneCount}/${j.files.length} fichier${j.files.length > 1 ? 's' : ''}',
+                style: t.textTheme.labelMedium?.copyWith(color: color),
               ),
-            ),
+              const SizedBox(height: 2),
+              Text(line2.toString(), style: t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            ]),
           ),
-          const SizedBox(height: 8),
-          Text(subtitle.toString(), style: t.textTheme.bodySmall),
-          if (cur != null && active)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text('Fichier en cours : ${cur.relPath} (${(cur.progress * 100).toStringAsFixed(0)} %)',
-                  style: t.textTheme.bodySmall, overflow: TextOverflow.ellipsis),
-            ),
-          if (j.error != null && j.status != TransferStatus.done)
-            Padding(
-              padding: const EdgeInsets.only(top: 6, right: 8),
-              child: Text(j.error!,
-                  style: t.textTheme.bodySmall?.copyWith(
-                      color: j.status == TransferStatus.reconnecting ? Colors.orange.shade800 : t.colorScheme.error)),
-            ),
-          if (j.status == TransferStatus.waiting && send)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text('En attente d\'acceptation sur ${j.peerName}…', style: t.textTheme.bodySmall),
-            ),
-          TextButton.icon(
-            onPressed: () => setState(() => _expanded = !_expanded),
-            icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
-            label: Text(_expanded ? 'Masquer les fichiers' : 'Voir les fichiers'),
-          ),
-          if (_expanded)
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 320),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: j.files.length,
-                itemBuilder: (c, i) {
-                  final f = j.files[i];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(children: [
-                      Icon(iconForFile(f.relPath), size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(f.relPath, overflow: TextOverflow.ellipsis, style: t.textTheme.bodyMedium),
-                          const SizedBox(height: 3),
-                          LinearProgressIndicator(value: f.progress.clamp(0, 1).toDouble(), minHeight: 3, color: statusColor(context, f.status)),
-                          if (f.error != null && f.status == TransferStatus.failed)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(f.error!, style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.error)),
-                            ),
-                        ]),
-                      ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 110,
-                        child: Text(
-                          f.status == TransferStatus.running ? '${(f.progress * 100).toStringAsFixed(0)} % de ${formatSize(f.size)}' : '${f.status.label} • ${formatSize(f.size)}',
-                          style: t.textTheme.bodySmall?.copyWith(color: statusColor(context, f.status)),
-                          textAlign: TextAlign.right,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ]),
-                  );
-                },
-              ),
+          if (active && j.status != TransferStatus.waiting) ...[
+            if (j.status == TransferStatus.paused && !j.remotePaused)
+              IconButton.filledTonal(tooltip: 'Reprendre', onPressed: j.resume, icon: const Icon(Icons.play_arrow_rounded))
+            else if (j.status != TransferStatus.paused)
+              IconButton(tooltip: 'Mettre en pause', onPressed: j.pause, icon: const Icon(Icons.pause_rounded)),
+          ],
+          if (active) IconButton(tooltip: 'Annuler', onPressed: () => _confirmCancel(context), icon: const Icon(Icons.close_rounded)),
+          if (!active && !send && j.folder != null && widget.onOpenFolder != null)
+            IconButton.filledTonal(
+              tooltip: 'Ouvrir le dossier',
+              onPressed: () => widget.onOpenFolder!(j),
+              icon: const Icon(Icons.folder_open_rounded),
             ),
         ]),
-      ),
+        if (cur != null && active)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(70, 8, 8, 0),
+            child: Text('En cours : ${cur.relPath}', style: t.textTheme.bodySmall, overflow: TextOverflow.ellipsis),
+          ),
+        if (j.error != null && j.status != TransferStatus.done)
+          Container(
+            margin: const EdgeInsets.fromLTRB(0, 12, 8, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: (j.status == TransferStatus.reconnecting ? warnAmber : cs.error).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(Radii.chip),
+            ),
+            child: Text(j.error!,
+                style: t.textTheme.bodySmall?.copyWith(color: j.status == TransferStatus.reconnecting ? warnAmber : cs.error)),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _expanded = !_expanded),
+            icon: Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded),
+            label: Text(_expanded ? 'Masquer les fichiers' : 'Voir les fichiers'),
+          ),
+        ),
+        if (_expanded)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 340),
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.only(bottom: 8, right: 8),
+              itemCount: j.files.length,
+              itemBuilder: (c, i) {
+                final f = j.files[i];
+                final fc = statusColor(context, f.status);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    FileBadge(name: f.relPath, size: 32),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Expanded(child: Text(f.relPath, overflow: TextOverflow.ellipsis, style: t.textTheme.titleSmall)),
+                          const SizedBox(width: 8),
+                          Text(
+                            f.status == TransferStatus.running ? '${(f.progress * 100).toStringAsFixed(0)} %' : f.status.label,
+                            style: t.textTheme.labelSmall?.copyWith(color: fc),
+                          ),
+                        ]),
+                        const SizedBox(height: 4),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(value: f.progress.clamp(0, 1).toDouble(), minHeight: 4, color: fc),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(formatSize(f.size), style: t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                        if (f.error != null && f.status == TransferStatus.failed)
+                          Text(f.error!, style: t.textTheme.bodySmall?.copyWith(color: cs.error)),
+                      ]),
+                    ),
+                  ]),
+                );
+              },
+            ),
+          ),
+      ]),
     );
   }
 

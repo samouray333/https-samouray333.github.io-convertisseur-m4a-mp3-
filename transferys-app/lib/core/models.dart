@@ -66,6 +66,7 @@ class TrustedDevice {
     this.lastPort,
     List<String>? remoteAddresses,
     this.remotePort,
+    this.autoAccept = false,
   }) : remoteAddresses = remoteAddresses ?? [];
 
   final String id;
@@ -76,6 +77,9 @@ class TrustedDevice {
   /// apprises quand les deux appareils étaient sur le même réseau.
   List<String> remoteAddresses;
   int? remotePort;
+
+  /// Réception acceptée sans confirmation depuis cet appareil.
+  bool autoAccept;
 
   /// Empreinte SHA-256 du certificat TLS de cet appareil (épinglage).
   String fingerprint;
@@ -97,6 +101,7 @@ class TrustedDevice {
         'lastPort': lastPort,
         'remoteAddresses': remoteAddresses,
         'remotePort': remotePort,
+        'autoAccept': autoAccept,
       };
 
   factory TrustedDevice.fromJson(Map<String, dynamic> j) => TrustedDevice(
@@ -110,6 +115,7 @@ class TrustedDevice {
         lastPort: j['lastPort'] as int?,
         remoteAddresses: ((j['remoteAddresses'] as List?) ?? const []).cast<String>().toList(),
         remotePort: j['remotePort'] as int?,
+        autoAccept: j['autoAccept'] as bool? ?? false,
       );
 }
 

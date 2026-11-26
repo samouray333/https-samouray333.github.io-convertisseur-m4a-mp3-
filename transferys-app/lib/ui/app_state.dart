@@ -306,7 +306,11 @@ class AppState extends ChangeNotifier {
         important: true);
     final ctx = navKey.currentContext;
     if (ctx == null) return false;
-    final ok = await showIncomingDialog(ctx, r);
+    final (ok, always) = await showIncomingDialog(ctx, r);
+    if (always) {
+      await engine.setAutoAccept(r.from.id, true);
+      toast('Les prochains envois de ${r.from.name} arriveront sans confirmation.');
+    }
     if (ok) tab = 1;
     notifyListeners();
     return ok;

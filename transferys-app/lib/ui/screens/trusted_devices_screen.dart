@@ -30,9 +30,14 @@ class TrustedDevicesScreen extends StatelessWidget {
                   child: ListTile(
                     leading: PlatformAvatar(platform: d.platform, online: app.engine.isOnline(d.id)),
                     title: Text(d.name),
-                    subtitle: Text('Appairé le ${formatDate(d.pairedAt)}\nEmpreinte ${DeviceIdentity.shortFp(d.fingerprint)}'),
+                    subtitle: Text('${d.autoAccept ? 'Toujours accepté, sans confirmation' : 'Confirmation à chaque envoi'}\nAppairé le ${formatDate(d.pairedAt)}, empreinte ${DeviceIdentity.shortFp(d.fingerprint)}'),
                     isThreeLine: true,
-                    trailing: IconButton(
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Tooltip(
+                        message: 'Recevoir ses envois sans confirmation',
+                        child: Switch(value: d.autoAccept, onChanged: (v) => app.engine.setAutoAccept(d.id, v)),
+                      ),
+                      IconButton(
                       tooltip: 'Retirer',
                       icon: const Icon(Icons.link_off_rounded),
                       onPressed: () async {
@@ -50,6 +55,7 @@ class TrustedDevicesScreen extends StatelessWidget {
                         if (ok == true) await app.engine.removeTrusted(d.id);
                       },
                     ),
+                    ]),
                   ),
                 ),
             ]),

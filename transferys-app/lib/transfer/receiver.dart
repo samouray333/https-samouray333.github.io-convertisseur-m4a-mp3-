@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 
 import '../core/errors.dart';
 import '../core/models.dart';
+import '../core/sorting.dart';
 import 'file_utils.dart';
 import 'hasher.dart';
 import 'job.dart';
@@ -132,7 +133,16 @@ class ReceiveFile {
 }
 
 class ReceiveSession {
-  ReceiveSession({required this.id, required this.from, required this.job, required this.receiveDir});
+  ReceiveSession({
+    required this.id,
+    required this.from,
+    required this.job,
+    required this.receiveDir,
+    this.sortMode = SortMode.none,
+  });
+
+  /// Tri automatique (désactivé pour un dépôt dans un dossier précis).
+  final SortMode sortMode;
   final String id;
   final TrustedDevice from;
   final TransferJob job;
@@ -163,7 +173,7 @@ class ReceiveSession {
   /// Prépare les fichiers : chemins cibles, doublons « ignorer », reprise.
   Future<void> prepare(DuplicateMode mode) async {
     for (final rf in files.values) {
-      final parts = sanitizeRelPath(rf.info.relPath);
+      final parts = sortedParts(sanitizeRelPath(rf.info.relPath), sortMode, sanitizeComponent(from.name));
       rf.targetPath = p.joinAll([receiveDir, ...parts]);
       rf.partPath = p.join(partialDir, '${partKey(from.id, rf.info)}.part');
       if (mode == DuplicateMode.skip && await File(rf.targetPath).exists()) {

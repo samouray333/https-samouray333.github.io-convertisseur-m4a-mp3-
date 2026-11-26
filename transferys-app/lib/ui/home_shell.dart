@@ -24,23 +24,33 @@ class HomeShell extends StatelessWidget {
     Widget badge(Widget icon) => active > 0 ? Badge(label: Text('$active'), child: icon) : icon;
     final wide = MediaQuery.sizeOf(context).width >= 760;
 
-    final body = IndexedStack(index: app.tab, children: pages);
+    // Les onglets cachés ne font tourner aucune animation.
+    final body = IndexedStack(index: app.tab, children: [
+      for (var i = 0; i < pages.length; i++) TickerMode(enabled: i == app.tab, child: pages[i]),
+    ]);
     final appBar = AppBar(
+      toolbarHeight: 60,
       title: Row(children: [
         const BrandLogo(size: 30),
         const SizedBox(width: 10),
-        Text(wide ? 'Transferys' : _titles[app.tab], style: const TextStyle(fontWeight: FontWeight.w700)),
+        Text(app.tab == 0 ? 'Transferys' : _titles[app.tab]),
       ]),
     );
 
     if (wide) {
       return Scaffold(
-        appBar: appBar,
-        body: Row(children: [
+        body: SafeArea(
+          child: Row(children: [
           NavigationRail(
             selectedIndex: app.tab,
             onDestinationSelected: app.setTab,
             labelType: NavigationRailLabelType.all,
+            minWidth: 92,
+            groupAlignment: -0.85,
+            leading: const Padding(
+              padding: EdgeInsets.only(top: 18, bottom: 26),
+              child: Tooltip(message: 'Transferys', child: BrandLogo(size: 42)),
+            ),
             destinations: [
               const NavigationRailDestination(icon: Icon(Icons.send_outlined), selectedIcon: Icon(Icons.send_rounded), label: Text('Envoyer')),
               NavigationRailDestination(icon: badge(const Icon(Icons.swap_vert_rounded)), label: const Text('Transferts')),
@@ -49,14 +59,25 @@ class HomeShell extends StatelessWidget {
               const NavigationRailDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings_rounded), label: Text('Réglages')),
             ],
           ),
-          const VerticalDivider(width: 1),
           Expanded(
             child: Align(
               alignment: Alignment.topCenter,
-              child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: body),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: app.tab == 0 ? 1180 : 920),
+                child: app.tab == 0
+                    ? body
+                    : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(26, 26, 26, 6),
+                          child: Text(_titles[app.tab], style: Theme.of(context).textTheme.headlineMedium),
+                        ),
+                        Expanded(child: body),
+                      ]),
+              ),
             ),
           ),
         ]),
+        ),
       );
     }
     return Scaffold(

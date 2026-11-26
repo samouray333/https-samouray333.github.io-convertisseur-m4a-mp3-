@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/models.dart';
+import '../../core/sorting.dart';
+import '../brand.dart';
 import '../../engine.dart';
 import '../../platform/android_bridge.dart';
 import '../../platform/windows_integration.dart';
@@ -50,9 +52,23 @@ class SettingsScreen extends StatelessWidget {
           SwitchListTile(
             secondary: const Icon(Icons.verified_user_outlined),
             title: const Text('Demander confirmation avant chaque réception'),
-            subtitle: const Text('Recommandé. Sinon, les appareils de confiance envoient directement.'),
+            subtitle: const Text('Sauf pour les appareils réglés sur « Toujours accepter » (Appareils de confiance).'),
             value: s.confirmBeforeReceive,
             onChanged: (v) => app.updateSettings((x) => x.confirmBeforeReceive = v),
+          ),
+          ListTile(
+            leading: const Icon(Icons.auto_awesome_mosaic_outlined),
+            title: const Text('Tri automatique'),
+            subtitle: Text(s.sortMode.example),
+            trailing: DropdownButton<SortMode>(
+              value: s.sortMode,
+              underline: const SizedBox(),
+              borderRadius: BorderRadius.circular(Radii.item),
+              items: [for (final m in SortMode.values) DropdownMenuItem(value: m, child: Text(_sortShort(m)))],
+              onChanged: (m) {
+                if (m != null) app.updateSettings((x) => x.sortMode = m);
+              },
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.file_copy_outlined),
@@ -220,6 +236,12 @@ class SettingsScreen extends StatelessWidget {
       ),
     ]);
   }
+
+  static String _sortShort(SortMode m) => switch (m) {
+        SortMode.none => 'Aucun',
+        SortMode.type => 'Par type',
+        SortMode.typeDevice => 'Appareil + type',
+      };
 
   static String _dupShort(DuplicateMode m) => switch (m) {
         DuplicateMode.rename => 'Renommer',

@@ -10,11 +10,13 @@ import '../transfer/server.dart';
 import 'widgets.dart';
 
 // ------------------------------------------------------ demande de réception
-Future<bool> showIncomingDialog(BuildContext context, IncomingRequest r) async {
+/// Résultat : (accepté, toujours accepter de cet appareil).
+Future<(bool, bool)> showIncomingDialog(BuildContext context, IncomingRequest r) async {
+  var always = false;
   final res = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (c) {
+    builder: (c) => StatefulBuilder(builder: (c, setSt) {
       final files = r.files;
       final shown = files.take(6).toList();
       return AlertDialog(
@@ -23,14 +25,14 @@ Future<bool> showIncomingDialog(BuildContext context, IncomingRequest r) async {
         content: SizedBox(
           width: 420,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${files.length} fichier(s) • ${formatSize(r.totalSize)}', style: Theme.of(c).textTheme.titleMedium),
+            Text('${files.length} fichier${files.length > 1 ? 's' : ''}, ${formatSize(r.totalSize)}', style: Theme.of(c).textTheme.titleMedium),
             const SizedBox(height: 12),
             for (final f in shown)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Row(children: [
-                  Icon(iconForFile(f.relPath), size: 20),
-                  const SizedBox(width: 8),
+                  FileBadge(name: f.relPath, size: 28),
+                  const SizedBox(width: 10),
                   Expanded(child: Text(f.relPath, overflow: TextOverflow.ellipsis)),
                   Text(formatSize(f.size), style: Theme.of(c).textTheme.bodySmall),
                 ]),
@@ -40,6 +42,15 @@ Future<bool> showIncomingDialog(BuildContext context, IncomingRequest r) async {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text('… et ${files.length - shown.length} autre(s)', style: Theme.of(c).textTheme.bodySmall),
               ),
+            const SizedBox(height: 10),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: always,
+              onChanged: (v) => setSt(() => always = v ?? false),
+              title: Text('Toujours accepter de ${r.from.name}'),
+              subtitle: const Text('Modifiable dans Réglages, Appareils de confiance.'),
+            ),
           ]),
         ),
         actions: [
@@ -51,9 +62,10 @@ Future<bool> showIncomingDialog(BuildContext context, IncomingRequest r) async {
           ),
         ],
       );
-    },
+    }),
   );
-  return res ?? false;
+  final ok = res ?? false;
+  return (ok, ok && always);
 }
 
 // --------------------------------------------- affichage du code (récepteur)

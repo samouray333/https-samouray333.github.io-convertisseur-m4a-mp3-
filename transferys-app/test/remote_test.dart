@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:transferys/core/models.dart';
 import 'package:transferys/core/settings.dart';
+import 'package:transferys/core/sorting.dart';
 import 'package:transferys/engine.dart';
 import 'package:transferys/network/upnp.dart';
 import 'package:transferys/platform/platform_hooks.dart';
@@ -37,6 +38,7 @@ class Node {
     );
     await engine.init();
     engine.settings.port = 0;
+    engine.settings.sortMode = SortMode.none; // les tests historiques attendent tout à la racine
     engine.onPairingPrompt = (pp) {
       lastPrompt = pp;
       engine.approvePairing(pp.pairId);

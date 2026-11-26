@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import '../core/errors.dart';
 import '../core/models.dart';
 import '../core/settings.dart';
+import '../core/sorting.dart';
 import '../core/stores.dart';
 import '../network/net_utils.dart';
 import '../security/identity.dart';
@@ -432,6 +433,8 @@ class TransferServer {
     }
     final token = j['token'] as String?;
     if (token != null && delegate.consumePushToken(dev.id, token)) autoAccept = true;
+    final sortMode = target is Map ? SortMode.none : settings.sortMode;
+    if (dev.autoAccept) autoAccept = true;
     final job = TransferJob(
       id: sid,
       direction: TransferDirection.receive,
@@ -440,7 +443,7 @@ class TransferServer {
       files: [for (final f in infos) TransferFile(fileId: f.fileId, relPath: f.relPath, size: f.size)],
       folder: receiveDir,
     );
-    final s = ReceiveSession(id: sid, from: dev, job: job, receiveDir: receiveDir);
+    final s = ReceiveSession(id: sid, from: dev, job: job, receiveDir: receiveDir, sortMode: sortMode);
     for (var i = 0; i < infos.length; i++) {
       s.files[infos[i].fileId] = ReceiveFile(infos[i], job.files[i]);
     }

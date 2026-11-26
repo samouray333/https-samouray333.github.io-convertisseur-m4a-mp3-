@@ -2,16 +2,16 @@
 
 ## 1. Installer sur le PC Windows
 
-1. Double-cliquez sur **Transferys-Setup-1.1.1.exe**.
+1. Double-cliquez sur **Transferys-Setup-2.0.0.exe**.
 2. Si Windows affiche « Windows a protégé votre ordinateur » : cliquez sur **Informations complémentaires** puis **Exécuter quand même** (l'installateur n'est pas signé par un certificat payant).
 3. Acceptez la demande d'autorisation (droits administrateur : c'est ce qui permet d'ouvrir Transferys dans le pare-feu).
 4. Suivant, Suivant, Terminer. Transferys se lance.
 
-Version portable (sans installation) : dézippez **Transferys-Portable-1.1.1.zip** et lancez `Transferys.exe`. Au premier lancement, Windows demande l'accès réseau : cochez **Réseaux privés** puis **Autoriser**.
+Version portable (sans installation) : dézippez **Transferys-Portable-2.0.0.zip** et lancez `Transferys.exe`. Au premier lancement, Windows demande l'accès réseau : cochez **Réseaux privés** puis **Autoriser**.
 
 ## 2. Installer sur le téléphone Android
 
-1. Copiez **Transferys-1.1.1.apk** sur le téléphone (câble, mail, Drive…) et touchez-le.
+1. Copiez **Transferys-2.0.0.apk** sur le téléphone (câble, mail, Drive…) et touchez-le.
 2. Si Android bloque : autorisez « Installer des applis inconnues » pour l'appli qui ouvre l'APK (Fichiers, Chrome…).
 3. Ouvrez Transferys et suivez les 3 écrans du guide (donnez un nom : « Tel Quentin »).
 4. Acceptez les **notifications** (pour voir la progression).
@@ -39,6 +39,19 @@ S'ils ne se voient pas : sur le PC, **Ajouter > Mon QR code** ; sur le télépho
 - Glissez-déposez des fichiers ou dossiers dans la fenêtre Transferys, puis **Envoyer** à côté du téléphone.
 - Ou clic droit sur un fichier / dossier dans l'explorateur : **Envoyer avec Transferys** (Windows 11 : « Afficher d'autres options »), ou **Envoyer vers > Transferys** pour plusieurs fichiers d'un coup.
 - Acceptez sur le téléphone. Les fichiers arrivent dans **Téléchargements/Transferys** (visibles dans la galerie).
+
+## 5 bis. Ne plus valider chaque envoi
+
+- Au moment d'accepter, cochez **Toujours accepter de « Tel Quentin »** : les envois suivants de cet appareil arriveront directement.
+- Ou Réglages > Appareils de confiance > interrupteur à côté de l'appareil (activable / désactivable à tout moment).
+
+## 5 ter. Tri automatique
+
+Réglages > Réception > **Tri automatique** :
+- **Par type** (par défaut) : Transferys\Photos, Transferys\Vidéos, Transferys\Musique, Transferys\Documents, Archives, Applications, Autres ;
+- **Appareil + type** : Transferys\Tel Quentin\Photos… ;
+- **Aucun** : tout dans le même dossier.
+Un dossier envoyé en entier garde son arborescence (il n'est pas éclaté).
 
 ## 6. Pendant un transfert
 

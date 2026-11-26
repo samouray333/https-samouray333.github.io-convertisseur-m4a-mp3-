@@ -1,5 +1,6 @@
 // Réglages de l'application (nom, dossier de réception, thème, etc.).
 import 'models.dart';
+import 'sorting.dart';
 import 'storage.dart';
 
 /// Dossier partagé pour l'accès à distance.
@@ -29,6 +30,7 @@ class Settings {
     this.onboardingDone = false,
     this.port = defaultPort,
     this.remoteAccess = false,
+    this.sortMode = SortMode.type,
     List<SharedFolder>? shares,
   }) : shares = shares ?? [];
 
@@ -57,6 +59,9 @@ class Settings {
   /// téléphone = rester joignable par le PC.
   bool remoteAccess;
 
+  /// Tri automatique des fichiers reçus.
+  SortMode sortMode;
+
   /// Dossiers que les appareils de confiance peuvent parcourir.
   List<SharedFolder> shares;
 
@@ -72,6 +77,7 @@ class Settings {
         'onboardingDone': onboardingDone,
         'port': port,
         'remoteAccess': remoteAccess,
+        'sortMode': sortMode.name,
         'shares': shares.map((e) => e.toJson()).toList(),
       };
 
@@ -91,6 +97,7 @@ class Settings {
         onboardingDone: j['onboardingDone'] as bool? ?? false,
         port: (j['port'] as num?)?.toInt() ?? defaultPort,
         remoteAccess: j['remoteAccess'] as bool? ?? false,
+        sortMode: sortModeFromString(j['sortMode'] as String?),
         shares: ((j['shares'] as List?) ?? const [])
             .map((e) => SharedFolder.fromJson((e as Map).cast<String, dynamic>()))
             .toList(),

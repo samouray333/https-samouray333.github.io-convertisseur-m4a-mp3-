@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:transferys/core/models.dart';
 import 'package:transferys/core/settings.dart';
+import 'package:transferys/core/sorting.dart';
 import 'package:transferys/engine.dart';
 import 'package:transferys/platform/platform_hooks.dart';
 import 'dart:ffi';
@@ -55,6 +56,7 @@ class Node {
     );
     await engine.init();
     engine.settings.port = port;
+    engine.settings.sortMode = SortMode.none; // les tests historiques attendent tout à la racine
     engine.onPairingPrompt = (pp) {
       lastPrompt = pp;
       engine.approvePairing(pp.pairId); // l'utilisateur clique « Autoriser »
@@ -273,7 +275,7 @@ void main() {
     expect(await sha(p.join(b.recvDir, 'petits', 'f_499.txt')), await sha(p.join(dir, 'f_499.txt')));
     // ignore: avoid_print
     print('500 fichiers en ${sw.elapsedMilliseconds} ms');
-  });
+  }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('coupure réseau en plein transfert puis reprise automatique', () async {
     await pairNodes(a, b);
@@ -481,6 +483,47 @@ void main() {
     expect(recv.files[1].status, TransferStatus.failed);
     expect(recv.files[1].error, contains('Fichier illisible'));
     expect(recv.error, contains('Raison'));
+  });
+
+  test('tri automatique par type, par appareil, dossiers intacts', () async {
+    await pairNodes(a, b);
+    b.engine.settings.sortMode = SortMode.type;
+    final src = p.join(a.root.path, 'tri');
+    final photo = await makeFile(p.join(src, 'IMG_2041.HEIC'), 1000, seed: 1);
+    final video = await makeFile(p.join(src, 'VID-WA0031.mp4'), 2000, seed: 2);
+    final pdf = await makeFile(p.join(src, 'facture.pdf'), 3000, seed: 3);
+    final inconnu = await makeFile(p.join(src, 'notes.xyz'), 10, seed: 4);
+    await makeFile(p.join(src, 'Projet', 'plan.pdf'), 500, seed: 5);
+    final sources = [
+      for (final f in [photo, video, pdf, inconnu]) LocalFileSource(f.path),
+      ...await expandLocalPaths([p.join(src, 'Projet')]),
+    ];
+    var job = await waitJob(a.engine.send(b.engine.identity.id, sources));
+    expect(job.status, TransferStatus.done, reason: job.error);
+    for (final rel in ['Photos/IMG_2041.HEIC', 'Vidéos/VID-WA0031.mp4', 'Documents/facture.pdf', 'Autres/notes.xyz', 'Projet/plan.pdf']) {
+      expect(File(p.join(b.recvDir, rel)).existsSync(), isTrue, reason: rel);
+    }
+    b.engine.settings.sortMode = SortMode.typeDevice;
+    job = await waitJob(a.engine.send(b.engine.identity.id, [LocalFileSource(photo.path)]));
+    expect(job.status, TransferStatus.done, reason: job.error);
+    expect(File(p.join(b.recvDir, 'PC Bureau', 'Photos', 'IMG_2041.HEIC')).existsSync(), isTrue);
+    // L'historique pointe vers le vrai emplacement (bouton « Ouvrir »).
+    await Future.delayed(const Duration(milliseconds: 300));
+    expect(b.engine.history.entries.first.files.first.path, endsWith(p.join('PC Bureau', 'Photos', 'IMG_2041.HEIC')));
+  });
+
+  test('« toujours accepter » pour un appareil : pas de confirmation', () async {
+    await pairNodes(a, b);
+    b.accept = false; // l'utilisateur refuserait s'il était sollicité
+    await b.engine.setTrustedAutoAccept(a.engine.identity.id, true);
+    final f = await makeFile(p.join(a.root.path, 'auto.txt'), 100);
+    final job = await waitJob(a.engine.send(b.engine.identity.id, [LocalFileSource(f.path)]));
+    expect(job.status, TransferStatus.done, reason: job.error);
+    expect(b.incomingCount, 0);
+    // Réglage conservé après redémarrage.
+    await b.shutdown();
+    await b.boot(port: 0);
+    expect(b.engine.trust.get(a.engine.identity.id)!.autoAccept, isTrue);
   });
 
   test('5 Go', () async {

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'core/errors.dart';
 import 'core/models.dart';
 import 'core/settings.dart';
+import 'core/sorting.dart';
 import 'core/stores.dart';
 import 'network/discovery.dart';
 import 'network/net_utils.dart';
@@ -25,7 +26,7 @@ import 'transfer/server.dart';
 import 'transfer/tunnel.dart';
 import 'transport/transport.dart';
 
-const String appVersion = '1.1.1';
+const String appVersion = '2.0.0';
 
 /// Transport Wi-Fi local (v1).
 class WifiTransport implements Transport {
@@ -390,6 +391,14 @@ class TransferysEngine implements ServerDelegate {
     _notify();
   }
 
+  Future<void> setTrustedAutoAccept(String id, bool value) async {
+    final t = _trust.get(id);
+    if (t == null) return;
+    t.autoAccept = value;
+    await _trust.put(t);
+    _notify();
+  }
+
   Future<void> renameTrusted(String id, String name) async {
     final t = _trust.get(id);
     if (t == null) return;
@@ -713,7 +722,7 @@ class TransferysEngine implements ServerDelegate {
       final share = target['share'] as String;
       if (!_fs.writable(share)) throw TransferysException(ErrorCode.permission, 'Ce dossier est en lecture seule.');
       dest = _fs.resolve(share, target['path'] as String? ?? '');
-    } else if (_settings.confirmBeforeReceive) {
+    } else if (_settings.confirmBeforeReceive && !t.autoAccept) {
       final req = IncomingRequest(
         sessionId: token,
         from: t,
@@ -735,7 +744,7 @@ class TransferysEngine implements ServerDelegate {
           query: {'offer': token, 'file': f['fileId'] as String},
         ),
     ];
-    _startDownload(t, files, dest, onFileDone: (rf, ok, err, finished) async {
+    _startDownload(t, files, dest, sort: target == null, onFileDone: (rf, ok, err, finished) async {
       final host = _endpoints[t.id]?.$1 ?? (await resolve(t.id))?.$1;
       if (host == null) return;
       final c = clientFor(t, host);
@@ -749,7 +758,7 @@ class TransferysEngine implements ServerDelegate {
   }
 
   TransferJob _startDownload(TrustedDevice t, List<RemoteFile> files, String dest,
-      {Future<void> Function(RemoteFile, bool, String?, bool)? onFileDone}) {
+      {Future<void> Function(RemoteFile, bool, String?, bool)? onFileDone, bool sort = false}) {
     final job = TransferJob(
       id: randomToken(12),
       direction: TransferDirection.receive,
@@ -771,6 +780,7 @@ class TransferysEngine implements ServerDelegate {
       duplicateMode: _settings.duplicateMode,
       onFileSaved: hooks.fileSaved,
       onFileDone: onFileDone,
+      sortMode: sort ? _settings.sortMode : SortMode.none,
     ).run().whenComplete(() => _jobFinished(job));
     _notify();
     return job;
@@ -854,7 +864,7 @@ class TransferysEngine implements ServerDelegate {
         }
       });
       if (files.isEmpty) throw TransferysException(ErrorCode.protocol, 'Rien à télécharger (dossier vide).');
-      _startDownload(t, files, destDir ?? _settings.receiveDir);
+      _startDownload(t, files, destDir ?? _settings.receiveDir, sort: destDir == null);
       return;
     }
     if (_tunnelOnly(deviceId)) {

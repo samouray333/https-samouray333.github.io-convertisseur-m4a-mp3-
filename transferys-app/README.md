@@ -2,7 +2,7 @@
 
 Transfert de fichiers sans câble entre un PC Windows et un téléphone Android, dans les deux sens, sur le Wi-Fi local. Chiffré, sans serveur, sans Internet.
 
-Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.1.1
+Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 2.0.0
 
 ## Fonctionnalités
 
@@ -16,6 +16,7 @@ Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.1.1
 - Windows : glisser-déposer, zone de notification, démarrage avec Windows, notifications, clic droit « Envoyer avec Transferys », « Envoyer vers », instance unique
 - Android : sélecteurs natifs sans copie (lecture directe des `content://`), menu Partager, service au premier plan avec verrous Wi-Fi et processeur, galerie mise à jour, permissions expliquées
 - Historique avec « Ouvrir le fichier » / « Ouvrir le dossier », thème clair / sombre, guide de démarrage
+- **2.0** : « Toujours accepter » par appareil de confiance ; tri automatique des fichiers reçus (par type, ou par appareil puis par type ; un dossier envoyé garde son arborescence) ; nouveau design (police Manrope intégrée, palette bleu nuit / bleu / lagon, écran Envoyer en orbite, anneaux de progression), animation limitée pour ménager la batterie
 - **Accès à distance (v1.1, 100 % gratuit, sans serveur)** : ouverture automatique du port sur la box (UPnP IGD) + IPv6 ; les adresses Internet sont échangées pendant que les appareils sont sur le même Wi-Fi ; l'appairage reste interdit depuis Internet
 - **Explorateur de dossiers partagés** dans les deux sens (onglet Parcourir), lecture seule ou dépôt autorisé par dossier ; un téléphone en 4G (injoignable) garde un canal inverse ouvert vers le PC (long polling), toutes les données passent par des connexions ouvertes par le téléphone
 
@@ -23,7 +24,7 @@ Marque : QMTech • Package Android : `fr.qmtech.transferys` • Version : 1.1.1
 
 | Dossier | Rôle |
 |---|---|
-| `core/` | Modèles, réglages, historique, appareils de confiance, formats FR, erreurs en français |
+| `core/` | Modèles, réglages, tri automatique (`sorting.dart`), historique, appareils de confiance, formats FR, erreurs en français |
 | `security/` | Identité TLS de l'appareil (`identity.dart`), protocole d'appairage par code (`pairing.dart`) |
 | `network/` | Découverte UDP (`discovery.dart`), UPnP IGD (`upnp.dart`), adresses locales, QR code |
 | `transfer/` | Protocole HTTPS, serveur et réception (`server.dart`, `receiver.dart`), envoi (`sender.dart`), téléchargement distant (`downloader.dart`), dossiers partagés (`fs_service.dart`), canal inverse (`tunnel.dart`), lecture Android par descripteur (`fd_reader.dart`), client épinglé, SHA-256 en isolate (`hasher.dart`) |
@@ -71,7 +72,7 @@ La compilation automatique (tests + installateur + version portable) est faite p
 ### Tests
 
 ```bash
-flutter test test/   # 25 scénarios réels entre deux instances
+flutter test test/ --concurrency=1   # 27 scénarios réels entre deux instances
 TRANSFERYS_BIG=1 flutter test test/engine_test.dart --name "5 Go"
 ```
 
@@ -82,3 +83,7 @@ Scénarios : appairage (bon et mauvais code), fichiers + arborescence, sens inve
 - Reçus : Windows `Téléchargements\Transferys`, Android `Téléchargements/Transferys` (modifiable dans Réglages)
 - Fichiers partiels pendant un transfert : sous-dossier caché `.transferys-partial` du dossier de réception
 - Réglages, historique, appareils de confiance, certificat : Windows `%APPDATA%\QMTech\Transferys`, Android : données privées de l'appli
+
+## Police
+
+Manrope (SIL Open Font License 1.1), fichiers dans `assets/fonts/` avec la licence `OFL.txt` : utilisation commerciale autorisée.

@@ -205,6 +205,7 @@ Future<void> engineWorkerMain(List<Object?> args) async {
           ..explorerMenu = s.explorerMenu
           ..onboardingDone = s.onboardingDone
           ..remoteAccess = s.remoteAccess
+          ..sortMode = s.sortMode
           ..shares = s.shares;
         await engine.saveSettings();
         return null;
@@ -266,6 +267,12 @@ Future<void> engineWorkerMain(List<Object?> args) async {
       case 'clearHistory':
         await engine.history.clear();
         scheduleSnap();
+        return null;
+      case 'setAutoAccept':
+        await engine.setTrustedAutoAccept(m['id'] as String, m['value'] as bool);
+        return null;
+      case 'renameTrusted':
+        await engine.renameTrusted(m['id'] as String, m['name'] as String);
         return null;
       case 'removeTrusted':
         await engine.removeTrusted(m['id'] as String);

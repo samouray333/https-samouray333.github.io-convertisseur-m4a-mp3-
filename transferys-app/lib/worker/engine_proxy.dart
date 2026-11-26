@@ -318,6 +318,8 @@ class EngineProxy {
   }
 
   Future<void> removeTrusted(String id) => _cmd('removeTrusted', {'id': id});
+  Future<void> setAutoAccept(String id, bool value) => _cmd('setAutoAccept', {'id': id, 'value': value});
+  Future<void> renameTrusted(String id, String name) => _cmd('renameTrusted', {'id': id, 'name': name});
   void cancelLocalPairing() => _cmd('cancelLocalPairing', null);
   void approvePairing(String pairId) => _cmd('approvePairing', {'pairId': pairId});
   Future<void> refreshDiscovery() => _cmd('discovery', {'action': 'refresh'});

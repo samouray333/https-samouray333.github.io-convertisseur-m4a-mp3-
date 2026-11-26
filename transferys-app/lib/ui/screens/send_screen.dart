@@ -1,11 +1,15 @@
-// Écran « Envoyer » : sélection des fichiers (glisser-déposer sur PC) et
-// liste des appareils détectés.
+// Écran « Envoyer » : orbite des appareils proches + choix des fichiers.
+//
+// Cet appareil est au centre ; les appareils de confiance sont sur l'anneau
+// intérieur, les nouveaux sur l'anneau extérieur. Toucher une bulle envoie
+// la sélection (ou lance l'appairage).
+import 'dart:math' as math;
+
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/format.dart';
-import '../../security/identity.dart';
 import '../app_state.dart';
 import '../brand.dart';
 import '../widgets.dart';
@@ -24,42 +28,36 @@ class _SendScreenState extends State<SendScreen> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final content = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-      children: [
-        const _ThisDeviceCard(),
-        if (app.networkError != null) _Banner(text: app.networkError!, icon: Icons.warning_amber_rounded),
-        if (app.localAddresses.isEmpty)
-          const _Banner(
-            icon: Icons.wifi_off_rounded,
-            text: 'Aucun réseau Wi-Fi détecté. Connectez cet appareil au même Wi-Fi que l\'autre (ou au point d\'accès du téléphone).',
-          ),
-        const SectionTitle('Fichiers à envoyer'),
-        const _SelectionCard(),
-        SectionTitle(
-          'Appareils à proximité',
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (app.scanning)
-              const Padding(
-                padding: EdgeInsets.only(right: 8),
-                child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
-            IconButton(
-              tooltip: 'Actualiser',
-              onPressed: app.scanning ? null : app.refreshDevices,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-            TextButton.icon(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddDeviceScreen())),
-              icon: const Icon(Icons.qr_code_2_rounded),
-              label: const Text('Ajouter'),
-            ),
-          ]),
+    final wide = MediaQuery.sizeOf(context).width >= 980;
+
+    final orbitPart = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const _Header(),
+      if (app.networkError != null) _Banner(text: app.networkError!, icon: Icons.warning_amber_rounded),
+      if (app.localAddresses.isEmpty)
+        const _Banner(
+          icon: Icons.wifi_off_rounded,
+          text: 'Aucun Wi-Fi détecté. Connectez cet appareil au même réseau que l\'autre, ou au point d\'accès du téléphone.',
         ),
-        const _DeviceList(),
-      ],
-    );
+      const _OrbitZone(),
+    ]);
+    const selectionPart = _SelectionZone();
+
+    final content = wide
+        ? SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(28, 12, 28, 32),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 6, child: orbitPart),
+              const SizedBox(width: 24),
+              const Expanded(flex: 5, child: Padding(padding: EdgeInsets.only(top: 92), child: selectionPart)),
+            ]),
+          )
+        : ListView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+            children: [orbitPart, selectionPart],
+          );
+
     if (!app.isDesktop) return content;
+    final cs = Theme.of(context).colorScheme;
     return DropTarget(
       onDragDone: (d) {
         setState(() => _dragging = false);
@@ -73,16 +71,16 @@ class _SendScreenState extends State<SendScreen> {
           Positioned.fill(
             child: IgnorePointer(
               child: Container(
-                margin: const EdgeInsets.all(12),
+                margin: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                  border: Border.all(color: Theme.of(context).colorScheme.primary, width: 3),
-                  borderRadius: BorderRadius.circular(20),
+                  color: cs.primary.withValues(alpha: 0.10),
+                  border: Border.all(color: cs.primary, width: 3),
+                  borderRadius: BorderRadius.circular(Radii.zone),
                 ),
                 child: Center(
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.file_download_rounded, size: 64, color: Theme.of(context).colorScheme.primary),
-                    const SizedBox(height: 8),
+                    Icon(Icons.file_download_rounded, size: 64, color: cs.primary),
+                    const SizedBox(height: 10),
                     Text('Déposez pour ajouter à l\'envoi', style: Theme.of(context).textTheme.headlineSmall),
                   ]),
                 ),
@@ -94,39 +92,53 @@ class _SendScreenState extends State<SendScreen> {
   }
 }
 
-class _ThisDeviceCard extends StatelessWidget {
-  const _ThisDeviceCard();
+// ------------------------------------------------------------------ en-tête
+class _Header extends StatelessWidget {
+  const _Header();
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final t = Theme.of(context);
-    final ip = app.localAddresses.isEmpty ? 'hors réseau' : app.localAddresses.map((a) => a.address.address).join(' • ');
-    const fg = Colors.white;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [brandBlue, brandCyan], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Row(children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)),
-          child: Icon(app.isAndroid ? Icons.smartphone_rounded : Icons.computer_rounded, color: fg, size: 30),
-        ),
-        const SizedBox(width: 14),
+    final cs = t.colorScheme;
+    final online = app.localAddresses.isNotEmpty;
+    final ip = online ? app.localAddresses.first.address.address : null;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 18),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(app.settings.deviceName, style: t.textTheme.titleLarge?.copyWith(color: fg, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text('Prêt à recevoir • $ip', style: t.textTheme.bodyMedium?.copyWith(color: fg)),
-            Text('Empreinte de sécurité : ${DeviceIdentity.shortFp(app.engine.identity.fingerprint)}',
-                style: t.textTheme.bodySmall?.copyWith(color: fg.withValues(alpha: 0.8))),
+            Text(app.settings.deviceName, style: t.textTheme.headlineMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 4),
+            Row(children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: online ? okGreen : cs.outline, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  online ? 'Prêt à recevoir, adresse $ip' : 'Hors réseau',
+                  style: t.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ]),
           ]),
         ),
-        const Icon(Icons.wifi_tethering_rounded, color: fg),
+        IconButton.filledTonal(
+          tooltip: 'Actualiser',
+          onPressed: app.scanning ? null : app.refreshDevices,
+          icon: app.scanning
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.refresh_rounded),
+        ),
+        const SizedBox(width: 6),
+        IconButton.filledTonal(
+          tooltip: 'Ajouter un appareil (QR code, adresse IP)',
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddDeviceScreen())),
+          icon: const Icon(Icons.qr_code_2_rounded),
+        ),
       ]),
     );
   }
@@ -139,135 +151,433 @@ class _Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Card(
-      color: cs.errorContainer,
-      child: ListTile(
-        leading: Icon(icon, color: cs.onErrorContainer),
-        title: Text(text, style: TextStyle(color: cs.onErrorContainer)),
-        trailing: TextButton(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+      decoration: BoxDecoration(color: cs.errorContainer, borderRadius: BorderRadius.circular(Radii.item)),
+      child: Row(children: [
+        Icon(icon, color: cs.onErrorContainer),
+        const SizedBox(width: 12),
+        Expanded(child: Text(text, style: TextStyle(color: cs.onErrorContainer))),
+        TextButton(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
           child: const Text('Aide'),
         ),
-      ),
+      ]),
     );
   }
 }
 
-class _SelectionCard extends StatelessWidget {
-  const _SelectionCard();
+// ------------------------------------------------------------------ orbite
+class _OrbitZone extends StatelessWidget {
+  const _OrbitZone();
+
+  static const _maxOnOrbit = 8;
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final t = Theme.of(context);
-    final sel = app.selection;
-    final buttons = Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
-      FilledButton.icon(onPressed: app.pickFiles, icon: const Icon(Icons.upload_file_rounded), label: const Text('Envoyer des fichiers')),
-      if (app.isAndroid)
-        FilledButton.tonalIcon(onPressed: app.pickMedia, icon: const Icon(Icons.photo_library_outlined), label: const Text('Photos et vidéos')),
-      FilledButton.tonalIcon(onPressed: app.pickFolder, icon: const Icon(Icons.create_new_folder_outlined), label: const Text('Dossier')),
-    ]);
-    return Card(
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: t.colorScheme.outlineVariant, width: 1.5, style: BorderStyle.solid),
-        ),
-        padding: const EdgeInsets.all(16),
-        child: sel.isEmpty
-            ? Column(children: [
-                Icon(app.isDesktop ? Icons.file_download_outlined : Icons.add_circle_outline_rounded, size: 44, color: t.colorScheme.primary),
-                const SizedBox(height: 8),
-                Text(app.isDesktop ? 'Glissez-déposez vos fichiers ou dossiers ici' : 'Choisissez ce que vous voulez envoyer',
-                    style: t.textTheme.titleMedium, textAlign: TextAlign.center),
-                const SizedBox(height: 4),
-                Text('Tous types de fichiers, sans limite de taille.', style: t.textTheme.bodySmall),
-                const SizedBox(height: 14),
-                buttons,
-              ])
-            : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Row(children: [
-                  Expanded(
-                    child: Text('${sel.length} fichier(s) • ${formatSize(app.selectionSize)}',
-                        style: t.textTheme.titleMedium),
-                  ),
-                  TextButton.icon(onPressed: app.clearSelection, icon: const Icon(Icons.clear_all_rounded), label: const Text('Vider')),
-                ]),
-                const SizedBox(height: 6),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: sel.length,
-                    itemBuilder: (c, i) => ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(iconForFile(sel[i].relPath)),
-                      title: Text(sel[i].relPath, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(formatSize(sel[i].size)),
-                      trailing: IconButton(
-                        tooltip: 'Retirer',
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: () => app.removeSourceAt(i),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                buttons,
-                const SizedBox(height: 10),
-                Text('Touchez un appareil ci-dessous pour envoyer.',
-                    textAlign: TextAlign.center, style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.primary)),
-              ]),
-      ),
+    final devices = app.devices;
+    final onOrbit = devices.take(_maxOnOrbit).toList();
+    final extra = devices.skip(_maxOnOrbit).toList();
+    final n = app.selection.length;
+    final hint = devices.isEmpty
+        ? 'Recherche des appareils sur le Wi-Fi… Ouvrez Transferys sur l\'autre appareil.'
+        : (n == 0
+            ? 'Choisissez des fichiers, puis touchez un appareil.'
+            : 'Touchez un appareil pour envoyer $n fichier${n > 1 ? 's' : ''}.');
+    return Zone(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      child: Column(children: [
+        LayoutBuilder(builder: (c, box) {
+          final size = math.min(box.maxWidth, 460.0);
+          return SizedBox(width: size, height: size < 420 ? size * 1.05 : size * 0.94, child: _Orbit(devices: onOrbit));
+        }),
+        const SizedBox(height: 4),
+        Text(hint, textAlign: TextAlign.center, style: t.textTheme.bodyMedium?.copyWith(color: t.colorScheme.onSurfaceVariant)),
+        if (devices.isEmpty) ...[
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
+            icon: const Icon(Icons.help_outline_rounded),
+            label: const Text('Il n\'apparaît pas ?'),
+          ),
+        ],
+        for (final d in extra) _DeviceRow(d),
+      ]),
     );
   }
 }
 
-class _DeviceList extends StatelessWidget {
-  const _DeviceList();
+class _Orbit extends StatefulWidget {
+  const _Orbit({required this.devices});
+  final List<DeviceEntry> devices;
+  @override
+  State<_Orbit> createState() => _OrbitState();
+}
+
+class _OrbitState extends State<_Orbit> with SingleTickerProviderStateMixin {
+  // Une seule animation (l'onde). Pour ménager la batterie, elle ne joue que
+  // quelques cycles : à l'ouverture et quand la liste des appareils change.
+  late final AnimationController _wave = AnimationController(vsync: this, duration: const Duration(milliseconds: 3200))
+    ..addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        _cycles--;
+        if (_cycles > 0) {
+          _wave.forward(from: 0);
+        } else {
+          _wave.reset();
+          if (mounted) setState(() {});
+        }
+      }
+    });
+  int _cycles = 0;
+  late final AppLifecycleListener _life = AppLifecycleListener(onResume: _pulse);
+
+  void _pulse() {
+    if (!mounted || MediaQuery.disableAnimationsOf(context)) return;
+    _cycles = 6; // environ 20 secondes
+    if (!_wave.isAnimating) _wave.forward(from: 0);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _life; // écoute du retour au premier plan
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pulse());
+  }
+
+  @override
+  void didUpdateWidget(_Orbit old) {
+    super.didUpdateWidget(old);
+    final before = old.devices.map((d) => '${d.id}${d.online}').join();
+    final now = widget.devices.map((d) => '${d.id}${d.online}').join();
+    if (before != now) _pulse();
+  }
+
+  @override
+  void dispose() {
+    _life.dispose();
+    _wave.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final list = app.devices;
-    if (list.isEmpty) {
-      return EmptyState(
-        icon: Icons.radar_rounded,
-        title: 'Recherche des appareils…',
-        text: 'Ouvrez Transferys sur l\'autre appareil, connecté au même Wi-Fi. S\'il n\'apparaît pas, utilisez « Ajouter » (QR code ou adresse IP).',
-        action: OutlinedButton.icon(
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
-          icon: const Icon(Icons.help_outline_rounded),
-          label: const Text('Il n\'apparaît pas ?'),
+    final cs = Theme.of(context).colorScheme;
+    return LayoutBuilder(builder: (c, box) {
+      final w = box.maxWidth, h = box.maxHeight;
+      final center = Offset(w / 2, h / 2);
+      // Petit écran (téléphone) : bulles plus compactes, nom seul sous la bulle.
+      final compact = w < 420;
+      final bubble = compact ? 52.0 : 60.0;
+      final labelW = compact ? 96.0 : 112.0;
+      final labelH = compact ? 22.0 : 40.0;
+      final core = compact ? 28.0 : 34.0; // rayon du disque central
+      // L'anneau extérieur laisse la place des étiquettes en bas et sur les côtés.
+      final rMax = math.min(w / 2 - labelW / 2 + 4, h / 2 - bubble / 2 - labelH);
+      // Anneau intérieur assez loin du centre pour que les noms ne le touchent pas.
+      final inner = math.max(rMax * 0.6, core + bubble / 2 + labelH + 6);
+      final outer = rMax;
+
+      // Confiance sur l'anneau intérieur, nouveaux sur l'extérieur.
+      final trusted = widget.devices.where((d) => d.isTrusted).toList();
+      final fresh = widget.devices.where((d) => !d.isTrusted).toList();
+      final placed = <(DeviceEntry, Offset)>[];
+      void place(List<DeviceEntry> list, double r, double start) {
+        for (var i = 0; i < list.length; i++) {
+          final a = start + 2 * math.pi * i / list.length;
+          placed.add((list[i], center + Offset(math.cos(a) * r, math.sin(a) * r)));
+        }
+      }
+
+      // Départs décalés pour que les bulles des deux anneaux ne s'alignent pas.
+      place(trusted, inner, -math.pi / 2 - 0.5);
+      place(fresh, outer, math.pi * 0.22);
+
+      return Stack(clipBehavior: Clip.none, children: [
+        Positioned.fill(
+          child: AnimatedBuilder(
+            animation: _wave,
+            builder: (_, __) => CustomPaint(
+              painter: _RingsPainter(
+                center: center,
+                radii: [inner, outer],
+                core: core,
+                wave: _wave.isAnimating ? _wave.value : null,
+                ring: cs.outlineVariant,
+                waveColor: cs.primary,
+              ),
+            ),
+          ),
         ),
-      );
-    }
-    return Column(children: [for (final d in list) _DeviceTile(d)]);
+        // Cet appareil, au centre
+        Positioned(
+          left: center.dx - core,
+          top: center.dy - core,
+          child: Container(
+            width: core * 2,
+            height: core * 2,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(colors: [brandBlue, brandCyan], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            ),
+            child: Icon(app.isAndroid ? Icons.smartphone_rounded : Icons.computer_rounded, color: Colors.white, size: core * 0.95),
+          ),
+        ),
+        for (final (d, pos) in placed)
+          Positioned(
+            left: pos.dx - labelW / 2,
+            top: pos.dy - bubble / 2,
+            width: labelW,
+            child: _Bubble(d: d, size: bubble, showStatus: !compact),
+          ),
+      ]);
+    });
   }
 }
 
-class _DeviceTile extends StatelessWidget {
-  const _DeviceTile(this.d);
+class _RingsPainter extends CustomPainter {
+  _RingsPainter({required this.center, required this.radii, required this.wave, required this.ring, required this.waveColor, required this.core});
+  final Offset center;
+  final double core;
+  final List<double> radii;
+  final double? wave;
+  final Color ring;
+  final Color waveColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = ring;
+    for (final r in radii) {
+      canvas.drawCircle(center, r, p);
+    }
+    final v = wave;
+    if (v != null) {
+      final r = core + (radii.last - core) * Curves.easeOut.transform(v);
+      final wp = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..color = waveColor.withValues(alpha: 0.40 * (1 - v));
+      canvas.drawCircle(center, r, wp);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingsPainter o) => o.wave != wave || o.ring != ring || o.center != center || o.radii.last != radii.last;
+}
+
+class _Bubble extends StatelessWidget {
+  const _Bubble({required this.d, required this.size, this.showStatus = true});
   final DeviceEntry d;
+  final double size;
+  final bool showStatus;
+
   @override
   Widget build(BuildContext context) {
     final app = context.read<AppState>();
     final t = Theme.of(context);
-    final status = [
-      d.peer != null ? 'En ligne' : (d.remote ? 'Joignable à distance' : 'Hors ligne'),
-      d.isTrusted ? 'De confiance' : 'Nouvel appareil : appairage au premier envoi',
-    ].join(' • ');
-    return Card(
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        leading: PlatformAvatar(platform: d.platform, online: d.online),
-        title: Text(d.name, style: t.textTheme.titleMedium),
-        subtitle: Text(status),
-        trailing: FilledButton.icon(
-          onPressed: (d.online || d.isTrusted) ? () => app.sendTo(d) : null,
-          icon: Icon(d.isTrusted ? Icons.send_rounded : Icons.link_rounded, size: 18),
-          label: Text(d.isTrusted || app.selection.isNotEmpty ? 'Envoyer' : 'Appairer'),
+    final cs = t.colorScheme;
+    final Color fill;
+    final Color fg;
+    if (!d.online) {
+      fill = cs.surfaceContainerHigh;
+      fg = cs.outline;
+    } else if (d.isTrusted) {
+      fill = cs.primary;
+      fg = cs.onPrimary;
+    } else {
+      fill = Theme.of(context).brightness == Brightness.dark ? nightSurface : Colors.white;
+      fg = cs.primary;
+    }
+    final status = !d.online
+        ? 'Hors ligne'
+        : d.remote
+            ? 'À distance'
+            : (d.isTrusted ? (d.trusted!.autoAccept ? 'Accepte tout' : 'De confiance') : 'Nouveau');
+    return Tooltip(
+      message: d.isTrusted ? 'Envoyer à ${d.name}' : 'Appairer ${d.name}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.item),
+        onTap: (d.online || d.isTrusted) ? () => app.sendTo(d) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Stack(clipBehavior: Clip.none, children: [
+              Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  color: fill,
+                  shape: BoxShape.circle,
+                  border: d.isTrusted ? null : Border.all(color: cs.primary, width: 2),
+                ),
+                child: Icon(platformIcon(d.platform), color: fg, size: size * 0.46),
+              ),
+              if (d.remote)
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: brandCyan,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Theme.of(context).brightness == Brightness.dark ? nightSurface : Colors.white, width: 2),
+                    ),
+                    child: const Icon(Icons.public_rounded, size: 14, color: Colors.white),
+                  ),
+                ),
+            ]),
+            const SizedBox(height: 6),
+            Text(d.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: t.textTheme.labelLarge),
+            if (showStatus)
+              Text(status,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: t.textTheme.labelSmall?.copyWith(color: d.remote ? brandCyan : cs.onSurfaceVariant)),
+          ]),
         ),
-        onTap: () => app.sendTo(d),
+      ),
+    );
+  }
+}
+
+/// Appareils au-delà de ce que l'orbite peut afficher.
+class _DeviceRow extends StatelessWidget {
+  const _DeviceRow(this.d);
+  final DeviceEntry d;
+  @override
+  Widget build(BuildContext context) {
+    final app = context.read<AppState>();
+    return ListTile(
+      leading: PlatformAvatar(platform: d.platform, online: d.online),
+      title: Text(d.name),
+      subtitle: Text(d.isTrusted ? 'De confiance' : 'Nouvel appareil'),
+      trailing: const Icon(Icons.send_rounded),
+      onTap: () => app.sendTo(d),
+    );
+  }
+}
+
+// ------------------------------------------------------------- sélection
+class _SelectionZone extends StatelessWidget {
+  const _SelectionZone();
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+    final sel = app.selection;
+    final actions = [
+      _PickTile(icon: Icons.upload_file_rounded, label: 'Fichiers', onTap: app.pickFiles, primary: true),
+      if (app.isAndroid) _PickTile(icon: Icons.photo_library_rounded, label: 'Photos et vidéos', onTap: app.pickMedia),
+      _PickTile(icon: Icons.folder_rounded, label: 'Dossier', onTap: app.pickFolder),
+    ];
+    return Zone(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            child: Text(
+              sel.isEmpty ? 'À envoyer' : '${sel.length} fichier${sel.length > 1 ? 's' : ''}, ${formatSize(app.selectionSize)}',
+              style: t.textTheme.titleLarge,
+            ),
+          ),
+          if (sel.isNotEmpty) TextButton(onPressed: app.clearSelection, child: const Text('Tout retirer')),
+        ]),
+        const SizedBox(height: 12),
+        if (sel.isEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 12),
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(Radii.item),
+              border: Border.all(color: cs.outlineVariant, width: 1.5),
+            ),
+            child: Column(children: [
+              Icon(app.isDesktop ? Icons.file_download_outlined : Icons.touch_app_outlined, size: 36, color: cs.primary),
+              const SizedBox(height: 8),
+              Text(
+                app.isDesktop ? 'Glissez vos fichiers ou dossiers ici' : 'Ajoutez des fichiers avec les boutons ci-dessous',
+                textAlign: TextAlign.center,
+                style: t.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 2),
+              Text('Tous types, sans limite de taille.', style: t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+            ]),
+          )
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 260),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.only(bottom: 14),
+              itemCount: sel.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              itemBuilder: (c, i) => Container(
+                decoration: BoxDecoration(color: cs.surfaceContainerLow, borderRadius: BorderRadius.circular(Radii.chip + 2)),
+                padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+                child: Row(children: [
+                  FileBadge(name: sel[i].relPath),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(sel[i].relPath, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.textTheme.titleSmall),
+                      Text(formatSize(sel[i].size), style: t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                    ]),
+                  ),
+                  IconButton(
+                    tooltip: 'Retirer',
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    onPressed: () => app.removeSourceAt(i),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        Row(children: [
+          for (var i = 0; i < actions.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(child: actions[i]),
+          ],
+        ]),
+      ]),
+    );
+  }
+}
+
+class _PickTile extends StatelessWidget {
+  const _PickTile({required this.icon, required this.label, required this.onTap, this.primary = false});
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final bg = primary ? cs.primary : cs.primary.withValues(alpha: 0.10);
+    final fg = primary ? cs.onPrimary : cs.primary;
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(Radii.item),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.item),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+          child: Column(children: [
+            Icon(icon, color: fg),
+            const SizedBox(height: 6),
+            Text(label, textAlign: TextAlign.center, maxLines: 2, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg)),
+          ]),
+        ),
       ),
     );
   }
